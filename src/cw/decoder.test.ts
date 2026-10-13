@@ -8,6 +8,7 @@ import {
 } from "./decoder.js";
 import { textToTiming } from "./encode.js";
 import { QsoMachine } from "../qso/stateMachine.js";
+import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
 
 function jitter(els: KeyElement[], amount: number): KeyElement[] {
@@ -107,7 +108,11 @@ describe("MorseDecoder (streaming wrapper)", () => {
 
 describe("integration — decoder feeds the step-1 state machine", () => {
   it("drives the full 6-line CQ exchange to LOGGED via userSendKeying", () => {
-    const m = new QsoMachine({ myCall: "BG7XXX", hamCall: "JA1ABC", db: dxccDatabase });
+    const m = new QsoMachine({
+      myCall: "BG7XXX",
+      ham: new VirtualHam({ call: "JA1ABC", difficulty: "novice" }),
+      db: dxccDatabase,
+    });
 
     m.userSendKeying(textToTiming("CQ CQ CQ DE BG7XXX BG7XXX PSE K", { wpm: 20 }));
     expect(m.state).toBe("USER_CQ");

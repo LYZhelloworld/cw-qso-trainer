@@ -4,3 +4,6 @@ export * from "./qso/stateMachine.js";
 export * from "./cw/morseTable.js";
 export * from "./cw/decoder.js";
 export * from "./cw/encode.js";
+export * from "./ham/virtualHam.js";
+export * from "./ham/generate.js";
+export * from "./ham/frequency.js";

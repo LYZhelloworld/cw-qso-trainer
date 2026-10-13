@@ -6,8 +6,8 @@ const minimal: DxccData = {
   coordinate_note: "",
   count: 2,
   entities: {
-    BY: { dxcc: "BY", lat: 0, lon: 0, prefixes: ["BA", "BD", "BG", "BT", "BZ"] },
-    JA: { dxcc: "JA", lat: 0, lon: 0, prefixes: ["JA"] },
+    BY: { dxcc: "BY", lat: 0, lon: 0, prefixes: ["BA", "BD", "BG", "BT", "BZ"], continent: "AS" },
+    JA: { dxcc: "JA", lat: 0, lon: 0, prefixes: ["JA"], continent: "AS" },
   },
 };
 
