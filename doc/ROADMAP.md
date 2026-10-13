@@ -19,7 +19,7 @@
 本步实际落地三件套（不只是状态机）：
 - 数据层：`data/dxcc.json` 加载 + 前缀 → 实体查表（展开 `prefixes`、首部子串匹配）
 - 报文解析：文本 → `ParsedMessage`（见 [报文解析](./MESSAGE-PARSING.md)）：CQ 去重、呼号 ITU 格式 + 前缀表校验、RST 整 token 校验、省略呼号判断、BK / PSE K 处理、用户输入宽容容错
-- QSO 状态机：8 状态 + 转移，消费 `ParsedMessage`（见 [通联过程](./QSO-PROTOCOL.md)）
+- QSO 状态机：7 状态 + 转移，消费 `ParsedMessage`（见 [通联过程](./QSO-PROTOCOL.md)）
 
 必须实现并测试的逻辑：
 - 状态机超时转移（EXCHANGE / SIGNOFF 的 5s 重发、首次呼叫 15s 无应答、HAM 3min 下线）；本步仅要求 HAM 行为确定性、不引入随机
