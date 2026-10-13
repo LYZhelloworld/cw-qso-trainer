@@ -6,10 +6,18 @@
 
 ## 技术选型
 
-**原生 TypeScript + Vite，零新增依赖。** 原因有二：
+**原生 TypeScript + Vite，零运行时依赖。**
 
-1. 沙箱内 npm install 走不通（代理 502），不能引入 React/Vue 等框架；
-2. 与项目既有约定一致——核心逻辑是纯 TS 模块，UI 只做 DOM 呈现层。
+UI 本身仍然不引框架，理由是与项目既有约定一致——核心逻辑是纯 TS 模块，UI 只做 DOM 呈现层。
+
+> **更正（2026-10-14）**：此前写着「沙箱内 npm install 走不通（代理 502），不能引入新依赖」，**这条是错的**。实测在同一环境下 `npm ping` → `PONG`、`npm view jsdom version` → `30.1.2`、`npm install` 均正常。被拦的只是 **git 的 HTTPS CONNECT 隧道**，npm registry 走普通 HTTPS 请求不受影响，不能由前者推出后者。
+
+据此新增了两个 **devDependency，仅用于测试，不进运行时 bundle**（`vite build` 产物仍是 33 模块 / 64.66 kB，与加装依赖前一致）：
+
+| 包 | 用途 |
+|---|---|
+| `jsdom` | 让 UI 测试跑在真实 DOM 上（测试文件以 `// @vitest-environment jsdom` 逐文件声明） |
+| `fake-indexeddb` | jsdom 不提供 IndexedDB，用它补上才能覆盖日志的写入 / 编辑 / 清空 |
 
 `tsconfig.json` 的 `lib` 增加了 `DOM`（TypeScript 自带 `lib.dom.d.ts`，无需装 `@types`）。
 
@@ -57,12 +65,16 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 ## 验证结果
 
 - `tsc --noEmit`：**0 错误**
-- `vite build`：**通过**（33 模块，JS 64.66 kB / CSS 5.03 kB）
-- 测试：**新增 26 例，全套 97 例通过**（另有音频 12 例在沙箱组合跑中因缓存写入被拒而跳过，单独跑通过）
+- `vite build`：**通过**（33 模块，JS 64.66 kB / CSS 5.03 kB，与加装测试依赖前完全一致）
+- 测试：**全套 167 例通过**（17 个文件）
+  - UI 部分 **84 例**：其中 26 例是 node 环境纯逻辑（设置校验 13 / 日志推导 8 / 频段 5），**58 例是 jsdom 下的真实 DOM 交互测试**，含「跑完一次完整 QSO → 自动入库 → 日志页显示」的端到端用例
+
+> 沙箱内跑测试的注意点（本机无此问题）：多个测试文件并发时，vitest 写临时缓存会被 WorkBuddy 的 fs 沙箱拒 EPERM。规避方式是重定向临时目录并串行执行：
+> `mkdir -p .vitest-tmp && TMP=$PWD/.vitest-tmp TEMP=$PWD/.vitest-tmp npx vitest run --no-file-parallelism`
 
 ## 遗留问题与限制
 
-1. **UI 没有自动化测试。** vitest 环境是 node，没有 DOM；装 jsdom 需要联网（沙箱 502）。纯逻辑（设置校验、日志推导、频段）已单测覆盖，**DOM 交互需你 `npm run dev` 手动验收**。
+1. ~~**UI 没有自动化测试。**~~ **已解决（2026-10-14）**：装 `jsdom` + `fake-indexeddb` 后，五个页面的关键路径均已自动化覆盖——App 外壳与导航切换、首次免责弹窗与「我已知晓」、频率页频段/调谐/HAM 列表、CW 页遮蔽与单条揭示/宏/发送/新通联、日志页写入/编辑/清空与 IndexedDB 缺失时的降级、设置页呼号校验与各项保存/恢复默认、关于页免责与范围。**仍然无法自动化的是真实浏览器行为**：Web Audio 发声与自动播放限制、实际音频听感、`npm run dev` 下的视觉与手感——这些仍需你手动过一遍。
 2. **浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。音频后端目前每次播放新建并关闭 AudioContext。
 3. **iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。
 4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。
@@ -77,12 +89,14 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 ## 如何验收
 
 ```bash
-npm run dev      # 打开提示的地址
-npm run build    # 生产构建
-npm test         # 测试
+npm run build      # 生产构建
+npm test           # 167 例测试（含 jsdom 下的 UI 交互，无需浏览器）
+npm run typecheck  # 类型检查
+npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```
 
-建议验收路径：设置页填呼号 → 频率页「监听：等 HAM 发 CQ」→ CW 页抄收并应答 → 走完 RST 与 73 SK → 日志页应出现一条记录。
+建议的手动验收路径：设置页填呼号 → 频率页「监听：等 HAM 发 CQ」→ CW 页抄收并应答 → 走完 RST 与 73 SK → 日志页应出现一条记录。
+同一流程已有一条自动化用例覆盖（`src/ui/pages/logPage.test.ts` 的「完整跑通一次 QSO」），所以手动验收应把注意力集中在**自动化测不到的部分**：CW 音调是否真的响、音色是否舒服、浏览器首次是否拦自动播放。
 
 ## Git 状态
 
