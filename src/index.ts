@@ -1,3 +1,6 @@
 export * from "./data/dxcc.js";
 export * from "./message/parse.js";
 export * from "./qso/stateMachine.js";
+export * from "./cw/morseTable.js";
+export * from "./cw/decoder.js";
+export * from "./cw/encode.js";

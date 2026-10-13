@@ -1,5 +1,6 @@
 import { DxccDatabase } from "../data/dxcc.js";
 import { parseMessage, ParsedMessage } from "../message/parse.js";
+import { decodeKeying, type DecodeOptions, type KeyElement } from "../cw/decoder.js";
 
 export type QsoState =
   | "IDLE"
@@ -102,6 +103,16 @@ export class QsoMachine {
       default:
         return [];
     }
+  }
+
+  /**
+   * Convenience: decode a keying sequence (CW-PARSING receive side) and feed the
+   * resulting text into the state machine. Proves the step-2 decoder plugs into
+   * the step-1 text chain without changing the state machine's logic.
+   */
+  userSendKeying(elements: KeyElement[], opts?: DecodeOptions): string[] {
+    const { text } = decodeKeying(elements, opts);
+    return this.userSend(text);
   }
 
   /** Virtual HAM answers the user's CQ (called after the 15s-less deterministic delay). */
