@@ -594,8 +594,8 @@
     },
     "UA": {
       "dxcc": "UA",
-      "lat": 61.5,
-      "lon": 105.3,
+      "lat": 55.0,
+      "lon": 38.0,
       "prefixes": [
         "U",
         "UA",
@@ -605,7 +605,7 @@
         "UE4",
         "UE6"
       ],
-      "continent": "AS"
+      "continent": "EU"
     },
     "CF": {
       "dxcc": "CF",
@@ -2409,12 +2409,12 @@
     },
     "ZL": {
       "dxcc": "ZL",
-      "lat": 60.2,
-      "lon": 19.9,
+      "lat": -41.0,
+      "lon": 174.0,
       "prefixes": [
         "ZL"
       ],
-      "continent": "EU"
+      "continent": "OC"
     },
     "ZL7": {
       "dxcc": "ZL7",
