@@ -21,3 +21,6 @@ yarn-error.log*
 Thumbs.db
 .idea/
 *.tsbuildinfo
+
+# Generated audio samples (produced by scripts/gen-sample-wav.ts)
+samples/
