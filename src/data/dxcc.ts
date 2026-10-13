@@ -5,6 +5,8 @@ export interface DxccEntity {
   lat: number;
   lon: number;
   prefixes: string[];
+  /** Continent approximated from lat/lon (coarse; for the trainer's weighting). */
+  continent: string;
 }
 
 export interface DxccData {
@@ -66,6 +68,11 @@ export class DxccDatabase {
 
   entity(marker: string): DxccEntity | undefined {
     return this.entities[marker];
+  }
+
+  /** All DXCC entities (for weighted generation / distance & continent pools). */
+  listEntities(): DxccEntity[] {
+    return Object.values(this.entities);
   }
 }
 

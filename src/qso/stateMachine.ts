@@ -1,6 +1,7 @@
 import { DxccDatabase } from "../data/dxcc.js";
 import { parseMessage, ParsedMessage } from "../message/parse.js";
 import { decodeKeying, type DecodeOptions, type KeyElement } from "../cw/decoder.js";
+import { VirtualHam } from "../ham/virtualHam.js";
 
 export type QsoState =
   | "IDLE"
@@ -39,8 +40,11 @@ const RETRY_KEYS: RetryKey[] = ["CALL", "RST", "COPY", "SIGNOFF"];
 
 export interface QsoMachineOptions {
   myCall: string;
-  hamCall: string;
+  /** The virtual HAM this machine is paired with (replaces the old hamCall string). */
+  ham: VirtualHam;
   db: DxccDatabase;
+  /** Reserved context field for the band frequency (MHz); not yet used. */
+  frequency?: number;
 }
 
 /**
@@ -56,13 +60,13 @@ export class QsoMachine {
   readonly ctx: QsoContext;
   hamOnline = true;
 
-  private readonly hamCall: string;
+  private readonly ham: VirtualHam;
   private readonly db: DxccDatabase;
   private lastReply: string | null = null;
   private lastRetryKey: RetryKey | null = null;
 
   constructor(opts: QsoMachineOptions) {
-    this.hamCall = opts.hamCall;
+    this.ham = opts.ham;
     this.db = opts.db;
     this.ctx = {
       myCall: opts.myCall,
@@ -118,8 +122,8 @@ export class QsoMachine {
   /** Virtual HAM answers the user's CQ (called after the 15s-less deterministic delay). */
   hamAnswerCq(): string {
     if (this.state !== "USER_CQ") return "";
-    const reply = `${this.ctx.myCall} DE ${this.hamCall} K`;
-    this.ctx.peerCall = this.hamCall;
+    const reply = `${this.ctx.myCall} DE ${this.ham.call} K`;
+    this.ctx.peerCall = this.ham.call;
     this.ctx.callsignsConfirmed = true;
     this.state = "EXCHANGE";
     this.lastReply = reply;
@@ -129,9 +133,9 @@ export class QsoMachine {
 
   /** Virtual HAM initiates a CQ. Returns the HAM's CQ text. */
   hamCq(): string {
-    this.ctx.peerCall = this.hamCall;
+    this.ctx.peerCall = this.ham.call;
     this.state = "PEER_CQ";
-    const reply = `CQ CQ CQ DE ${this.hamCall} ${this.hamCall} PSE K`;
+    const reply = `CQ CQ CQ DE ${this.ham.call} ${this.ham.call} PSE K`;
     this.lastReply = reply;
     this.lastRetryKey = null;
     return reply;
@@ -241,7 +245,7 @@ export class QsoMachine {
     if (p.rst) {
       this.ctx.rstTx = p.rst;
       const reply = `R UR RST ${p.rst} BK`;
-      this.ctx.rstRx = p.rst;
+      this.ctx.rstRx = this.ham.report;
       this.lastReply = reply;
       this.lastRetryKey = null;
       this.maybeSignoff();
@@ -275,12 +279,12 @@ export class QsoMachine {
 
   private hamExchangeReply(_p: ParsedMessage): string[] {
     // Deterministic HAM: acknowledge with R and offer its RST (BK signals the
-    // user may omit callsigns going forward). The 599 is the HAM's report of the
-    // user's signal; a later step varies it per virtual-HAM behaviour.
-    const reply = `R UR RST 599 BK`;
+    // user may omit callsigns going forward). The report is this HAM's RST for
+    // the user's signal (varies per virtual-HAM behaviour).
+    const reply = `R UR RST ${this.ham.report} BK`;
     this.lastReply = reply;
     this.lastRetryKey = null;
-    this.ctx.rstRx = "599";
+    this.ctx.rstRx = this.ham.report;
     this.maybeSignoff();
     return [reply];
   }
@@ -296,7 +300,7 @@ export class QsoMachine {
 
   private handleCopyError(): string {
     const failed = this.bumpRetry("CALL");
-    const reply = `QRZ? DE ${this.hamCall}`;
+    const reply = `QRZ? DE ${this.ham.call}`;
     this.lastReply = reply;
     this.lastRetryKey = "CALL";
     if (failed) this.fail();

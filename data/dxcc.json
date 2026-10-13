@@ -9,7 +9,8 @@
       "lon": 24.7,
       "prefixes": [
         "A2"
-      ]
+      ],
+      "continent": "AF"
     },
     "A3": {
       "dxcc": "A3",
@@ -17,7 +18,8 @@
       "lon": -175.2,
       "prefixes": [
         "A3"
-      ]
+      ],
+      "continent": "NA"
     },
     "A4": {
       "dxcc": "A4",
@@ -25,7 +27,8 @@
       "lon": 55.9,
       "prefixes": [
         "A4"
-      ]
+      ],
+      "continent": "AS"
     },
     "A5": {
       "dxcc": "A5",
@@ -33,7 +36,8 @@
       "lon": 90.4,
       "prefixes": [
         "A5"
-      ]
+      ],
+      "continent": "AS"
     },
     "A6": {
       "dxcc": "A6",
@@ -41,7 +45,8 @@
       "lon": 45.1,
       "prefixes": [
         "A6"
-      ]
+      ],
+      "continent": "AF"
     },
     "A7": {
       "dxcc": "A7",
@@ -49,7 +54,8 @@
       "lon": 51.2,
       "prefixes": [
         "A7"
-      ]
+      ],
+      "continent": "AF"
     },
     "A8": {
       "dxcc": "A8",
@@ -58,7 +64,8 @@
       "prefixes": [
         "A8",
         "EL"
-      ]
+      ],
+      "continent": "AF"
     },
     "A9": {
       "dxcc": "A9",
@@ -66,7 +73,8 @@
       "lon": 50.6,
       "prefixes": [
         "A9"
-      ]
+      ],
+      "continent": "AF"
     },
     "AA": {
       "dxcc": "AA",
@@ -81,7 +89,8 @@
         "AF",
         "AG",
         "W"
-      ]
+      ],
+      "continent": "NA"
     },
     "AH1": {
       "dxcc": "AH1",
@@ -98,7 +107,8 @@
         "AH7",
         "AH8",
         "AH9"
-      ]
+      ],
+      "continent": "NA"
     },
     "T2": {
       "dxcc": "T2",
@@ -106,7 +116,8 @@
       "lon": 179.2,
       "prefixes": [
         "T2"
-      ]
+      ],
+      "continent": "AS"
     },
     "T30": {
       "dxcc": "T30",
@@ -114,7 +125,8 @@
       "lon": 173.0,
       "prefixes": [
         "T30"
-      ]
+      ],
+      "continent": "AS"
     },
     "T31": {
       "dxcc": "T31",
@@ -122,7 +134,8 @@
       "lon": 173.0,
       "prefixes": [
         "T31"
-      ]
+      ],
+      "continent": "AS"
     },
     "T32": {
       "dxcc": "T32",
@@ -130,7 +143,8 @@
       "lon": 173.0,
       "prefixes": [
         "T32"
-      ]
+      ],
+      "continent": "AS"
     },
     "T33": {
       "dxcc": "T33",
@@ -138,7 +152,8 @@
       "lon": 173.0,
       "prefixes": [
         "T33"
-      ]
+      ],
+      "continent": "AS"
     },
     "T4": {
       "dxcc": "T4",
@@ -147,7 +162,8 @@
       "prefixes": [
         "CO",
         "T4"
-      ]
+      ],
+      "continent": "NA"
     },
     "T5": {
       "dxcc": "T5",
@@ -155,7 +171,8 @@
       "lon": -4.0,
       "prefixes": [
         "T5"
-      ]
+      ],
+      "continent": "AF"
     },
     "T6": {
       "dxcc": "T6",
@@ -164,7 +181,8 @@
       "prefixes": [
         "T6",
         "YA"
-      ]
+      ],
+      "continent": "AS"
     },
     "T7": {
       "dxcc": "T7",
@@ -172,7 +190,8 @@
       "lon": 12.5,
       "prefixes": [
         "T7"
-      ]
+      ],
+      "continent": "EU"
     },
     "T9": {
       "dxcc": "T9",
@@ -180,7 +199,8 @@
       "lon": 17.7,
       "prefixes": [
         "T9"
-      ]
+      ],
+      "continent": "EU"
     },
     "AI": {
       "dxcc": "AI",
@@ -191,7 +211,8 @@
         "AJ",
         "AK",
         "W"
-      ]
+      ],
+      "continent": "NA"
     },
     "AL": {
       "dxcc": "AL",
@@ -200,7 +221,8 @@
       "prefixes": [
         "AL",
         "KL"
-      ]
+      ],
+      "continent": "NA"
     },
     "AM": {
       "dxcc": "AM",
@@ -210,7 +232,8 @@
         "AM",
         "AN",
         "AO"
-      ]
+      ],
+      "continent": "EU"
     },
     "AP": {
       "dxcc": "AP",
@@ -219,7 +242,8 @@
       "prefixes": [
         "AP",
         "AR"
-      ]
+      ],
+      "continent": "AS"
     },
     "AT": {
       "dxcc": "AT",
@@ -228,7 +252,8 @@
       "prefixes": [
         "AT",
         "VU"
-      ]
+      ],
+      "continent": "AS"
     },
     "AX": {
       "dxcc": "AX",
@@ -236,7 +261,8 @@
       "lon": 133.8,
       "prefixes": [
         "AX"
-      ]
+      ],
+      "continent": "OC"
     },
     "AY": {
       "dxcc": "AY",
@@ -246,7 +272,8 @@
         "AY",
         "AZ",
         "LU"
-      ]
+      ],
+      "continent": "SA"
     },
     "BO": {
       "dxcc": "BO",
@@ -255,7 +282,8 @@
       "prefixes": [
         "BO",
         "BV"
-      ]
+      ],
+      "continent": "AS"
     },
     "BS": {
       "dxcc": "BS",
@@ -263,7 +291,8 @@
       "lon": 121.0,
       "prefixes": [
         "BS"
-      ]
+      ],
+      "continent": "AS"
     },
     "BV": {
       "dxcc": "BV",
@@ -271,7 +300,8 @@
       "lon": 121.0,
       "prefixes": [
         "BV"
-      ]
+      ],
+      "continent": "AS"
     },
     "BV9P": {
       "dxcc": "BV9P",
@@ -279,7 +309,8 @@
       "lon": 121.0,
       "prefixes": [
         "BV9P"
-      ]
+      ],
+      "continent": "AS"
     },
     "BV9S": {
       "dxcc": "BV9S",
@@ -288,7 +319,8 @@
       "prefixes": [
         "9M0",
         "BV9S"
-      ]
+      ],
+      "continent": "AS"
     },
     "BY": {
       "dxcc": "BY",
@@ -301,7 +333,8 @@
         "BT",
         "BY",
         "BZ"
-      ]
+      ],
+      "continent": "AS"
     },
     "C2": {
       "dxcc": "C2",
@@ -309,7 +342,8 @@
       "lon": 166.9,
       "prefixes": [
         "C2"
-      ]
+      ],
+      "continent": "AS"
     },
     "C3": {
       "dxcc": "C3",
@@ -317,7 +351,8 @@
       "lon": 1.6,
       "prefixes": [
         "C3"
-      ]
+      ],
+      "continent": "EU"
     },
     "C4": {
       "dxcc": "C4",
@@ -326,7 +361,8 @@
       "prefixes": [
         "5B",
         "C4"
-      ]
+      ],
+      "continent": "AF"
     },
     "C5": {
       "dxcc": "C5",
@@ -334,7 +370,8 @@
       "lon": -15.3,
       "prefixes": [
         "C5"
-      ]
+      ],
+      "continent": "AF"
     },
     "C6": {
       "dxcc": "C6",
@@ -342,7 +379,8 @@
       "lon": -77.4,
       "prefixes": [
         "C6"
-      ]
+      ],
+      "continent": "NA"
     },
     "C9": {
       "dxcc": "C9",
@@ -350,7 +388,8 @@
       "lon": 35.5,
       "prefixes": [
         "C9"
-      ]
+      ],
+      "continent": "AF"
     },
     "CE": {
       "dxcc": "CE",
@@ -358,7 +397,8 @@
       "lon": -71.5,
       "prefixes": [
         "CE"
-      ]
+      ],
+      "continent": "SA"
     },
     "CE0": {
       "dxcc": "CE0",
@@ -366,7 +406,8 @@
       "lon": -71.5,
       "prefixes": [
         "CE0"
-      ]
+      ],
+      "continent": "SA"
     },
     "TA": {
       "dxcc": "TA",
@@ -374,7 +415,8 @@
       "lon": 35.2,
       "prefixes": [
         "TA"
-      ]
+      ],
+      "continent": "AS"
     },
     "TD": {
       "dxcc": "TD",
@@ -383,7 +425,8 @@
       "prefixes": [
         "TD",
         "TG"
-      ]
+      ],
+      "continent": "NA"
     },
     "TE": {
       "dxcc": "TE",
@@ -392,7 +435,8 @@
       "prefixes": [
         "TE",
         "TI"
-      ]
+      ],
+      "continent": "NA"
     },
     "TF": {
       "dxcc": "TF",
@@ -400,7 +444,8 @@
       "lon": -19.0,
       "prefixes": [
         "TF"
-      ]
+      ],
+      "continent": "EU"
     },
     "TG": {
       "dxcc": "TG",
@@ -408,7 +453,8 @@
       "lon": -90.2,
       "prefixes": [
         "TG"
-      ]
+      ],
+      "continent": "NA"
     },
     "TI": {
       "dxcc": "TI",
@@ -416,7 +462,8 @@
       "lon": -83.8,
       "prefixes": [
         "TI"
-      ]
+      ],
+      "continent": "NA"
     },
     "TI9": {
       "dxcc": "TI9",
@@ -424,7 +471,8 @@
       "lon": 133.8,
       "prefixes": [
         "TI9"
-      ]
+      ],
+      "continent": "OC"
     },
     "TJ": {
       "dxcc": "TJ",
@@ -432,7 +480,8 @@
       "lon": 12.4,
       "prefixes": [
         "TJ"
-      ]
+      ],
+      "continent": "AF"
     },
     "TK": {
       "dxcc": "TK",
@@ -440,7 +489,8 @@
       "lon": 2.2,
       "prefixes": [
         "TK"
-      ]
+      ],
+      "continent": "EU"
     },
     "TL": {
       "dxcc": "TL",
@@ -448,7 +498,8 @@
       "lon": 20.9,
       "prefixes": [
         "TL"
-      ]
+      ],
+      "continent": "AF"
     },
     "TM": {
       "dxcc": "TM",
@@ -456,7 +507,8 @@
       "lon": 2.2,
       "prefixes": [
         "TM"
-      ]
+      ],
+      "continent": "EU"
     },
     "TN": {
       "dxcc": "TN",
@@ -464,7 +516,8 @@
       "lon": 15.8,
       "prefixes": [
         "TN"
-      ]
+      ],
+      "continent": "AF"
     },
     "TO": {
       "dxcc": "TO",
@@ -472,7 +525,8 @@
       "lon": 2.2,
       "prefixes": [
         "TO"
-      ]
+      ],
+      "continent": "EU"
     },
     "TP": {
       "dxcc": "TP",
@@ -481,7 +535,8 @@
       "prefixes": [
         "F",
         "TP"
-      ]
+      ],
+      "continent": "EU"
     },
     "TR": {
       "dxcc": "TR",
@@ -489,7 +544,8 @@
       "lon": 11.6,
       "prefixes": [
         "TR"
-      ]
+      ],
+      "continent": "AF"
     },
     "TT": {
       "dxcc": "TT",
@@ -497,7 +553,8 @@
       "lon": 18.7,
       "prefixes": [
         "TT"
-      ]
+      ],
+      "continent": "AF"
     },
     "TU": {
       "dxcc": "TU",
@@ -505,7 +562,8 @@
       "lon": -5.5,
       "prefixes": [
         "TU"
-      ]
+      ],
+      "continent": "AF"
     },
     "TX": {
       "dxcc": "TX",
@@ -513,7 +571,8 @@
       "lon": 2.2,
       "prefixes": [
         "TX"
-      ]
+      ],
+      "continent": "EU"
     },
     "TY": {
       "dxcc": "TY",
@@ -521,7 +580,8 @@
       "lon": 2.3,
       "prefixes": [
         "TY"
-      ]
+      ],
+      "continent": "AF"
     },
     "TZ": {
       "dxcc": "TZ",
@@ -529,7 +589,8 @@
       "lon": -4.0,
       "prefixes": [
         "TZ"
-      ]
+      ],
+      "continent": "AF"
     },
     "UA": {
       "dxcc": "UA",
@@ -543,7 +604,8 @@
         "UE3",
         "UE4",
         "UE6"
-      ]
+      ],
+      "continent": "AS"
     },
     "CF": {
       "dxcc": "CF",
@@ -557,7 +619,8 @@
         "CJ",
         "CK",
         "VE"
-      ]
+      ],
+      "continent": "NA"
     },
     "CL": {
       "dxcc": "CL",
@@ -567,7 +630,8 @@
         "CL",
         "CM",
         "CO"
-      ]
+      ],
+      "continent": "NA"
     },
     "CN": {
       "dxcc": "CN",
@@ -575,7 +639,8 @@
       "lon": -7.1,
       "prefixes": [
         "CN"
-      ]
+      ],
+      "continent": "AF"
     },
     "CO": {
       "dxcc": "CO",
@@ -583,7 +648,8 @@
       "lon": -77.8,
       "prefixes": [
         "CO"
-      ]
+      ],
+      "continent": "NA"
     },
     "CP": {
       "dxcc": "CP",
@@ -591,7 +657,8 @@
       "lon": -63.6,
       "prefixes": [
         "CP"
-      ]
+      ],
+      "continent": "SA"
     },
     "CT3": {
       "dxcc": "CT3",
@@ -602,7 +669,8 @@
         "CS3",
         "CT3",
         "CT9"
-      ]
+      ],
+      "continent": "EU"
     },
     "CU": {
       "dxcc": "CU",
@@ -610,7 +678,8 @@
       "lon": -8.2,
       "prefixes": [
         "CU"
-      ]
+      ],
+      "continent": "EU"
     },
     "CX": {
       "dxcc": "CX",
@@ -620,7 +689,8 @@
         "CV",
         "CW",
         "CX"
-      ]
+      ],
+      "continent": "SA"
     },
     "CY": {
       "dxcc": "CY",
@@ -630,7 +700,8 @@
         "CY",
         "CZ",
         "VE"
-      ]
+      ],
+      "continent": "NA"
     },
     "CY9": {
       "dxcc": "CY9",
@@ -638,7 +709,8 @@
       "lon": 69.0,
       "prefixes": [
         "CY9"
-      ]
+      ],
+      "continent": "AS"
     },
     "CY0": {
       "dxcc": "CY0",
@@ -646,7 +718,8 @@
       "lon": -106.3,
       "prefixes": [
         "CY0"
-      ]
+      ],
+      "continent": "NA"
     },
     "D2": {
       "dxcc": "D2",
@@ -655,7 +728,8 @@
       "prefixes": [
         "D2",
         "D3"
-      ]
+      ],
+      "continent": "AF"
     },
     "D4": {
       "dxcc": "D4",
@@ -663,7 +737,8 @@
       "lon": -24.0,
       "prefixes": [
         "D4"
-      ]
+      ],
+      "continent": "AS"
     },
     "D6": {
       "dxcc": "D6",
@@ -671,7 +746,8 @@
       "lon": 43.9,
       "prefixes": [
         "D6"
-      ]
+      ],
+      "continent": "AF"
     },
     "D7": {
       "dxcc": "D7",
@@ -680,7 +756,8 @@
       "prefixes": [
         "D7",
         "HL"
-      ]
+      ],
+      "continent": "AS"
     },
     "DL": {
       "dxcc": "DL",
@@ -695,7 +772,8 @@
         "DG",
         "DH",
         "DL"
-      ]
+      ],
+      "continent": "EU"
     },
     "DJ": {
       "dxcc": "DJ",
@@ -705,7 +783,8 @@
         "DJ",
         "DK",
         "DP"
-      ]
+      ],
+      "continent": "EU"
     },
     "DS": {
       "dxcc": "DS",
@@ -714,7 +793,8 @@
       "prefixes": [
         "DS",
         "HL"
-      ]
+      ],
+      "continent": "AS"
     },
     "DU": {
       "dxcc": "DU",
@@ -728,7 +808,8 @@
         "DX",
         "DY",
         "DZ"
-      ]
+      ],
+      "continent": "AS"
     },
     "E2": {
       "dxcc": "E2",
@@ -737,7 +818,8 @@
       "prefixes": [
         "E2",
         "HS"
-      ]
+      ],
+      "continent": "AS"
     },
     "E3": {
       "dxcc": "E3",
@@ -745,7 +827,8 @@
       "lon": 39.8,
       "prefixes": [
         "E3"
-      ]
+      ],
+      "continent": "AF"
     },
     "UA2": {
       "dxcc": "UA2",
@@ -757,7 +840,8 @@
         "UA2",
         "UE",
         "UE2"
-      ]
+      ],
+      "continent": "AS"
     },
     "UA9": {
       "dxcc": "UA9",
@@ -768,7 +852,8 @@
         "UA",
         "UA9",
         "UE"
-      ]
+      ],
+      "continent": "AS"
     },
     "UR": {
       "dxcc": "UR",
@@ -784,7 +869,8 @@
         "UX",
         "UY",
         "UZ"
-      ]
+      ],
+      "continent": "AS"
     },
     "V2": {
       "dxcc": "V2",
@@ -792,7 +878,8 @@
       "lon": -61.8,
       "prefixes": [
         "V2"
-      ]
+      ],
+      "continent": "NA"
     },
     "V3": {
       "dxcc": "V3",
@@ -800,7 +887,8 @@
       "lon": -88.5,
       "prefixes": [
         "V3"
-      ]
+      ],
+      "continent": "NA"
     },
     "V4": {
       "dxcc": "V4",
@@ -808,7 +896,8 @@
       "lon": -62.8,
       "prefixes": [
         "V4"
-      ]
+      ],
+      "continent": "NA"
     },
     "V5": {
       "dxcc": "V5",
@@ -816,7 +905,8 @@
       "lon": 18.5,
       "prefixes": [
         "V5"
-      ]
+      ],
+      "continent": "AF"
     },
     "V6": {
       "dxcc": "V6",
@@ -824,7 +914,8 @@
       "lon": 150.5,
       "prefixes": [
         "V6"
-      ]
+      ],
+      "continent": "AS"
     },
     "V7": {
       "dxcc": "V7",
@@ -832,7 +923,8 @@
       "lon": 171.0,
       "prefixes": [
         "V7"
-      ]
+      ],
+      "continent": "AS"
     },
     "V8": {
       "dxcc": "V8",
@@ -840,7 +932,8 @@
       "lon": 114.7,
       "prefixes": [
         "V8"
-      ]
+      ],
+      "continent": "AS"
     },
     "V9": {
       "dxcc": "V9",
@@ -849,7 +942,8 @@
       "prefixes": [
         "V9",
         "ZS"
-      ]
+      ],
+      "continent": "EU"
     },
     "VE": {
       "dxcc": "VE",
@@ -863,7 +957,8 @@
         "VE",
         "VF",
         "VG"
-      ]
+      ],
+      "continent": "NA"
     },
     "VE0": {
       "dxcc": "VE0",
@@ -871,7 +966,8 @@
       "lon": -106.3,
       "prefixes": [
         "VE0"
-      ]
+      ],
+      "continent": "NA"
     },
     "VK": {
       "dxcc": "VK",
@@ -880,7 +976,8 @@
       "prefixes": [
         "VI",
         "VK"
-      ]
+      ],
+      "continent": "OC"
     },
     "VK9C": {
       "dxcc": "VK9C",
@@ -888,7 +985,8 @@
       "lon": 133.8,
       "prefixes": [
         "VK9C"
-      ]
+      ],
+      "continent": "OC"
     },
     "VK9L": {
       "dxcc": "VK9L",
@@ -896,7 +994,8 @@
       "lon": 133.8,
       "prefixes": [
         "VK9L"
-      ]
+      ],
+      "continent": "OC"
     },
     "VK9M": {
       "dxcc": "VK9M",
@@ -904,7 +1003,8 @@
       "lon": 133.8,
       "prefixes": [
         "VK9M"
-      ]
+      ],
+      "continent": "OC"
     },
     "VK9N": {
       "dxcc": "VK9N",
@@ -912,7 +1012,8 @@
       "lon": 133.8,
       "prefixes": [
         "VK9N"
-      ]
+      ],
+      "continent": "OC"
     },
     "VK9W": {
       "dxcc": "VK9W",
@@ -920,7 +1021,8 @@
       "lon": 133.8,
       "prefixes": [
         "VK9W"
-      ]
+      ],
+      "continent": "OC"
     },
     "VK9X": {
       "dxcc": "VK9X",
@@ -928,7 +1030,8 @@
       "lon": 133.8,
       "prefixes": [
         "VK9X"
-      ]
+      ],
+      "continent": "OC"
     },
     "VK0": {
       "dxcc": "VK0",
@@ -936,7 +1039,8 @@
       "lon": 133.8,
       "prefixes": [
         "VK0"
-      ]
+      ],
+      "continent": "OC"
     },
     "E4": {
       "dxcc": "E4",
@@ -944,7 +1048,8 @@
       "lon": 35.2,
       "prefixes": [
         "E4"
-      ]
+      ],
+      "continent": "AS"
     },
     "EA": {
       "dxcc": "EA",
@@ -952,7 +1057,8 @@
       "lon": -3.7,
       "prefixes": [
         "EA"
-      ]
+      ],
+      "continent": "EU"
     },
     "EA6": {
       "dxcc": "EA6",
@@ -961,7 +1067,8 @@
       "prefixes": [
         "EA6",
         "EB6"
-      ]
+      ],
+      "continent": "EU"
     },
     "EA8": {
       "dxcc": "EA8",
@@ -970,7 +1077,8 @@
       "prefixes": [
         "EA8",
         "EB8"
-      ]
+      ],
+      "continent": "EU"
     },
     "EA9": {
       "dxcc": "EA9",
@@ -979,7 +1087,8 @@
       "prefixes": [
         "EA9",
         "EB9"
-      ]
+      ],
+      "continent": "EU"
     },
     "EI": {
       "dxcc": "EI",
@@ -988,7 +1097,8 @@
       "prefixes": [
         "EI",
         "EJ"
-      ]
+      ],
+      "continent": "EU"
     },
     "EK": {
       "dxcc": "EK",
@@ -996,7 +1106,8 @@
       "lon": 45.0,
       "prefixes": [
         "EK"
-      ]
+      ],
+      "continent": "AS"
     },
     "EL": {
       "dxcc": "EL",
@@ -1004,7 +1115,8 @@
       "lon": -9.4,
       "prefixes": [
         "EL"
-      ]
+      ],
+      "continent": "AF"
     },
     "EM": {
       "dxcc": "EM",
@@ -1015,7 +1127,8 @@
         "EN",
         "EO",
         "UR"
-      ]
+      ],
+      "continent": "AS"
     },
     "EP": {
       "dxcc": "EP",
@@ -1023,7 +1136,8 @@
       "lon": 53.7,
       "prefixes": [
         "EP"
-      ]
+      ],
+      "continent": "AS"
     },
     "ER": {
       "dxcc": "ER",
@@ -1031,7 +1145,8 @@
       "lon": 28.4,
       "prefixes": [
         "ER"
-      ]
+      ],
+      "continent": "EU"
     },
     "ES": {
       "dxcc": "ES",
@@ -1039,7 +1154,8 @@
       "lon": 25.0,
       "prefixes": [
         "ES"
-      ]
+      ],
+      "continent": "EU"
     },
     "ET": {
       "dxcc": "ET",
@@ -1047,7 +1163,8 @@
       "lon": 40.5,
       "prefixes": [
         "ET"
-      ]
+      ],
+      "continent": "AF"
     },
     "EX": {
       "dxcc": "EX",
@@ -1055,7 +1172,8 @@
       "lon": 74.8,
       "prefixes": [
         "EX"
-      ]
+      ],
+      "continent": "AS"
     },
     "EY": {
       "dxcc": "EY",
@@ -1063,7 +1181,8 @@
       "lon": 71.3,
       "prefixes": [
         "EY"
-      ]
+      ],
+      "continent": "AS"
     },
     "EZ": {
       "dxcc": "EZ",
@@ -1071,7 +1190,8 @@
       "lon": 59.6,
       "prefixes": [
         "EZ"
-      ]
+      ],
+      "continent": "AS"
     },
     "F": {
       "dxcc": "F",
@@ -1079,7 +1199,8 @@
       "lon": 2.2,
       "prefixes": [
         "F"
-      ]
+      ],
+      "continent": "EU"
     },
     "FG": {
       "dxcc": "FG",
@@ -1087,7 +1208,8 @@
       "lon": -61.6,
       "prefixes": [
         "FG"
-      ]
+      ],
+      "continent": "NA"
     },
     "FH": {
       "dxcc": "FH",
@@ -1095,7 +1217,8 @@
       "lon": 45.2,
       "prefixes": [
         "FH"
-      ]
+      ],
+      "continent": "AF"
     },
     "FJ": {
       "dxcc": "FJ",
@@ -1104,7 +1227,8 @@
       "prefixes": [
         "FJ",
         "FS"
-      ]
+      ],
+      "continent": "NA"
     },
     "FK": {
       "dxcc": "FK",
@@ -1112,7 +1236,8 @@
       "lon": 165.6,
       "prefixes": [
         "FK"
-      ]
+      ],
+      "continent": "OC"
     },
     "VO1": {
       "dxcc": "VO1",
@@ -1125,7 +1250,8 @@
         "VO5",
         "VO7",
         "VO9"
-      ]
+      ],
+      "continent": "NA"
     },
     "VO2": {
       "dxcc": "VO2",
@@ -1138,7 +1264,8 @@
         "VO4",
         "VO6",
         "VO8"
-      ]
+      ],
+      "continent": "NA"
     },
     "VP2E": {
       "dxcc": "VP2E",
@@ -1146,7 +1273,8 @@
       "lon": -63.1,
       "prefixes": [
         "VP2E"
-      ]
+      ],
+      "continent": "NA"
     },
     "VP2M": {
       "dxcc": "VP2M",
@@ -1154,7 +1282,8 @@
       "lon": -62.2,
       "prefixes": [
         "VP2M"
-      ]
+      ],
+      "continent": "NA"
     },
     "VP2V": {
       "dxcc": "VP2V",
@@ -1162,7 +1291,8 @@
       "lon": -64.6,
       "prefixes": [
         "VP2V"
-      ]
+      ],
+      "continent": "NA"
     },
     "VP5": {
       "dxcc": "VP5",
@@ -1170,7 +1300,8 @@
       "lon": -71.8,
       "prefixes": [
         "VP5"
-      ]
+      ],
+      "continent": "NA"
     },
     "VP6": {
       "dxcc": "VP6",
@@ -1178,7 +1309,8 @@
       "lon": -130.1,
       "prefixes": [
         "VP6"
-      ]
+      ],
+      "continent": "NA"
     },
     "VP8": {
       "dxcc": "VP8",
@@ -1192,7 +1324,8 @@
         "ED0",
         "L",
         "VP8"
-      ]
+      ],
+      "continent": "AN"
     },
     "HF0": {
       "dxcc": "HF0",
@@ -1201,7 +1334,8 @@
       "prefixes": [
         "HF0",
         "HL5"
-      ]
+      ],
+      "continent": "AN"
     },
     "VP9": {
       "dxcc": "VP9",
@@ -1209,7 +1343,8 @@
       "lon": -64.8,
       "prefixes": [
         "VP9"
-      ]
+      ],
+      "continent": "NA"
     },
     "VQ9": {
       "dxcc": "VQ9",
@@ -1217,7 +1352,8 @@
       "lon": 72.4,
       "prefixes": [
         "VQ9"
-      ]
+      ],
+      "continent": "AS"
     },
     "VR2": {
       "dxcc": "VR2",
@@ -1225,7 +1361,8 @@
       "lon": 114.2,
       "prefixes": [
         "VR2"
-      ]
+      ],
+      "continent": "AS"
     },
     "VU": {
       "dxcc": "VU",
@@ -1233,7 +1370,8 @@
       "lon": 78.7,
       "prefixes": [
         "VU"
-      ]
+      ],
+      "continent": "AS"
     },
     "FM": {
       "dxcc": "FM",
@@ -1241,7 +1379,8 @@
       "lon": -61.0,
       "prefixes": [
         "FM"
-      ]
+      ],
+      "continent": "NA"
     },
     "FO": {
       "dxcc": "FO",
@@ -1249,7 +1388,8 @@
       "lon": -145.0,
       "prefixes": [
         "FO"
-      ]
+      ],
+      "continent": "NA"
     },
     "FO8X": {
       "dxcc": "FO8X",
@@ -1257,7 +1397,8 @@
       "lon": 2.2,
       "prefixes": [
         "FO8X"
-      ]
+      ],
+      "continent": "EU"
     },
     "FP": {
       "dxcc": "FP",
@@ -1265,7 +1406,8 @@
       "lon": -56.3,
       "prefixes": [
         "FP"
-      ]
+      ],
+      "continent": "NA"
     },
     "FR": {
       "dxcc": "FR",
@@ -1273,7 +1415,8 @@
       "lon": 55.5,
       "prefixes": [
         "FR"
-      ]
+      ],
+      "continent": "AS"
     },
     "FS": {
       "dxcc": "FS",
@@ -1281,7 +1424,8 @@
       "lon": -63.1,
       "prefixes": [
         "FS"
-      ]
+      ],
+      "continent": "NA"
     },
     "FW": {
       "dxcc": "FW",
@@ -1289,7 +1433,8 @@
       "lon": -177.2,
       "prefixes": [
         "FW"
-      ]
+      ],
+      "continent": "NA"
     },
     "FY": {
       "dxcc": "FY",
@@ -1297,7 +1442,8 @@
       "lon": -53.0,
       "prefixes": [
         "FY"
-      ]
+      ],
+      "continent": "SA"
     },
     "G": {
       "dxcc": "G",
@@ -1306,7 +1452,8 @@
       "prefixes": [
         "G",
         "GX"
-      ]
+      ],
+      "continent": "EU"
     },
     "GB": {
       "dxcc": "GB",
@@ -1319,7 +1466,8 @@
         "GI",
         "GJ",
         "GM"
-      ]
+      ],
+      "continent": "EU"
     },
     "GD": {
       "dxcc": "GD",
@@ -1328,7 +1476,8 @@
       "prefixes": [
         "GD",
         "GT"
-      ]
+      ],
+      "continent": "EU"
     },
     "GI": {
       "dxcc": "GI",
@@ -1337,7 +1486,8 @@
       "prefixes": [
         "GI",
         "GN"
-      ]
+      ],
+      "continent": "EU"
     },
     "GJ": {
       "dxcc": "GJ",
@@ -1346,7 +1496,8 @@
       "prefixes": [
         "GH",
         "GJ"
-      ]
+      ],
+      "continent": "EU"
     },
     "GM": {
       "dxcc": "GM",
@@ -1355,7 +1506,8 @@
       "prefixes": [
         "GM",
         "GS"
-      ]
+      ],
+      "continent": "EU"
     },
     "VX": {
       "dxcc": "VX",
@@ -1365,7 +1517,8 @@
         "VE",
         "VX",
         "VY"
-      ]
+      ],
+      "continent": "NA"
     },
     "VY1": {
       "dxcc": "VY1",
@@ -1374,7 +1527,8 @@
       "prefixes": [
         "VE",
         "VY1"
-      ]
+      ],
+      "continent": "NA"
     },
     "VY2": {
       "dxcc": "VY2",
@@ -1383,7 +1537,8 @@
       "prefixes": [
         "VE",
         "VY2"
-      ]
+      ],
+      "continent": "NA"
     },
     "W": {
       "dxcc": "W",
@@ -1401,7 +1556,8 @@
         "WI",
         "WJ",
         "WK"
-      ]
+      ],
+      "continent": "NA"
     },
     "WH1": {
       "dxcc": "WH1",
@@ -1419,7 +1575,8 @@
         "WH7",
         "WH8",
         "WH9"
-      ]
+      ],
+      "continent": "NA"
     },
     "WL": {
       "dxcc": "WL",
@@ -1428,7 +1585,8 @@
       "prefixes": [
         "KL",
         "WL"
-      ]
+      ],
+      "continent": "NA"
     },
     "WP1": {
       "dxcc": "WP1",
@@ -1441,7 +1599,8 @@
         "WP3",
         "WP4",
         "WP5"
-      ]
+      ],
+      "continent": "NA"
     },
     "XE": {
       "dxcc": "XE",
@@ -1455,7 +1614,8 @@
         "XF",
         "XG",
         "XH"
-      ]
+      ],
+      "continent": "NA"
     },
     "XF4": {
       "dxcc": "XF4",
@@ -1463,7 +1623,8 @@
       "lon": -102.5,
       "prefixes": [
         "XF4"
-      ]
+      ],
+      "continent": "NA"
     },
     "XJ": {
       "dxcc": "XJ",
@@ -1477,7 +1638,8 @@
         "XM",
         "XN",
         "XO"
-      ]
+      ],
+      "continent": "NA"
     },
     "XQ": {
       "dxcc": "XQ",
@@ -1489,7 +1651,8 @@
         "CE9",
         "XQ",
         "XR"
-      ]
+      ],
+      "continent": "SA"
     },
     "XT": {
       "dxcc": "XT",
@@ -1497,7 +1660,8 @@
       "lon": -1.6,
       "prefixes": [
         "XT"
-      ]
+      ],
+      "continent": "AF"
     },
     "XU": {
       "dxcc": "XU",
@@ -1505,7 +1669,8 @@
       "lon": 104.9,
       "prefixes": [
         "XU"
-      ]
+      ],
+      "continent": "AS"
     },
     "XV": {
       "dxcc": "XV",
@@ -1514,7 +1679,8 @@
       "prefixes": [
         "3W",
         "XV"
-      ]
+      ],
+      "continent": "AS"
     },
     "XW": {
       "dxcc": "XW",
@@ -1522,7 +1688,8 @@
       "lon": 102.5,
       "prefixes": [
         "XW"
-      ]
+      ],
+      "continent": "AS"
     },
     "XX3": {
       "dxcc": "XX3",
@@ -1531,7 +1698,8 @@
       "prefixes": [
         "CT3",
         "XX3"
-      ]
+      ],
+      "continent": "EU"
     },
     "XX9": {
       "dxcc": "XX9",
@@ -1539,7 +1707,8 @@
       "lon": 113.5,
       "prefixes": [
         "XX9"
-      ]
+      ],
+      "continent": "AS"
     },
     "XZ": {
       "dxcc": "XZ",
@@ -1548,7 +1717,8 @@
       "prefixes": [
         "XY",
         "XZ"
-      ]
+      ],
+      "continent": "AS"
     },
     "XZ5": {
       "dxcc": "XZ5",
@@ -1558,7 +1728,8 @@
         "XZ",
         "XZ5",
         "XZ9"
-      ]
+      ],
+      "continent": "AS"
     },
     "YA": {
       "dxcc": "YA",
@@ -1566,7 +1737,8 @@
       "lon": 67.7,
       "prefixes": [
         "YA"
-      ]
+      ],
+      "continent": "AS"
     },
     "YBYC": {
       "dxcc": "YBYC",
@@ -1578,7 +1750,8 @@
         "YF",
         "YG",
         "YH"
-      ]
+      ],
+      "continent": "AS"
     },
     "GU": {
       "dxcc": "GU",
@@ -1587,7 +1760,8 @@
       "prefixes": [
         "GP",
         "GU"
-      ]
+      ],
+      "continent": "EU"
     },
     "GW": {
       "dxcc": "GW",
@@ -1596,7 +1770,8 @@
       "prefixes": [
         "GC",
         "GW"
-      ]
+      ],
+      "continent": "EU"
     },
     "H2": {
       "dxcc": "H2",
@@ -1605,7 +1780,8 @@
       "prefixes": [
         "5B",
         "H2"
-      ]
+      ],
+      "continent": "AF"
     },
     "H3": {
       "dxcc": "H3",
@@ -1614,7 +1790,8 @@
       "prefixes": [
         "H3",
         "HP"
-      ]
+      ],
+      "continent": "SA"
     },
     "H4": {
       "dxcc": "H4",
@@ -1622,7 +1799,8 @@
       "lon": 160.0,
       "prefixes": [
         "H4"
-      ]
+      ],
+      "continent": "AS"
     },
     "H40": {
       "dxcc": "H40",
@@ -1630,7 +1808,8 @@
       "lon": 160.0,
       "prefixes": [
         "H40"
-      ]
+      ],
+      "continent": "AS"
     },
     "H5": {
       "dxcc": "H5",
@@ -1639,7 +1818,8 @@
       "prefixes": [
         "H5",
         "ZS"
-      ]
+      ],
+      "continent": "AF"
     },
     "H6": {
       "dxcc": "H6",
@@ -1649,7 +1829,8 @@
         "H6",
         "H7",
         "YN"
-      ]
+      ],
+      "continent": "NA"
     },
     "H8": {
       "dxcc": "H8",
@@ -1659,7 +1840,8 @@
         "H8",
         "H9",
         "HP"
-      ]
+      ],
+      "continent": "SA"
     },
     "HA": {
       "dxcc": "HA",
@@ -1667,7 +1849,8 @@
       "lon": 19.5,
       "prefixes": [
         "HA"
-      ]
+      ],
+      "continent": "EU"
     },
     "HB": {
       "dxcc": "HB",
@@ -1675,7 +1858,8 @@
       "lon": 8.2,
       "prefixes": [
         "HB"
-      ]
+      ],
+      "continent": "EU"
     },
     "HB0": {
       "dxcc": "HB0",
@@ -1683,7 +1867,8 @@
       "lon": 9.6,
       "prefixes": [
         "HB0"
-      ]
+      ],
+      "continent": "EU"
     },
     "HE": {
       "dxcc": "HE",
@@ -1692,7 +1877,8 @@
       "prefixes": [
         "HB",
         "HE"
-      ]
+      ],
+      "continent": "EU"
     },
     "HF": {
       "dxcc": "HF",
@@ -1701,7 +1887,8 @@
       "prefixes": [
         "HF",
         "SP"
-      ]
+      ],
+      "continent": "EU"
     },
     "HG": {
       "dxcc": "HG",
@@ -1710,7 +1897,8 @@
       "prefixes": [
         "HA",
         "HG"
-      ]
+      ],
+      "continent": "EU"
     },
     "HH": {
       "dxcc": "HH",
@@ -1718,7 +1906,8 @@
       "lon": -72.3,
       "prefixes": [
         "HH"
-      ]
+      ],
+      "continent": "NA"
     },
     "HI": {
       "dxcc": "HI",
@@ -1726,7 +1915,8 @@
       "lon": -61.4,
       "prefixes": [
         "HI"
-      ]
+      ],
+      "continent": "NA"
     },
     "HK": {
       "dxcc": "HK",
@@ -1735,7 +1925,8 @@
       "prefixes": [
         "HJ",
         "HK"
-      ]
+      ],
+      "continent": "SA"
     },
     "HK0": {
       "dxcc": "HK0",
@@ -1744,7 +1935,8 @@
       "prefixes": [
         "HJ0",
         "HK0"
-      ]
+      ],
+      "continent": "SA"
     },
     "HL": {
       "dxcc": "HL",
@@ -1752,7 +1944,8 @@
       "lon": 127.8,
       "prefixes": [
         "HL"
-      ]
+      ],
+      "continent": "AS"
     },
     "HP": {
       "dxcc": "HP",
@@ -1761,7 +1954,8 @@
       "prefixes": [
         "HO",
         "HP"
-      ]
+      ],
+      "continent": "SA"
     },
     "YI": {
       "dxcc": "YI",
@@ -1769,7 +1963,8 @@
       "lon": 43.7,
       "prefixes": [
         "YI"
-      ]
+      ],
+      "continent": "AS"
     },
     "YJ": {
       "dxcc": "YJ",
@@ -1777,7 +1972,8 @@
       "lon": 166.9,
       "prefixes": [
         "YJ"
-      ]
+      ],
+      "continent": "OC"
     },
     "YK": {
       "dxcc": "YK",
@@ -1785,7 +1981,8 @@
       "lon": 39.0,
       "prefixes": [
         "YK"
-      ]
+      ],
+      "continent": "AS"
     },
     "YL": {
       "dxcc": "YL",
@@ -1793,7 +1990,8 @@
       "lon": 24.6,
       "prefixes": [
         "YL"
-      ]
+      ],
+      "continent": "EU"
     },
     "YM": {
       "dxcc": "YM",
@@ -1801,7 +1999,8 @@
       "lon": 35.2,
       "prefixes": [
         "YM"
-      ]
+      ],
+      "continent": "AS"
     },
     "YN": {
       "dxcc": "YN",
@@ -1809,7 +2008,8 @@
       "lon": -85.2,
       "prefixes": [
         "YN"
-      ]
+      ],
+      "continent": "NA"
     },
     "YO": {
       "dxcc": "YO",
@@ -1820,7 +2020,8 @@
         "YP",
         "YQ",
         "YR"
-      ]
+      ],
+      "continent": "EU"
     },
     "YS": {
       "dxcc": "YS",
@@ -1828,7 +2029,8 @@
       "lon": -88.9,
       "prefixes": [
         "YS"
-      ]
+      ],
+      "continent": "NA"
     },
     "YU": {
       "dxcc": "YU",
@@ -1837,7 +2039,8 @@
       "prefixes": [
         "YT",
         "YU"
-      ]
+      ],
+      "continent": "EU"
     },
     "YV": {
       "dxcc": "YV",
@@ -1848,7 +2051,8 @@
         "YW",
         "YX",
         "YY"
-      ]
+      ],
+      "continent": "SA"
     },
     "YV0": {
       "dxcc": "YV0",
@@ -1856,7 +2060,8 @@
       "lon": -66.6,
       "prefixes": [
         "YV0"
-      ]
+      ],
+      "continent": "SA"
     },
     "YZ": {
       "dxcc": "YZ",
@@ -1865,7 +2070,8 @@
       "prefixes": [
         "YU",
         "YZ"
-      ]
+      ],
+      "continent": "EU"
     },
     "Z2": {
       "dxcc": "Z2",
@@ -1873,7 +2079,8 @@
       "lon": 29.2,
       "prefixes": [
         "Z2"
-      ]
+      ],
+      "continent": "AF"
     },
     "Z3": {
       "dxcc": "Z3",
@@ -1881,7 +2088,8 @@
       "lon": 21.7,
       "prefixes": [
         "Z3"
-      ]
+      ],
+      "continent": "EU"
     },
     "ZA": {
       "dxcc": "ZA",
@@ -1889,7 +2097,8 @@
       "lon": 20.2,
       "prefixes": [
         "ZA"
-      ]
+      ],
+      "continent": "EU"
     },
     "ZB": {
       "dxcc": "ZB",
@@ -1898,7 +2107,8 @@
       "prefixes": [
         "ZB",
         "ZG"
-      ]
+      ],
+      "continent": "EU"
     },
     "ZC": {
       "dxcc": "ZC",
@@ -1906,7 +2116,8 @@
       "lon": 33.4,
       "prefixes": [
         "ZC"
-      ]
+      ],
+      "continent": "AF"
     },
     "ZD7": {
       "dxcc": "ZD7",
@@ -1914,7 +2125,8 @@
       "lon": -5.77,
       "prefixes": [
         "ZD7"
-      ]
+      ],
+      "continent": "AF"
     },
     "ZD8": {
       "dxcc": "ZD8",
@@ -1922,7 +2134,8 @@
       "lon": -5.77,
       "prefixes": [
         "ZD8"
-      ]
+      ],
+      "continent": "AF"
     },
     "ZD9": {
       "dxcc": "ZD9",
@@ -1930,7 +2143,8 @@
       "lon": -5.77,
       "prefixes": [
         "ZD9"
-      ]
+      ],
+      "continent": "AF"
     },
     "ZF": {
       "dxcc": "ZF",
@@ -1938,7 +2152,8 @@
       "lon": -81.2,
       "prefixes": [
         "ZF"
-      ]
+      ],
+      "continent": "NA"
     },
     "ZK1": {
       "dxcc": "ZK1",
@@ -1946,7 +2161,8 @@
       "lon": -159.8,
       "prefixes": [
         "ZK1"
-      ]
+      ],
+      "continent": "NA"
     },
     "HR": {
       "dxcc": "HR",
@@ -1955,7 +2171,8 @@
       "prefixes": [
         "HQ",
         "HR"
-      ]
+      ],
+      "continent": "NA"
     },
     "HS": {
       "dxcc": "HS",
@@ -1963,7 +2180,8 @@
       "lon": 100.9,
       "prefixes": [
         "HS"
-      ]
+      ],
+      "continent": "AS"
     },
     "HT": {
       "dxcc": "HT",
@@ -1972,7 +2190,8 @@
       "prefixes": [
         "HT",
         "YN"
-      ]
+      ],
+      "continent": "NA"
     },
     "HU": {
       "dxcc": "HU",
@@ -1981,7 +2200,8 @@
       "prefixes": [
         "HU",
         "YS"
-      ]
+      ],
+      "continent": "NA"
     },
     "HV": {
       "dxcc": "HV",
@@ -1989,7 +2209,8 @@
       "lon": 12.5,
       "prefixes": [
         "HV"
-      ]
+      ],
+      "continent": "EU"
     },
     "HZ": {
       "dxcc": "HZ",
@@ -1997,7 +2218,8 @@
       "lon": 45.1,
       "prefixes": [
         "HZ"
-      ]
+      ],
+      "continent": "AF"
     },
     "I": {
       "dxcc": "I",
@@ -2017,7 +2239,8 @@
         "IL",
         "IN",
         "IP"
-      ]
+      ],
+      "continent": "EU"
     },
     "IS0": {
       "dxcc": "IS0",
@@ -2026,7 +2249,8 @@
       "prefixes": [
         "IM0",
         "IS0"
-      ]
+      ],
+      "continent": "EU"
     },
     "J2": {
       "dxcc": "J2",
@@ -2034,7 +2258,8 @@
       "lon": 42.6,
       "prefixes": [
         "J2"
-      ]
+      ],
+      "continent": "AF"
     },
     "J3": {
       "dxcc": "J3",
@@ -2042,7 +2267,8 @@
       "lon": -61.7,
       "prefixes": [
         "J3"
-      ]
+      ],
+      "continent": "SA"
     },
     "J4": {
       "dxcc": "J4",
@@ -2051,7 +2277,8 @@
       "prefixes": [
         "J4",
         "SV"
-      ]
+      ],
+      "continent": "EU"
     },
     "J5": {
       "dxcc": "J5",
@@ -2059,7 +2286,8 @@
       "lon": -9.7,
       "prefixes": [
         "J5"
-      ]
+      ],
+      "continent": "AF"
     },
     "J6": {
       "dxcc": "J6",
@@ -2067,7 +2295,8 @@
       "lon": -61.0,
       "prefixes": [
         "J6"
-      ]
+      ],
+      "continent": "NA"
     },
     "J7": {
       "dxcc": "J7",
@@ -2075,7 +2304,8 @@
       "lon": -61.4,
       "prefixes": [
         "J7"
-      ]
+      ],
+      "continent": "NA"
     },
     "J8": {
       "dxcc": "J8",
@@ -2083,7 +2313,8 @@
       "lon": -61.2,
       "prefixes": [
         "J8"
-      ]
+      ],
+      "continent": "NA"
     },
     "JA": {
       "dxcc": "JA",
@@ -2106,7 +2337,8 @@
         "JQ",
         "JR",
         "JS"
-      ]
+      ],
+      "continent": "AS"
     },
     "JD": {
       "dxcc": "JD",
@@ -2115,7 +2347,8 @@
       "prefixes": [
         "7J",
         "JD"
-      ]
+      ],
+      "continent": "AS"
     },
     "JT": {
       "dxcc": "JT",
@@ -2125,7 +2358,8 @@
         "JT",
         "JU",
         "JV"
-      ]
+      ],
+      "continent": "AS"
     },
     "JW": {
       "dxcc": "JW",
@@ -2133,7 +2367,8 @@
       "lon": 20.0,
       "prefixes": [
         "JW"
-      ]
+      ],
+      "continent": "EU"
     },
     "JX": {
       "dxcc": "JX",
@@ -2141,7 +2376,8 @@
       "lon": 20.0,
       "prefixes": [
         "JX"
-      ]
+      ],
+      "continent": "EU"
     },
     "JY": {
       "dxcc": "JY",
@@ -2149,7 +2385,8 @@
       "lon": 36.5,
       "prefixes": [
         "JY"
-      ]
+      ],
+      "continent": "AS"
     },
     "ZK2": {
       "dxcc": "ZK2",
@@ -2158,7 +2395,8 @@
       "prefixes": [
         "ZK2",
         "ZK9"
-      ]
+      ],
+      "continent": "NA"
     },
     "ZK3": {
       "dxcc": "ZK3",
@@ -2166,7 +2404,8 @@
       "lon": -172.0,
       "prefixes": [
         "ZK3"
-      ]
+      ],
+      "continent": "NA"
     },
     "ZL": {
       "dxcc": "ZL",
@@ -2174,7 +2413,8 @@
       "lon": 19.9,
       "prefixes": [
         "ZL"
-      ]
+      ],
+      "continent": "EU"
     },
     "ZL7": {
       "dxcc": "ZL7",
@@ -2182,7 +2422,8 @@
       "lon": 174.0,
       "prefixes": [
         "ZL7"
-      ]
+      ],
+      "continent": "OC"
     },
     "ZL8": {
       "dxcc": "ZL8",
@@ -2190,7 +2431,8 @@
       "lon": 174.0,
       "prefixes": [
         "ZL8"
-      ]
+      ],
+      "continent": "OC"
     },
     "ZL9": {
       "dxcc": "ZL9",
@@ -2198,7 +2440,8 @@
       "lon": 174.0,
       "prefixes": [
         "ZL9"
-      ]
+      ],
+      "continent": "OC"
     },
     "ZM": {
       "dxcc": "ZM",
@@ -2208,7 +2451,8 @@
         "ZL",
         "ZL7",
         "ZM"
-      ]
+      ],
+      "continent": "EU"
     },
     "ZP": {
       "dxcc": "ZP",
@@ -2216,7 +2460,8 @@
       "lon": -58.4,
       "prefixes": [
         "ZP"
-      ]
+      ],
+      "continent": "SA"
     },
     "ZS": {
       "dxcc": "ZS",
@@ -2226,7 +2471,8 @@
         "ZR",
         "ZS",
         "ZU"
-      ]
+      ],
+      "continent": "AF"
     },
     "ZS8": {
       "dxcc": "ZS8",
@@ -2234,7 +2480,8 @@
       "lon": 22.9,
       "prefixes": [
         "ZS8"
-      ]
+      ],
+      "continent": "AF"
     },
     "ZV": {
       "dxcc": "ZV",
@@ -2248,7 +2495,8 @@
         "ZX",
         "ZY",
         "ZZ"
-      ]
+      ],
+      "continent": "SA"
     },
     "1A0": {
       "dxcc": "1A0",
@@ -2256,7 +2504,8 @@
       "lon": 12.8,
       "prefixes": [
         "1A0"
-      ]
+      ],
+      "continent": "EU"
     },
     "1B": {
       "dxcc": "1B",
@@ -2264,7 +2513,8 @@
       "lon": 33.4,
       "prefixes": [
         "1B"
-      ]
+      ],
+      "continent": "AF"
     },
     "1C": {
       "dxcc": "1C",
@@ -2272,7 +2522,8 @@
       "lon": 105.3,
       "prefixes": [
         "1C"
-      ]
+      ],
+      "continent": "AS"
     },
     "1P": {
       "dxcc": "1P",
@@ -2280,7 +2531,8 @@
       "lon": 12.8,
       "prefixes": [
         "1P"
-      ]
+      ],
+      "continent": "EU"
     },
     "1S": {
       "dxcc": "1S",
@@ -2289,7 +2541,8 @@
       "prefixes": [
         "1S",
         "9M0"
-      ]
+      ],
+      "continent": "AS"
     },
     "1Z": {
       "dxcc": "1Z",
@@ -2297,7 +2550,8 @@
       "lon": 95.9,
       "prefixes": [
         "1Z"
-      ]
+      ],
+      "continent": "AS"
     },
     "2D": {
       "dxcc": "2D",
@@ -2306,7 +2560,8 @@
       "prefixes": [
         "2D",
         "GD"
-      ]
+      ],
+      "continent": "EU"
     },
     "2E": {
       "dxcc": "2E",
@@ -2315,7 +2570,8 @@
       "prefixes": [
         "2E",
         "G"
-      ]
+      ],
+      "continent": "EU"
     },
     "2I": {
       "dxcc": "2I",
@@ -2324,7 +2580,8 @@
       "prefixes": [
         "2I",
         "GI"
-      ]
+      ],
+      "continent": "EU"
     },
     "2J": {
       "dxcc": "2J",
@@ -2333,7 +2590,8 @@
       "prefixes": [
         "2J",
         "GJ"
-      ]
+      ],
+      "continent": "EU"
     },
     "2M": {
       "dxcc": "2M",
@@ -2342,7 +2600,8 @@
       "prefixes": [
         "2M",
         "GM"
-      ]
+      ],
+      "continent": "EU"
     },
     "K": {
       "dxcc": "K",
@@ -2378,7 +2637,8 @@
         "KZ",
         "US",
         "W"
-      ]
+      ],
+      "continent": "NA"
     },
     "KC6": {
       "dxcc": "KC6",
@@ -2386,7 +2646,8 @@
       "lon": 134.6,
       "prefixes": [
         "KC6"
-      ]
+      ],
+      "continent": "AS"
     },
     "KG4": {
       "dxcc": "KG4",
@@ -2394,7 +2655,8 @@
       "lon": -98.6,
       "prefixes": [
         "KG4"
-      ]
+      ],
+      "continent": "NA"
     },
     "KG6": {
       "dxcc": "KG6",
@@ -2402,7 +2664,8 @@
       "lon": 144.8,
       "prefixes": [
         "KG6"
-      ]
+      ],
+      "continent": "AS"
     },
     "KH1": {
       "dxcc": "KH1",
@@ -2410,7 +2673,8 @@
       "lon": -98.6,
       "prefixes": [
         "KH1"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH2": {
       "dxcc": "KH2",
@@ -2419,7 +2683,8 @@
       "prefixes": [
         "KG6",
         "KH2"
-      ]
+      ],
+      "continent": "AS"
     },
     "KH3": {
       "dxcc": "KH3",
@@ -2427,7 +2692,8 @@
       "lon": -98.6,
       "prefixes": [
         "KH3"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH4": {
       "dxcc": "KH4",
@@ -2435,7 +2701,8 @@
       "lon": -98.6,
       "prefixes": [
         "KH4"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH5": {
       "dxcc": "KH5",
@@ -2443,7 +2710,8 @@
       "lon": -98.6,
       "prefixes": [
         "KH5"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH5J": {
       "dxcc": "KH5J",
@@ -2452,7 +2720,8 @@
       "prefixes": [
         "KH5",
         "KH5J"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH5K": {
       "dxcc": "KH5K",
@@ -2460,7 +2729,8 @@
       "lon": -98.6,
       "prefixes": [
         "KH5K"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH6": {
       "dxcc": "KH6",
@@ -2469,7 +2739,8 @@
       "prefixes": [
         "KH6",
         "KH7"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH7K": {
       "dxcc": "KH7K",
@@ -2477,7 +2748,8 @@
       "lon": -98.6,
       "prefixes": [
         "KH7K"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH8": {
       "dxcc": "KH8",
@@ -2485,7 +2757,8 @@
       "lon": -170.7,
       "prefixes": [
         "KH8"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH9": {
       "dxcc": "KH9",
@@ -2493,7 +2766,8 @@
       "lon": -98.6,
       "prefixes": [
         "KH9"
-      ]
+      ],
+      "continent": "NA"
     },
     "KH0": {
       "dxcc": "KH0",
@@ -2501,7 +2775,8 @@
       "lon": 145.7,
       "prefixes": [
         "KH0"
-      ]
+      ],
+      "continent": "AS"
     },
     "KL": {
       "dxcc": "KL",
@@ -2509,7 +2784,8 @@
       "lon": -98.6,
       "prefixes": [
         "KL"
-      ]
+      ],
+      "continent": "NA"
     },
     "KP1": {
       "dxcc": "KP1",
@@ -2517,7 +2793,8 @@
       "lon": -98.6,
       "prefixes": [
         "KP1"
-      ]
+      ],
+      "continent": "NA"
     },
     "KP2": {
       "dxcc": "KP2",
@@ -2526,7 +2803,8 @@
       "prefixes": [
         "KP2",
         "US"
-      ]
+      ],
+      "continent": "NA"
     },
     "KP3": {
       "dxcc": "KP3",
@@ -2535,7 +2813,8 @@
       "prefixes": [
         "KP3",
         "KP4"
-      ]
+      ],
+      "continent": "NA"
     },
     "KP5": {
       "dxcc": "KP5",
@@ -2543,7 +2822,8 @@
       "lon": -66.5,
       "prefixes": [
         "KP5"
-      ]
+      ],
+      "continent": "NA"
     },
     "L2": {
       "dxcc": "L2",
@@ -2559,7 +2839,8 @@
         "L8",
         "L9",
         "LU"
-      ]
+      ],
+      "continent": "SA"
     },
     "LA": {
       "dxcc": "LA",
@@ -2571,7 +2852,8 @@
         "LC",
         "LG",
         "LI"
-      ]
+      ],
+      "continent": "EU"
     },
     "2U": {
       "dxcc": "2U",
@@ -2580,7 +2862,8 @@
       "prefixes": [
         "2U",
         "GU"
-      ]
+      ],
+      "continent": "EU"
     },
     "2W": {
       "dxcc": "2W",
@@ -2589,7 +2872,8 @@
       "prefixes": [
         "2W",
         "GW"
-      ]
+      ],
+      "continent": "EU"
     },
     "3A": {
       "dxcc": "3A",
@@ -2597,7 +2881,8 @@
       "lon": 7.4,
       "prefixes": [
         "3A"
-      ]
+      ],
+      "continent": "EU"
     },
     "3B6": {
       "dxcc": "3B6",
@@ -2605,7 +2890,8 @@
       "lon": 57.6,
       "prefixes": [
         "3B6"
-      ]
+      ],
+      "continent": "AS"
     },
     "3B7": {
       "dxcc": "3B7",
@@ -2614,7 +2900,8 @@
       "prefixes": [
         "3B6",
         "3B7"
-      ]
+      ],
+      "continent": "AS"
     },
     "3B8": {
       "dxcc": "3B8",
@@ -2622,7 +2909,8 @@
       "lon": 57.6,
       "prefixes": [
         "3B8"
-      ]
+      ],
+      "continent": "AS"
     },
     "3B9": {
       "dxcc": "3B9",
@@ -2630,7 +2918,8 @@
       "lon": 57.6,
       "prefixes": [
         "3B9"
-      ]
+      ],
+      "continent": "AS"
     },
     "3C": {
       "dxcc": "3C",
@@ -2638,7 +2927,8 @@
       "lon": -9.7,
       "prefixes": [
         "3C"
-      ]
+      ],
+      "continent": "AF"
     },
     "3C0": {
       "dxcc": "3C0",
@@ -2646,7 +2936,8 @@
       "lon": 10.3,
       "prefixes": [
         "3C0"
-      ]
+      ],
+      "continent": "AF"
     },
     "3D2": {
       "dxcc": "3D2",
@@ -2654,7 +2945,8 @@
       "lon": 178.0,
       "prefixes": [
         "3D2"
-      ]
+      ],
+      "continent": "OC"
     },
     "3DA0": {
       "dxcc": "3DA0",
@@ -2662,7 +2954,8 @@
       "lon": 31.5,
       "prefixes": [
         "3DA0"
-      ]
+      ],
+      "continent": "AF"
     },
     "3E": {
       "dxcc": "3E",
@@ -2672,7 +2965,8 @@
         "3E",
         "3F",
         "HP"
-      ]
+      ],
+      "continent": "SA"
     },
     "3G": {
       "dxcc": "3G",
@@ -2683,7 +2977,8 @@
         "CE",
         "CE0",
         "CE9"
-      ]
+      ],
+      "continent": "SA"
     },
     "3V": {
       "dxcc": "3V",
@@ -2691,7 +2986,8 @@
       "lon": 9.6,
       "prefixes": [
         "3V"
-      ]
+      ],
+      "continent": "AF"
     },
     "3W": {
       "dxcc": "3W",
@@ -2700,7 +2996,8 @@
       "prefixes": [
         "3W",
         "XV"
-      ]
+      ],
+      "continent": "AS"
     },
     "3X": {
       "dxcc": "3X",
@@ -2708,7 +3005,8 @@
       "lon": -9.7,
       "prefixes": [
         "3X"
-      ]
+      ],
+      "continent": "AF"
     },
     "3Y": {
       "dxcc": "3Y",
@@ -2716,7 +3014,8 @@
       "lon": 0.0,
       "prefixes": [
         "3Y"
-      ]
+      ],
+      "continent": "AN"
     },
     "3Z": {
       "dxcc": "3Z",
@@ -2725,7 +3024,8 @@
       "prefixes": [
         "3Z",
         "SP"
-      ]
+      ],
+      "continent": "EU"
     },
     "4A": {
       "dxcc": "4A",
@@ -2737,7 +3037,8 @@
         "4C",
         "XE",
         "XF4"
-      ]
+      ],
+      "continent": "NA"
     },
     "4D": {
       "dxcc": "4D",
@@ -2751,7 +3052,8 @@
         "4H",
         "4I",
         "DU"
-      ]
+      ],
+      "continent": "AS"
     },
     "4J": {
       "dxcc": "4J",
@@ -2760,7 +3062,8 @@
       "prefixes": [
         "4J",
         "4K"
-      ]
+      ],
+      "continent": "AS"
     },
     "LU": {
       "dxcc": "LU",
@@ -2776,7 +3079,8 @@
         "LU",
         "LV",
         "LW"
-      ]
+      ],
+      "continent": "SA"
     },
     "LX": {
       "dxcc": "LX",
@@ -2784,7 +3088,8 @@
       "lon": 6.1,
       "prefixes": [
         "LX"
-      ]
+      ],
+      "continent": "EU"
     },
     "LY": {
       "dxcc": "LY",
@@ -2792,7 +3097,8 @@
       "lon": 23.9,
       "prefixes": [
         "LY"
-      ]
+      ],
+      "continent": "EU"
     },
     "LZ": {
       "dxcc": "LZ",
@@ -2800,7 +3106,8 @@
       "lon": 25.5,
       "prefixes": [
         "LZ"
-      ]
+      ],
+      "continent": "EU"
     },
     "M": {
       "dxcc": "M",
@@ -2810,7 +3117,8 @@
         "G",
         "M",
         "MX"
-      ]
+      ],
+      "continent": "EU"
     },
     "MD": {
       "dxcc": "MD",
@@ -2820,7 +3128,8 @@
         "GD",
         "MD",
         "MT"
-      ]
+      ],
+      "continent": "EU"
     },
     "MI": {
       "dxcc": "MI",
@@ -2830,7 +3139,8 @@
         "GI",
         "MI",
         "MN"
-      ]
+      ],
+      "continent": "EU"
     },
     "MJ": {
       "dxcc": "MJ",
@@ -2840,7 +3150,8 @@
         "GJ",
         "MH",
         "MJ"
-      ]
+      ],
+      "continent": "EU"
     },
     "MM": {
       "dxcc": "MM",
@@ -2850,7 +3161,8 @@
         "GM",
         "MM",
         "MS"
-      ]
+      ],
+      "continent": "EU"
     },
     "MU": {
       "dxcc": "MU",
@@ -2860,7 +3172,8 @@
         "GU",
         "MP",
         "MU"
-      ]
+      ],
+      "continent": "EU"
     },
     "MW": {
       "dxcc": "MW",
@@ -2870,7 +3183,8 @@
         "GW",
         "MC",
         "MW"
-      ]
+      ],
+      "continent": "EU"
     },
     "N": {
       "dxcc": "N",
@@ -2889,7 +3203,8 @@
         "NJ",
         "NK",
         "W"
-      ]
+      ],
+      "continent": "NA"
     },
     "NH1": {
       "dxcc": "NH1",
@@ -2917,7 +3232,8 @@
         "NH8",
         "NH9",
         "US"
-      ]
+      ],
+      "continent": "NA"
     },
     "NL": {
       "dxcc": "NL",
@@ -2926,7 +3242,8 @@
       "prefixes": [
         "KL",
         "NL"
-      ]
+      ],
+      "continent": "NA"
     },
     "NP1": {
       "dxcc": "NP1",
@@ -2939,7 +3256,8 @@
         "NP4",
         "NP5",
         "US"
-      ]
+      ],
+      "continent": "NA"
     },
     "OA": {
       "dxcc": "OA",
@@ -2949,7 +3267,8 @@
         "OA",
         "OB",
         "OC"
-      ]
+      ],
+      "continent": "SA"
     },
     "OD": {
       "dxcc": "OD",
@@ -2957,7 +3276,8 @@
       "lon": 35.9,
       "prefixes": [
         "OD"
-      ]
+      ],
+      "continent": "AS"
     },
     "OE": {
       "dxcc": "OE",
@@ -2965,7 +3285,8 @@
       "lon": 14.6,
       "prefixes": [
         "OE"
-      ]
+      ],
+      "continent": "EU"
     },
     "OH": {
       "dxcc": "OH",
@@ -2976,7 +3297,8 @@
         "OG",
         "OH",
         "OI"
-      ]
+      ],
+      "continent": "EU"
     },
     "OH0": {
       "dxcc": "OH0",
@@ -2986,7 +3308,8 @@
         "OF0",
         "OG0",
         "OH0"
-      ]
+      ],
+      "continent": "EU"
     },
     "OJ0": {
       "dxcc": "OJ0",
@@ -2996,7 +3319,8 @@
         "OF0M",
         "OH0M",
         "OJ0"
-      ]
+      ],
+      "continent": "EU"
     },
     "4L": {
       "dxcc": "4L",
@@ -3004,7 +3328,8 @@
       "lon": 43.4,
       "prefixes": [
         "4L"
-      ]
+      ],
+      "continent": "AS"
     },
     "4M": {
       "dxcc": "4M",
@@ -3014,7 +3339,8 @@
         "4M",
         "YV",
         "YV0"
-      ]
+      ],
+      "continent": "SA"
     },
     "4N1": {
       "dxcc": "4N1",
@@ -3023,7 +3349,8 @@
       "prefixes": [
         "4N1",
         "YU"
-      ]
+      ],
+      "continent": "EU"
     },
     "4S": {
       "dxcc": "4S",
@@ -3031,7 +3358,8 @@
       "lon": 80.8,
       "prefixes": [
         "4S"
-      ]
+      ],
+      "continent": "AS"
     },
     "4T": {
       "dxcc": "4T",
@@ -3040,7 +3368,8 @@
       "prefixes": [
         "4T",
         "OA"
-      ]
+      ],
+      "continent": "SA"
     },
     "4U": {
       "dxcc": "4U",
@@ -3048,7 +3377,8 @@
       "lon": 8.2,
       "prefixes": [
         "4U"
-      ]
+      ],
+      "continent": "EU"
     },
     "4V": {
       "dxcc": "4V",
@@ -3057,7 +3387,8 @@
       "prefixes": [
         "4V",
         "HH"
-      ]
+      ],
+      "continent": "NA"
     },
     "4W": {
       "dxcc": "4W",
@@ -3065,7 +3396,8 @@
       "lon": 125.7,
       "prefixes": [
         "4W"
-      ]
+      ],
+      "continent": "AS"
     },
     "4X": {
       "dxcc": "4X",
@@ -3074,7 +3406,8 @@
       "prefixes": [
         "4X",
         "4Z"
-      ]
+      ],
+      "continent": "AS"
     },
     "5A": {
       "dxcc": "5A",
@@ -3082,7 +3415,8 @@
       "lon": 17.2,
       "prefixes": [
         "5A"
-      ]
+      ],
+      "continent": "AF"
     },
     "5B": {
       "dxcc": "5B",
@@ -3090,7 +3424,8 @@
       "lon": 33.4,
       "prefixes": [
         "5B"
-      ]
+      ],
+      "continent": "AF"
     },
     "5C": {
       "dxcc": "5C",
@@ -3099,7 +3434,8 @@
       "prefixes": [
         "5C",
         "CN"
-      ]
+      ],
+      "continent": "AF"
     },
     "5H": {
       "dxcc": "5H",
@@ -3107,7 +3443,8 @@
       "lon": 34.9,
       "prefixes": [
         "5H"
-      ]
+      ],
+      "continent": "AF"
     },
     "5J": {
       "dxcc": "5J",
@@ -3118,7 +3455,8 @@
         "5K",
         "HK",
         "HK0"
-      ]
+      ],
+      "continent": "SA"
     },
     "5L": {
       "dxcc": "5L",
@@ -3127,7 +3465,8 @@
       "prefixes": [
         "5L",
         "EL"
-      ]
+      ],
+      "continent": "AF"
     },
     "5N": {
       "dxcc": "5N",
@@ -3135,7 +3474,8 @@
       "lon": 8.1,
       "prefixes": [
         "5N"
-      ]
+      ],
+      "continent": "AF"
     },
     "5P": {
       "dxcc": "5P",
@@ -3144,7 +3484,8 @@
       "prefixes": [
         "5P",
         "OZ"
-      ]
+      ],
+      "continent": "EU"
     },
     "5R": {
       "dxcc": "5R",
@@ -3152,7 +3493,8 @@
       "lon": 46.9,
       "prefixes": [
         "5R"
-      ]
+      ],
+      "continent": "AF"
     },
     "OK": {
       "dxcc": "OK",
@@ -3161,7 +3503,8 @@
       "prefixes": [
         "OK",
         "OL"
-      ]
+      ],
+      "continent": "EU"
     },
     "OM": {
       "dxcc": "OM",
@@ -3169,7 +3512,8 @@
       "lon": 19.7,
       "prefixes": [
         "OM"
-      ]
+      ],
+      "continent": "EU"
     },
     "ON": {
       "dxcc": "ON",
@@ -3183,7 +3527,8 @@
         "OR",
         "OS",
         "OT"
-      ]
+      ],
+      "continent": "EU"
     },
     "OX": {
       "dxcc": "OX",
@@ -3191,7 +3536,8 @@
       "lon": -40.0,
       "prefixes": [
         "OX"
-      ]
+      ],
+      "continent": "NA"
     },
     "OY": {
       "dxcc": "OY",
@@ -3199,7 +3545,8 @@
       "lon": -6.9,
       "prefixes": [
         "OY"
-      ]
+      ],
+      "continent": "EU"
     },
     "OZ": {
       "dxcc": "OZ",
@@ -3207,7 +3554,8 @@
       "lon": 9.5,
       "prefixes": [
         "OZ"
-      ]
+      ],
+      "continent": "EU"
     },
     "P2": {
       "dxcc": "P2",
@@ -3215,7 +3563,8 @@
       "lon": -9.7,
       "prefixes": [
         "P2"
-      ]
+      ],
+      "continent": "AF"
     },
     "P3": {
       "dxcc": "P3",
@@ -3224,7 +3573,8 @@
       "prefixes": [
         "5B",
         "P3"
-      ]
+      ],
+      "continent": "AF"
     },
     "P4": {
       "dxcc": "P4",
@@ -3232,7 +3582,8 @@
       "lon": -69.9,
       "prefixes": [
         "P4"
-      ]
+      ],
+      "continent": "SA"
     },
     "P5": {
       "dxcc": "P5",
@@ -3240,7 +3591,8 @@
       "lon": 127.5,
       "prefixes": [
         "P5"
-      ]
+      ],
+      "continent": "AS"
     },
     "PA": {
       "dxcc": "PA",
@@ -3252,7 +3604,8 @@
         "PD",
         "PE",
         "PI"
-      ]
+      ],
+      "continent": "EU"
     },
     "PJ1": {
       "dxcc": "PJ1",
@@ -3263,7 +3616,8 @@
         "PJ2",
         "PJ4",
         "PJ9"
-      ]
+      ],
+      "continent": "EU"
     },
     "PJ5": {
       "dxcc": "PJ5",
@@ -3274,7 +3628,8 @@
         "PJ6",
         "PJ7",
         "PJ8"
-      ]
+      ],
+      "continent": "NA"
     },
     "PY": {
       "dxcc": "PY",
@@ -3291,7 +3646,8 @@
         "PW",
         "PX",
         "PY"
-      ]
+      ],
+      "continent": "SA"
     },
     "PY0F": {
       "dxcc": "PY0F",
@@ -3299,7 +3655,8 @@
       "lon": -52.9,
       "prefixes": [
         "PY0F"
-      ]
+      ],
+      "continent": "SA"
     },
     "PY0M": {
       "dxcc": "PY0M",
@@ -3308,7 +3665,8 @@
       "prefixes": [
         "PU0T",
         "PY0M"
-      ]
+      ],
+      "continent": "SA"
     },
     "PY0R": {
       "dxcc": "PY0R",
@@ -3317,7 +3675,8 @@
       "prefixes": [
         "PY0F",
         "PY0R"
-      ]
+      ],
+      "continent": "SA"
     },
     "PY0S": {
       "dxcc": "PY0S",
@@ -3325,7 +3684,8 @@
       "lon": 69.0,
       "prefixes": [
         "PY0S"
-      ]
+      ],
+      "continent": "AS"
     },
     "PY0T": {
       "dxcc": "PY0T",
@@ -3333,7 +3693,8 @@
       "lon": -52.9,
       "prefixes": [
         "PY0T"
-      ]
+      ],
+      "continent": "SA"
     },
     "PZ": {
       "dxcc": "PZ",
@@ -3341,7 +3702,8 @@
       "lon": -56.0,
       "prefixes": [
         "PZ"
-      ]
+      ],
+      "continent": "SA"
     },
     "R1A": {
       "dxcc": "R1A",
@@ -3349,7 +3711,8 @@
       "lon": 0.0,
       "prefixes": [
         "R1A"
-      ]
+      ],
+      "continent": "AN"
     },
     "R1F": {
       "dxcc": "R1F",
@@ -3357,7 +3720,8 @@
       "lon": 105.3,
       "prefixes": [
         "R1F"
-      ]
+      ],
+      "continent": "AS"
     },
     "R1M": {
       "dxcc": "R1M",
@@ -3365,7 +3729,8 @@
       "lon": 105.3,
       "prefixes": [
         "R1M"
-      ]
+      ],
+      "continent": "AS"
     },
     "5T": {
       "dxcc": "5T",
@@ -3373,7 +3738,8 @@
       "lon": -10.9,
       "prefixes": [
         "5T"
-      ]
+      ],
+      "continent": "AF"
     },
     "5U": {
       "dxcc": "5U",
@@ -3381,7 +3747,8 @@
       "lon": 8.1,
       "prefixes": [
         "5U"
-      ]
+      ],
+      "continent": "AF"
     },
     "5V": {
       "dxcc": "5V",
@@ -3389,7 +3756,8 @@
       "lon": 0.8,
       "prefixes": [
         "5V"
-      ]
+      ],
+      "continent": "AF"
     },
     "5W": {
       "dxcc": "5W",
@@ -3397,7 +3765,8 @@
       "lon": -172.1,
       "prefixes": [
         "5W"
-      ]
+      ],
+      "continent": "NA"
     },
     "5X": {
       "dxcc": "5X",
@@ -3405,7 +3774,8 @@
       "lon": 32.3,
       "prefixes": [
         "5X"
-      ]
+      ],
+      "continent": "AF"
     },
     "5Z": {
       "dxcc": "5Z",
@@ -3414,7 +3784,8 @@
       "prefixes": [
         "5Y",
         "5Z"
-      ]
+      ],
+      "continent": "AF"
     },
     "6C": {
       "dxcc": "6C",
@@ -3423,7 +3794,8 @@
       "prefixes": [
         "6C",
         "YK"
-      ]
+      ],
+      "continent": "AS"
     },
     "6D": {
       "dxcc": "6D",
@@ -3439,7 +3811,8 @@
         "6J",
         "XE",
         "XF4"
-      ]
+      ],
+      "continent": "NA"
     },
     "6K": {
       "dxcc": "6K",
@@ -3449,7 +3822,8 @@
         "6K",
         "6L",
         "HL"
-      ]
+      ],
+      "continent": "AS"
     },
     "6O": {
       "dxcc": "6O",
@@ -3458,7 +3832,8 @@
       "prefixes": [
         "6O",
         "T5"
-      ]
+      ],
+      "continent": "AF"
     },
     "6P": {
       "dxcc": "6P",
@@ -3467,7 +3842,8 @@
       "prefixes": [
         "6P",
         "AP"
-      ]
+      ],
+      "continent": "AS"
     },
     "6T": {
       "dxcc": "6T",
@@ -3477,7 +3853,8 @@
         "6T",
         "6U",
         "ST"
-      ]
+      ],
+      "continent": "AF"
     },
     "6W": {
       "dxcc": "6W",
@@ -3486,7 +3863,8 @@
       "prefixes": [
         "6V",
         "6W"
-      ]
+      ],
+      "continent": "AF"
     },
     "6Y": {
       "dxcc": "6Y",
@@ -3494,7 +3872,8 @@
       "lon": -77.3,
       "prefixes": [
         "6Y"
-      ]
+      ],
+      "continent": "NA"
     },
     "7J": {
       "dxcc": "7J",
@@ -3507,7 +3886,8 @@
         "7M",
         "7N",
         "JA"
-      ]
+      ],
+      "continent": "AS"
     },
     "7O": {
       "dxcc": "7O",
@@ -3515,7 +3895,8 @@
       "lon": 48.5,
       "prefixes": [
         "7O"
-      ]
+      ],
+      "continent": "AF"
     },
     "7P": {
       "dxcc": "7P",
@@ -3523,7 +3904,8 @@
       "lon": 28.2,
       "prefixes": [
         "7P"
-      ]
+      ],
+      "continent": "AF"
     },
     "7Q": {
       "dxcc": "7Q",
@@ -3531,7 +3913,8 @@
       "lon": 34.3,
       "prefixes": [
         "7Q"
-      ]
+      ],
+      "continent": "AF"
     },
     "7S": {
       "dxcc": "7S",
@@ -3540,7 +3923,8 @@
       "prefixes": [
         "7S",
         "SM"
-      ]
+      ],
+      "continent": "EU"
     },
     "7X": {
       "dxcc": "7X",
@@ -3549,7 +3933,8 @@
       "prefixes": [
         "7W",
         "7X"
-      ]
+      ],
+      "continent": "AF"
     },
     "7Z": {
       "dxcc": "7Z",
@@ -3558,7 +3943,8 @@
       "prefixes": [
         "7Z",
         "HZ"
-      ]
+      ],
+      "continent": "AF"
     },
     "8A": {
       "dxcc": "8A",
@@ -3570,7 +3956,8 @@
         "8E",
         "8I",
         "YB"
-      ]
+      ],
+      "continent": "AS"
     },
     "8J": {
       "dxcc": "8J",
@@ -3579,7 +3966,8 @@
       "prefixes": [
         "8J",
         "JA"
-      ]
+      ],
+      "continent": "AS"
     },
     "R": {
       "dxcc": "R",
@@ -3597,7 +3985,8 @@
         "RY",
         "RZ",
         "UA9"
-      ]
+      ],
+      "continent": "AS"
     },
     "R2": {
       "dxcc": "R2",
@@ -3609,7 +3998,8 @@
         "RK2",
         "RN2",
         "UA2"
-      ]
+      ],
+      "continent": "AS"
     },
     "S2": {
       "dxcc": "S2",
@@ -3617,7 +4007,8 @@
       "lon": 90.4,
       "prefixes": [
         "S2"
-      ]
+      ],
+      "continent": "AS"
     },
     "S4": {
       "dxcc": "S4",
@@ -3626,7 +4017,8 @@
       "prefixes": [
         "S4",
         "ZS"
-      ]
+      ],
+      "continent": "AF"
     },
     "S5": {
       "dxcc": "S5",
@@ -3634,7 +4026,8 @@
       "lon": 14.8,
       "prefixes": [
         "S5"
-      ]
+      ],
+      "continent": "EU"
     },
     "S6": {
       "dxcc": "S6",
@@ -3643,7 +4036,8 @@
       "prefixes": [
         "9V",
         "S6"
-      ]
+      ],
+      "continent": "AS"
     },
     "S7": {
       "dxcc": "S7",
@@ -3651,7 +4045,8 @@
       "lon": 55.5,
       "prefixes": [
         "S7"
-      ]
+      ],
+      "continent": "AS"
     },
     "S8": {
       "dxcc": "S8",
@@ -3660,7 +4055,8 @@
       "prefixes": [
         "S8",
         "ZS"
-      ]
+      ],
+      "continent": "AF"
     },
     "S9": {
       "dxcc": "S9",
@@ -3668,7 +4064,8 @@
       "lon": 6.6,
       "prefixes": [
         "S9"
-      ]
+      ],
+      "continent": "AF"
     },
     "S0": {
       "dxcc": "S0",
@@ -3676,7 +4073,8 @@
       "lon": -13.0,
       "prefixes": [
         "S0"
-      ]
+      ],
+      "continent": "AF"
     },
     "SM": {
       "dxcc": "SM",
@@ -3689,7 +4087,8 @@
         "SK",
         "SL",
         "SM"
-      ]
+      ],
+      "continent": "EU"
     },
     "SP": {
       "dxcc": "SP",
@@ -3701,7 +4100,8 @@
         "SP",
         "SQ",
         "SR"
-      ]
+      ],
+      "continent": "EU"
     },
     "ST": {
       "dxcc": "ST",
@@ -3709,7 +4109,8 @@
       "lon": 30.2,
       "prefixes": [
         "ST"
-      ]
+      ],
+      "continent": "AF"
     },
     "SU": {
       "dxcc": "SU",
@@ -3717,7 +4118,8 @@
       "lon": 30.8,
       "prefixes": [
         "SU"
-      ]
+      ],
+      "continent": "AF"
     },
     "SV": {
       "dxcc": "SV",
@@ -3728,7 +4130,8 @@
         "SX",
         "SY",
         "SZ"
-      ]
+      ],
+      "continent": "EU"
     },
     "SV5": {
       "dxcc": "SV5",
@@ -3736,7 +4139,8 @@
       "lon": 21.8,
       "prefixes": [
         "SV5"
-      ]
+      ],
+      "continent": "EU"
     },
     "SV9": {
       "dxcc": "SV9",
@@ -3744,7 +4148,8 @@
       "lon": 21.8,
       "prefixes": [
         "SV9"
-      ]
+      ],
+      "continent": "EU"
     },
     "SV0": {
       "dxcc": "SV0",
@@ -3752,7 +4157,8 @@
       "lon": 21.8,
       "prefixes": [
         "SV0"
-      ]
+      ],
+      "continent": "EU"
     },
     "8O": {
       "dxcc": "8O",
@@ -3761,7 +4167,8 @@
       "prefixes": [
         "8O",
         "A2"
-      ]
+      ],
+      "continent": "AF"
     },
     "8P": {
       "dxcc": "8P",
@@ -3769,7 +4176,8 @@
       "lon": -59.5,
       "prefixes": [
         "8P"
-      ]
+      ],
+      "continent": "NA"
     },
     "8Q": {
       "dxcc": "8Q",
@@ -3777,7 +4185,8 @@
       "lon": 73.2,
       "prefixes": [
         "8Q"
-      ]
+      ],
+      "continent": "AS"
     },
     "8R": {
       "dxcc": "8R",
@@ -3785,7 +4194,8 @@
       "lon": -58.9,
       "prefixes": [
         "8R"
-      ]
+      ],
+      "continent": "SA"
     },
     "8S": {
       "dxcc": "8S",
@@ -3794,7 +4204,8 @@
       "prefixes": [
         "8S",
         "SM"
-      ]
+      ],
+      "continent": "EU"
     },
     "9A": {
       "dxcc": "9A",
@@ -3802,7 +4213,8 @@
       "lon": 15.2,
       "prefixes": [
         "9A"
-      ]
+      ],
+      "continent": "EU"
     },
     "9G": {
       "dxcc": "9G",
@@ -3810,7 +4222,8 @@
       "lon": -1.0,
       "prefixes": [
         "9G"
-      ]
+      ],
+      "continent": "AF"
     },
     "9H": {
       "dxcc": "9H",
@@ -3818,7 +4231,8 @@
       "lon": 14.4,
       "prefixes": [
         "9H"
-      ]
+      ],
+      "continent": "AF"
     },
     "9J": {
       "dxcc": "9J",
@@ -3827,7 +4241,8 @@
       "prefixes": [
         "9I",
         "9J"
-      ]
+      ],
+      "continent": "AF"
     },
     "9K": {
       "dxcc": "9K",
@@ -3835,7 +4250,8 @@
       "lon": 47.5,
       "prefixes": [
         "9K"
-      ]
+      ],
+      "continent": "AF"
     },
     "9L": {
       "dxcc": "9L",
@@ -3843,7 +4259,8 @@
       "lon": -11.8,
       "prefixes": [
         "9L"
-      ]
+      ],
+      "continent": "AF"
     },
     "9M2": {
       "dxcc": "9M2",
@@ -3851,7 +4268,8 @@
       "lon": 101.9,
       "prefixes": [
         "9M2"
-      ]
+      ],
+      "continent": "AS"
     },
     "9M6": {
       "dxcc": "9M6",
@@ -3860,7 +4278,8 @@
       "prefixes": [
         "9M6",
         "9M8"
-      ]
+      ],
+      "continent": "AS"
     },
     "9M8": {
       "dxcc": "9M8",
@@ -3868,7 +4287,8 @@
       "lon": 101.9,
       "prefixes": [
         "9M8"
-      ]
+      ],
+      "continent": "AS"
     },
     "9M0": {
       "dxcc": "9M0",
@@ -3879,7 +4299,8 @@
         "9M0",
         "BV9S",
         "DU"
-      ]
+      ],
+      "continent": "AS"
     },
     "9N": {
       "dxcc": "9N",
@@ -3887,7 +4308,8 @@
       "lon": 84.1,
       "prefixes": [
         "9N"
-      ]
+      ],
+      "continent": "AS"
     },
     "9Q": {
       "dxcc": "9Q",
@@ -3896,7 +4318,8 @@
       "prefixes": [
         "9Q",
         "9R"
-      ]
+      ],
+      "continent": "AF"
     },
     "9U": {
       "dxcc": "9U",
@@ -3904,7 +4327,8 @@
       "lon": 29.9,
       "prefixes": [
         "9U"
-      ]
+      ],
+      "continent": "AF"
     },
     "9V": {
       "dxcc": "9V",
@@ -3912,7 +4336,8 @@
       "lon": 103.8,
       "prefixes": [
         "9V"
-      ]
+      ],
+      "continent": "AS"
     },
     "9W": {
       "dxcc": "9W",
@@ -3920,7 +4345,8 @@
       "lon": 101.9,
       "prefixes": [
         "9W"
-      ]
+      ],
+      "continent": "AS"
     },
     "9X": {
       "dxcc": "9X",
@@ -3928,7 +4354,8 @@
       "lon": 29.9,
       "prefixes": [
         "9X"
-      ]
+      ],
+      "continent": "AF"
     },
     "9Y": {
       "dxcc": "9Y",
@@ -3937,7 +4364,9 @@
       "prefixes": [
         "9Y",
         "9Z"
-      ]
+      ],
+      "continent": "SA"
     }
-  }
+  },
+  "continent_note": "Continent approximated from lat/lon centroid (coarse heuristic); intended only for the trainer's 'same continent' weighting tier."
 }

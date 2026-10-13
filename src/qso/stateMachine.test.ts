@@ -1,9 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { QsoMachine, type QsoState } from "./stateMachine.js";
+import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
 
 function newMachine(myCall = "BG7XXX", hamCall = "JA1ABC") {
-  return new QsoMachine({ myCall, hamCall, db: dxccDatabase });
+  return new QsoMachine({
+    myCall,
+    ham: new VirtualHam({ call: hamCall, difficulty: "novice" }),
+    db: dxccDatabase,
+  });
 }
 
 /** Drive a machine into EXCHANGE via the user-initiated CQ path. */
