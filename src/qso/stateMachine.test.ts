@@ -160,6 +160,56 @@ describe("QsoMachine — callsign omission & operation suffixes", () => {
   });
 });
 
+describe("QsoMachine — protocol leniency (user-side tolerance)", () => {
+  it("completes a QSO when the user uses K instead of BK throughout", () => {
+    const m = newMachine();
+    m.hamCq();
+    const r1 = m.userSend("JA1ABC DE BG7XXX R UR RST 599 599 K");
+    expect(r1).toEqual(["R UR RST 599 BK"]);
+    expect(m.state).toBe("SIGNOFF");
+    const r2 = m.userSend("R TU 73 K"); // omitted callsigns, K not BK
+    expect(r2).toEqual(["R TU 73 SK"]);
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("accepts an RST exchange line without the leading R", () => {
+    const m = newMachine();
+    startUserCq(m);
+    const reply = m.userSend("UR RST 599 599 BK"); // no R
+    expect(reply).toEqual(["R UR RST 599 BK"]);
+    expect(m.ctx.rstTx).toBe("599");
+    expect(m.state).toBe("SIGNOFF");
+  });
+
+  it("logs a QSO when the final line has no K/BK (just TU 73 SK)", () => {
+    const m = newMachine();
+    startUserCq(m);
+    m.userSend("JA1ABC DE BG7XXX R UR RST 599 599 BK");
+    expect(m.state).toBe("SIGNOFF");
+    m.userSend("TU 73 SK"); // no R, no K/BK
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("logs a QSO when the final line is TU 73 with no SK and no K/BK", () => {
+    const m = newMachine();
+    startUserCq(m);
+    m.userSend("JA1ABC DE BG7XXX R UR RST 599 599 BK");
+    expect(m.state).toBe("SIGNOFF");
+    m.userSend("R TU 73"); // no SK, no K/BK
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("does NOT log an early sign-off before RST exchange (gate)", () => {
+    const m = newMachine();
+    startUserCq(m);
+    // In EXCHANGE (no RST yet) a stray TU 73 SK is ignored, not logged.
+    const reply = m.userSend("R TU 73 SK");
+    expect(reply).toEqual(["R BK"]);
+    expect(m.state).toBe("EXCHANGE");
+    expect(m.ctx.userEndSent).toBe(false);
+  });
+});
+
 describe("QsoMachine — reset lifecycle", () => {
   it("clears context after a FAILED QSO", () => {
     const m = newMachine();

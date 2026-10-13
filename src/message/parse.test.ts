@@ -92,4 +92,37 @@ describe("parseMessage", () => {
     expect(p.callsigns).toContain("JA1ABC/P");
     expect(p.callsignValid).toBe(true);
   });
+
+  it("marks omitted callsign for a K-ended line (not only BK)", () => {
+    // 收发基线：用户用纯 K（而非 BK）交还发言权且省略呼号，仍应判为省略。
+    const p = parseMessage("R UR RST 599 K", ctxBase, "tx", dxccDatabase);
+    expect(p.omit_calls).toBe(true);
+    expect(p.to).toBe("JA1ABC");
+    expect(p.from).toBe("BG7XXX");
+    expect(p.end).toBe("K");
+    expect(p.type).toBe("RST");
+  });
+
+  it("distinguishes PSE K, K and BK end markers without over-matching", () => {
+    expect(
+      parseMessage("CQ CQ CQ DE BG7XXX BG7XXX PSE K", { ...ctxBase, peerCall: null, callsignsConfirmed: false }, "tx", dxccDatabase).end,
+    ).toBe("PSE_K");
+    expect(parseMessage("R UR RST 599 K", ctxBase, "tx", dxccDatabase).end).toBe("K");
+    expect(parseMessage("R UR RST 599 BK", ctxBase, "tx", dxccDatabase).end).toBe("BK");
+  });
+
+  it("parses an RST exchange line without the leading R", () => {
+    // 收发基线：用户可省略开头的 R。
+    const p = parseMessage("UR RST 599 599 BK", ctxBase, "tx", dxccDatabase);
+    expect(p.type).toBe("RST");
+    expect(p.rst).toBe("599");
+    expect(p.end).toBe("BK");
+  });
+
+  it("classifies a sign-off with no K/BK as END (e.g. TU 73)", () => {
+    // 用户没发 K/BK 直接结束（也无 SK），结束语词 TU/73 仍应识别为 END。
+    const p = parseMessage("R TU 73", ctxBase, "tx", dxccDatabase);
+    expect(p.type).toBe("END");
+    expect(p.end).toBeNull();
+  });
 });
