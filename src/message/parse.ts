@@ -1,0 +1,161 @@
+import { DxccDatabase } from "../data/dxcc.js";
+
+export type MessageType = "CQ" | "CALL" | "RST" | "END" | "QUERY" | "UNKNOWN";
+export type EndMarker = "PSE_K" | "K" | "BK" | "SK" | null;
+
+export interface ParsedMessage {
+  to: string | null;
+  from: string | null;
+  type: MessageType;
+  rst: string | null;
+  end: EndMarker;
+  omit_calls: boolean;
+  callsignValid: boolean;
+  /** Non-CQ callsign tokens found in the message (for copy-error detection). */
+  callsigns: string[];
+  raw: string;
+}
+
+/**
+ * Minimal context the parser needs to decide callsign omission. The QSO state
+ * machine owns the authoritative context and passes a read-only view here.
+ */
+export interface ParseContext {
+  myCall: string;
+  peerCall: string | null;
+  callsignsConfirmed: boolean;
+  callsignsOmitted: boolean;
+}
+
+// ITU callsign format. Suffix letters optional to admit China's `B5` style
+// portable calls; `/...` operation suffix (e.g. /P, /M, /5) still allowed.
+export const CALL_RE = /^[A-Z]{1,2}[0-9][A-Z]{0,4}(?:\/[A-Z0-9]{1,4})?$/;
+// RST is validated as a whole token, never as a substring of the message.
+export const RST_RE = /^[1-5][1-9][1-9]$/;
+
+/** Letters before the first digit, with any `/...` operation suffix removed. */
+export function extractLetterPrefix(callsign: string): string {
+  const base = callsign.split("/")[0];
+  return base.replace(/[0-9].*$/, "");
+}
+
+/** Validate a token as a callsign: ITU format + prefix-table hit. */
+export function validateCallsign(token: string, db: DxccDatabase): boolean {
+  if (!CALL_RE.test(token)) return false;
+  return db.isValidPrefix(extractLetterPrefix(token));
+}
+
+/** Normalize a raw CW text: uppercase, collapse spaces, fold common variants. */
+export function normalize(text: string): string {
+  let t = text.toUpperCase().replace(/\s+/g, " ").trim();
+  t = t.replace(/5NN/g, "599");
+  t = t.replace(/\bTNX\b|\bTHX\b/g, "TU");
+  t = t.replace(/<SK>/g, "SK");
+  return t;
+}
+
+/**
+ * Parse a normalized CW text line into a structured message.
+ *
+ * `direction` is "tx" when the message was authored by the local user, "rx"
+ * when authored by the peer (virtual HAM). It only affects the `from`/`to`
+ * assignment when callsigns are omitted.
+ */
+export function parseMessage(
+  raw: string,
+  ctx: ParseContext,
+  direction: "tx" | "rx",
+  db: DxccDatabase,
+): ParsedMessage {
+  let text = normalize(raw);
+
+  // 1. Identify the turn-over / end marker. Order matters: PSE K, BK, SK, K.
+  let end: EndMarker = null;
+  if (/\bPSE\s+K\b/.test(text)) {
+    end = "PSE_K";
+    text = text.replace(/\bPSE\s+K\b/, "");
+  } else if (/\bBK\b/.test(text)) {
+    end = "BK";
+    text = text.replace(/\bBK\b/, "");
+  } else if (/\bSK\b/.test(text)) {
+    end = "SK";
+    text = text.replace(/\bSK\b/, "");
+  } else if (/\bK\b/.test(text)) {
+    end = "K";
+    text = text.replace(/\bK\b/, "");
+  }
+  text = text.replace(/\s+/g, " ").trim();
+
+  // 2. Drop the DE connector.
+  text = text.replace(/\bDE\b/g, " ").replace(/\s+/g, " ").trim();
+
+  // 3. Tokenize and separate callsigns from message words.
+  const tokens = text.length ? text.split(" ") : [];
+  const callsigns: string[] = [];
+  const msgTokens: string[] = [];
+  let callsignValid = true;
+  let cqPresent = false;
+
+  for (const t of tokens) {
+    if (t === "CQ") {
+      cqPresent = true;
+    } else if (CALL_RE.test(t)) {
+      // Skip a consecutive duplicate callsign (e.g. "DE BG7XXX BG7XXX").
+      if (callsigns.length === 0 || callsigns[callsigns.length - 1] !== t) {
+        callsigns.push(t);
+      }
+      if (!validateCallsign(t, db)) callsignValid = false;
+    } else {
+      msgTokens.push(t);
+    }
+  }
+
+  // 4. Resolve to / from and omission.
+  let to: string | null = null;
+  let from: string | null = null;
+  let omitCalls = false;
+
+  if (callsigns.length === 0) {
+    if (ctx.callsignsConfirmed || ctx.callsignsOmitted) {
+      omitCalls = true;
+      to = direction === "tx" ? ctx.peerCall : ctx.myCall;
+      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
+    }
+  } else if (callsigns.length === 1) {
+    const c = callsigns[0];
+    if (c === ctx.myCall) {
+      to = ctx.myCall;
+      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
+    } else if (c === ctx.peerCall) {
+      to = ctx.peerCall;
+      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
+    } else {
+      to = c;
+      from = direction === "tx" ? ctx.myCall : null;
+    }
+  } else {
+    to = callsigns[0];
+    from = callsigns[1];
+  }
+
+  // 5. Classify message type.
+  let type: MessageType = "UNKNOWN";
+  let rst: string | null = null;
+  const rstTok = msgTokens.find((t) => RST_RE.test(t));
+  if (rstTok) {
+    rst = rstTok;
+    type = "RST";
+  } else if (/\bRST\b/.test(text)) {
+    type = "QUERY"; // e.g. "UR RST?" with no valid RST token
+  } else if (end === "SK" || /\b(TU|73|SK)\b/.test(text)) {
+    type = "END";
+  } else if (/\b(QRZ\?|AGN\?|\?)\b/.test(text)) {
+    type = "QUERY";
+  } else if (cqPresent) {
+    type = "CQ";
+  } else if (callsigns.length > 0) {
+    type = "CALL";
+  }
+
+  return { to, from, type, rst, end, omit_calls: omitCalls, callsignValid, callsigns, raw };
+}

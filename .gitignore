@@ -1,1 +1,23 @@
+# Project-specific (kept from before)
 .workbuddy/
+
+# Node / build tooling
+node_modules/
+dist/
+.vite/
+.vitest-cache/
+.vitest-tmp/
+coverage/
+*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.tsbuildinfo
