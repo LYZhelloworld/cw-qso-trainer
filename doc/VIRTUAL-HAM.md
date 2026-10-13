@@ -1,7 +1,7 @@
 # 虚拟 HAM 策略（生成、前缀与地理位置）
 
 > 本文件集中描述虚拟 HAM 的**生成策略**、**呼号前缀与地理位置的关系**，以及虚拟 HAM 在频段上的**运行时行为**。
-> 相关：QSO 状态机在各阶段调用这些行为，见 [QSO 协议](./QSO-PROTOCOL.md)；报文解析见 [CW 解析与编码](./CW-PARSING.md)；接收不全的音频触发见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md)。
+> 相关：QSO 状态机在各阶段调用这些行为，见 [QSO 协议](./QSO-PROTOCOL.md)；报文解析见 [报文解析](./MESSAGE-PARSING.md)；接收不全的音频触发见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md)。
 
 ---
 
@@ -13,25 +13,23 @@
 
 ```json
 {
-  "B":   { "country": "China", "cqZone": 24, "ituZone": 44, "continent": "AS", "lat": 35.0, "lon": 105.0 },
-  "BG7": { "country": "China", "cqZone": 24, "ituZone": 44, "continent": "AS", "lat": 23.1, "lon": 113.3, "region": 7 },
-  "VR2": { "country": "Hong Kong", "cqZone": 24, "ituZone": 44, "continent": "AS", "lat": 22.3, "lon": 114.2 },
-  "JA":  { "country": "Japan", "cqZone": 25, "ituZone": 45, "continent": "AS", "lat": 36.2, "lon": 138.2 },
-  "W":   { "country": "USA", "cqZone": 5,  "ituZone": 8,  "continent": "NA", "lat": 39.8, "lon": -98.6 },
-  "DL":  { "country": "Germany", "cqZone": 14, "ituZone": 28, "continent": "EU", "lat": 51.2, "lon": 10.4 }
+  "BY": { "dxcc": "BY", "lat": 35.9, "lon": 104.2, "prefixes": ["BA", "BD", "BG", "BT", "BY", "BZ"] },
+  "VR2": { "dxcc": "VR2", "lat": 22.3, "lon": 114.2, "prefixes": ["VR2"] },
+  "JA": { "dxcc": "JA", "lat": 36.2, "lon": 138.2, "prefixes": ["JA", "JF", "JG", "JH", "JJ", "JK"] },
+  "K":  { "dxcc": "K",  "lat": 39.8, "lon": -98.6, "prefixes": ["K", "W", "N", "AA", "AL"] },
+  "DL": { "dxcc": "DL", "lat": 51.2, "lon": 10.4,  "prefixes": ["DA", "DB", "DC", "DD", "DE", "DF", "DG"] }
 }
 ```
 
-字段说明：
+字段说明（与 [`../data/dxcc.json`](../data/dxcc.json) 的 `entities` 实际结构一致，每个实体仅四字段）：
 
 | 字段 | 含义 |
 |---|---|
-| `country` | DXCC 国家 / 地区 |
-| `cqZone` | CQ Zone |
-| `ituZone` | ITU Zone |
-| `continent` | 大洲代码 |
-| `lat` / `lon` | 参考经纬度 |
-| `region` | 呼号数字区（可选） |
+| `dxcc` | DXCC 实体标记（如 `BY`/`JA`/`K`）；中立标识符，**非国家名、非 ISO 代码** |
+| `lat` / `lon` | 参考经纬度（由 DXCC 实体质心近似推导，非精确位置） |
+| `prefixes` | 该实体拥有的呼号前缀数组；运行时展开为「前缀 → 实体」查表 |
+
+> 上方示例 JSON 为 `data/dxcc.json` 中 `entities` 对象的精简示意（已省略顶层 `source` / `count` / `coordinate_note` 元数据）。去争议化：本表刻意**不入库** `country`、`cqZone`、`ituZone`、`region` 等字段——生成权重所需的「大洲」由 `lat`/`lon` 实时推导、「距离」按坐标大圆计算、「数字区」（如 `BG7` 的 `7`）从呼号数字提取，三者均不落地为字段，避免携带任何国家 / 地区归属信息。
 
 > 注：世界上合法的呼号前缀（国家 / 地区标识）是**有限集合**，应枚举为完整列表，而非依赖宽松正则。呼号校验时，前缀必须命中此表，再结合 ITU 格式判定整体合法性：基本为「1–2 字母前缀 + 数字 + 1–4 字母后缀」，但中国允许 `B` + 数字的无后缀异地 / 便携形式（如 `B5`），且可带 `/P`、`/M`、`/5` 等操作后缀（见 [QSO 协议](./QSO-PROTOCOL.md) 的「用户呼号」一节）。完整前缀表已落地于 [`../data/dxcc.json`](../data/dxcc.json)，校验时只需判定「字母前缀是否命中该表」，**不记录其国家 / 地区归属**。
 
@@ -49,17 +47,23 @@
 
 ### 生成优先级
 
-用户决定：**同呼号数字区 > 同国家 > 同大洲 > 其他**
+用户决定（以 `BG7XXX` 为例）：匹配到对方虚拟 HAM 的可能性由高到低为——
+
+1. **同根前缀 + 同数字区**（`B?7`，如 `BA7` / `BD7` / `BG7` / `BT7` / `BY7` / `BZ7`）：最高
+2. **同根前缀（任意数字区）**（`B??`，如 `B?1` / `B?9`）：次高，即同实体 / 同国家
+3. **地理邻近**（跨实体，按大圆距离）
+4. **同大洲**
+5. **其他**
+
+> 说明：数字区匹配**始终以「根前缀（首字母）」为作用域**——`B?7` 必为中国（B 系）台，不会跨实体去匹配其他国家同样带数字 `7` 的前缀。因此「同数字区」天然落在同根前缀内，**不会跨国家**；`B??`（同根前缀、任意数字区）即等价于同实体 / 同国家。对前缀本身已含数字者（如 `VR2`），其数字区由前缀固定，不参与「同数字区」比较。
 
 权重示例：
 
 ```text
-同呼号数字区：100
-邻近数字区：40
-同国家：30
-同大洲：10
-距离 < 3000 km：5
-距离 < 8000 km：2
+同根前缀 + 同数字区（B?7）：100
+同根前缀（B??，任意数字区）：40
+地理邻近 < 3000 km：10
+同大洲：5
 其他：1
 ```
 
@@ -76,19 +80,19 @@ function generatePeerCall(myCall, myLoc, prefixTable):
   totalWeight = sum(candidates.weight)
   r = random(0, totalWeight)
   pick prefix by cumulative weight
-  generate random suffix matching prefix pattern
+  generate random suffix: 1 digit + 2–3 letters（前缀已含数字则只接字母）
   return full call
 ```
 
-> `baseWeight` 按上方优先级与权重计算，并叠加距离权重（`< 3000 km` / `< 8000 km`）。
+> `baseWeight` 按上方优先级与权重计算，并叠加距离权重（`< 3000 km` / `< 8000 km`）。其中「同大洲」由两实体 `lat`/`lon` 推导所属大洲后比较、「距离」由两坐标大圆公式计算，二者均不依赖任何国家 / 地区字段（与上方去争议化说明一致）。
 
 ### 呼号后缀生成
 
-- 前缀确定后，按该前缀规则生成后缀
-- 例如 `BG7` 生成 `BG7XXX`，`JA` 生成 `JA1ABC`
-- 后缀长度、字母数字混合模式按前缀表配置
+- 前缀确定后，随机生成后缀
+- 例如 `BG7` 生成 `BG7XXX`，`JA` 生成 `JA1ABC`（后缀为随机字母，各次不同）
+- 规则：随机追加「1 位数字 + 2–3 位字母」；前缀本身已含数字（如 `VR2`）则只接字母；低概率产出中国便携 `B5` 形式或 `/P`、`/M`、`/5` 等操作后缀
 
-> 待补：当前前缀表 JSON 尚未包含后缀模式字段（如 `BG7` → `3 字母`）。需在数据模型中补充 `suffixPattern` 等规则，供 `generatePeerCall` 读取。
+> 决策：虚拟呼号为练习用途，不校验是否真实存在、只判格式合法（见 [QSO 协议](./QSO-PROTOCOL.md) 的「用户呼号」）。因此后缀**纯随机生成**即可，无需为各地区维护精确格式，也**不**在前缀表 JSON 中新增 `suffixPattern` 字段——以维持 `data/dxcc.json` 仅四字段的去争议化纪律。
 
 ---
 
@@ -114,7 +118,7 @@ function generatePeerCall(myCall, myLoc, prefixTable):
 ### 接收不全
 
 - 默认概率 **1% – 5%**，可调
-- 触发时虚拟 HAM 发 `AGN?` 或 `QRZ?`
+- 触发时虚拟 HAM 发 `?` 或 `AGN?`（请求全文重发；`QRZ?` 专用于呼号抄错，不在此用）
 - 要求用户全文重发
 - 不模拟具体丢失内容
 
@@ -123,6 +127,8 @@ function generatePeerCall(myCall, myLoc, prefixTable):
 - 虚拟 HAM 不会在后续阶段发 `PSE K`
 - 虚拟 HAM 不会主动违反通联协议
 - 用户发 `PSE K` 在后续阶段，虚拟 HAM 正常回应，不视为错误
+- 虚拟 HAM 在呼号已确认、进入可省略阶段后，交还发言权一律用 `BK`（不用纯 `K`），向对方发出「可省略呼号」信号（见 [QSO 协议](./QSO-PROTOCOL.md) 的「收发基线」）
+- 虚拟 HAM 回应 / 确认用户报文时，于报文起始加 `R`（收到确认）；例外：首次应答 CQ（给出本方呼号、建立通联）不带 `R`（见 [QSO 协议](./QSO-PROTOCOL.md) 的「收发基线」与「R（收到确认）」）
 
 ### 多人应答
 

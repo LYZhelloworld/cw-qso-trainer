@@ -2,7 +2,8 @@
 
 CW QSO 练习器的设计文档，按能力域拆分，便于分头推进：
 
-- [CW 解析与编码](./CW-PARSING.md) —— 键盘/键控输入、报文解析器、报文转 CW 音频
+- [CW 编解码](./CW-PARSING.md) —— 键控输入、摩斯解码（点划→字母）、报文转 CW 音频
+- [报文解析](./MESSAGE-PARSING.md) —— 字母文本 → 结构化报文（呼号 / RST / 结束语提取）
 - [通联过程](./QSO-PROTOCOL.md) —— 报文格式规范、呼号/前缀体系、QSO 状态机
 - [虚拟 HAM 策略](./VIRTUAL-HAM.md) —— 呼号前缀与地理位置、虚拟 HAM 生成策略与运行时行为
 - [音频与电磁环境](./AUDIO-ENVIRONMENT.md) —— 音频架构、CW 音调、频段频率、QSB/QRM/QRN 真实感
