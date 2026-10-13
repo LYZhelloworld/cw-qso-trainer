@@ -57,6 +57,7 @@ interface ParsedMessage {
   end: "PSE_K" | "K" | "BK" | "SK" | null;
   omit_calls: boolean;      // 是否省略了呼号
   callsignValid: boolean;   // 提取到的呼号是否通过格式 + 前缀表校验（供状态机判抄错 / 非法）
+  callsigns: string[];      // 提取到的全部呼号 token（已对连续重复去重），供状态机做抄错判定（出现非 myCall/peerCall 的呼号即计 CALL 重试）
   raw: string;              // 原始文本
 }
 ```
