@@ -1,11 +1,16 @@
-# CW 解析与编码（输入 → 报文 → 音频）
+# CW 编解码（键控输入 · 摩斯解码 · 音频合成）
 
-> 对应设计目标的第一块：CW 的解析（用户键盘输入 → 结构化报文）以及报文转音频（文本 → CW 音频）。
-> 相关：报文「格式规范」见 [QSO 协议](./QSO-PROTOCOL.md)；音频环境（底噪/QSB/QRM）见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md)；UI 见 [UI 界面](./UI.md)。
+> 本文件只负责 CW 信号与字母之间的「编解码」，分三层：
+> - 发送侧：键盘 / 键控 → 点划时序（keyer）
+> - 接收侧：点划 / 时序 → 字母（摩斯解码）
+> - 输出侧：文本 → CW 音频（编码）
+>
+> 报文的「语义解析」（字母文本 → `ParsedMessage`，含呼号 / RST / 结束语提取）是**独立模块**，见 [报文解析](./MESSAGE-PARSING.md)。本文件只产出 / 消费字母，不做语义判断。
+> 相关：报文格式规范见 [QSO 协议](./QSO-PROTOCOL.md)；音频环境（底噪 / QSB / QRM）见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md)；UI 见 [UI 界面](./UI.md)。
 
 ---
 
-## 键盘输入与 CW 发送
+## 键盘输入与 CW 发送（发送侧 keyer）
 
 ### 键位绑定
 
@@ -45,103 +50,97 @@
 
 ---
 
-## 报文解析（用户输入 → 结构化报文）
+## 摩斯解码（接收侧：点划 / 时序 → 字母）
 
-> 解析器的任务：把用户通过键盘/键发出的文本（或未来从 paddle 时序还原的文本）转换为 `ParsedMessage` 结构，供 [QSO 协议](./QSO-PROTOCOL.md) 的状态机消费。
+> 本层是 CW-PARSING 的核心：把用户通过直键 / iambic 产生的点划时序（按下 / 松开事件流）还原为字母文本，交给 [报文解析](./MESSAGE-PARSING.md) 做语义解析。它**只认符号，不认含义**——不在此层判断呼号 / RST / 结束语。
 
-### 归一化规则
+### 时序基准
 
-| 原始 | 归一化 |
+以「点」为单位时长 `d`（由 WPM 决定：`d = 1200 / WPM` 毫秒）：
+
+| 元素 | 时长 |
 |---|---|
-| `5NN` | `599` |
-| `TNX` / `THX` | `TU` |
-| `<SK>` | `SK` |
-| 多空格 | 单空格 |
-| 小写 | 大写 |
+| 点（·） | `d` |
+| 划（−） | `3d` |
+| 元素间隔（同字符内） | `d` |
+| 字符间隔 | `3d` |
+| 单词间隔 | `7d` |
 
-### RST 格式与校验
+- **Farnsworth 间隔**：CW 训练常用的节奏技巧，把速度拆成两层——字符本身（点 / 划及其元素间隔）仍按较快速度发，而字符间 / 单词间的停顿被拉长（等效于较慢速度），即「字符快、间隔慢」，便于初学者边听边抄。本解码器支持它：放大字符 / 单词间隔而不改变点划与元素间隔的基准速度；也因此**不能假设字符间隔恒为 3d**，否则会把 Farnsworth 节奏误判为字符粘连。
+- 辅助模式下的实时解码文本即本层输出。
 
-合法 RST：
+### 符号判定（按键时长 → 点 / 划）
 
-```regex
-^[1-5][1-9][1-9]$
-```
+- 一次按键（ON）时长 `< 2d` → 点（·）
+- 一次按键时长 `≥ 2d` → 划（−）
+- 模糊区（约 `2d` 附近）按最近档判定，允许 ±0.5d 抖动容忍
 
-示例：
+### 间隔判定（静默时长 → 字符 / 单词边界）
 
-- `599`
-- `589`
-- `579`
-- `5NN` → `599`
+- 静默（OFF）`< 2d` → 仍属当前字符的元素间隔
+- 静默 `≥ 2d 且 < 5d` → 字符结束（字符间隔）
+- 静默 `≥ 5d` → 单词结束（单词间隔，输出一个空格）
 
-不合法示例：
+### 摩斯码表
 
-- `5999`
-- `ABC`
-- `59`
-- `5NNN`
+标准国际摩斯码（练习所需子集）：
 
-不合法时，虚拟 HAM 发：
+| 字母 | 码 | 字母 | 码 |
+|---|---|---|---|
+| A | ·− | N | −· |
+| B | −··· | O | −−− |
+| C | −·−· | P | ·−−· |
+| D | −·· | Q | −−·− |
+| E | · | R | ·−· |
+| F | ··−· | S | ··· |
+| G | −−· | T | − |
+| H | ···· | U | ··− |
+| I | ·· | V | ···− |
+| J | ·−−− | W | ·−− |
+| K | −·− | X | −··− |
+| L | ·−·· | Y | −·−− |
+| M | −− | Z | −−·· |
 
-```text
-UR RST?
-```
+| 数字 | 码 | 数字 | 码 |
+|---|---|---|---|
+| 0 | −−−−− | 5 | ····· |
+| 1 | ·−−−− | 6 | −···· |
+| 2 | ··−−− | 7 | −−··· |
+| 3 | ···−− | 8 | −−−·· |
+| 4 | ····− | 9 | −−−−· |
 
-### 解析器输出结构
+| 符号 | 码 | 说明 |
+|---|---|---|
+| / | −··−· | 操作后缀分隔（如 /P、/M） |
+| ? | ··−−·· | 疑问 |
+| = | −···− | BT，分隔 / 缓冲 |
+| AR | ·−·−· | 消息结束（<AR>） |
+| SK | ···−·− | 结束（...-.-） |
 
-```typescript
-interface ParsedMessage {
-  to: string | null;        // 接收方呼号，或 "CQ"
-  from: string | null;      // 发送方呼号
-  type: "CQ" | "CALL" | "RST" | "END" | "QUERY" | "UNKNOWN";
-  rst: string | null;       // 归一化后的 RST
-  end: "PSE_K" | "K" | "BK" | "SK" | null;
-  omit_calls: boolean;      // 是否省略了呼号
-  raw: string;              // 原始文本
-}
-```
+> 解码时先按元素序列查表；查不到的字符标记为未知（不臆造），交由上层处理。
 
-### 解析流程
+### 容错
 
-```text
-1. 转大写，合并空格
-2. 识别结束符：PSE K / K / BK / SK / 无
-3. 移除 DE
-4. 提取呼号 token
-5. 根据上下文判断 to / from
-6. 识别消息类型
-7. 处理 BK：设置 callsignsOmitted = true
-8. 返回 ParsedMessage
-```
+- 元素 / 间隔时长落在阈值模糊区时，按最近档判定。
+- 字符间隔缺失（连发无间隔）仍按元素序列查表，查不到则标记未知字符。
+- 长划 / 短点抖动容忍约 ±0.5d，避免轻微手感偏差导致整字符错译。
+- 未知字符不阻断后续解码，整体输出仍交给 [报文解析](./MESSAGE-PARSING.md)。
 
-### 重复的 CQ 去重
+### 输出
 
-标准惯例 `CQ` 重复三遍（`CQ CQ CQ`）。第 4 步提取呼号 token 时，需先对连续重复的 `CQ` 去重为一个，否则 `CQ CQ CQ DE BG7XXX…` 会被误判为 `to = CQ, from = CQ`（发送方变成 `CQ` 而非用户呼号）。去重后再进入第 5 步的 to / from 判定。
-
-### 呼号省略处理
-
-- 若报文无呼号，且 `callsignsConfirmed` 或 `callsignsOmitted` 为真：
-  - 用户发送：`to = peerCall`，`from = myCall`
-  - 对方发送：`to = myCall`，`from = peerCall`
-- `BK` 后用户仍可带呼号，不视为错误
-- 只要双方呼号已明确，可随时省略呼号
-
-### 用户发 PSE K 的处理
-
-- 用户在后续阶段发 `PSE K` 不视为错误
-- 虚拟 HAM 正常回应
-- 虚拟 HAM 自身不会在后续阶段发 `PSE K`
+- 本层输出：一串大写字母文本（空格分隔单词），例如 `CQ CQ CQ DE BG7XXX`。
+- 不在此层做呼号 / RST / 结束符的语义判断——那是 [报文解析](./MESSAGE-PARSING.md) 的职责。
 
 ---
 
-## 报文转音频（编码 / CW keyer）
+## 报文转音频（编码 / CW keyer 输出）
 
-> 把一条结构化/文本报文按 WPM 与 Farnsworth 规则编码为 CW 音频（点/划时序 + 700 Hz 音调）。
+> 把一条文本报文按 WPM 与 Farnsworth 规则编码为 CW 音频（点 / 划时序 + 700 Hz 音调）。输入是文本（含 HAM 标准报文），输出是音频。
 
 ### 速度与时序
 
 - WPM 范围：**5 – 40**，默认 **20**
-- 支持 Farnsworth 间隔
+- 支持 Farnsworth 间隔（含义见上方「摩斯解码」层：字符快、间隔慢，练习初期 / 低难度时使用）
 - 标准比例：点 : 划 : 字符间隔 : 单词间隔 = **1 : 3 : 3 : 7**
 
 ### CW 音调生成
@@ -153,97 +152,8 @@ interface ParsedMessage {
 
 ---
 
-## 报文解析伪代码（实现参考）
+## 报文解析（语义解析，见独立文档）
 
-> 该实现直接消费 [QSO 协议](./QSO-PROTOCOL.md) 定义的报文格式规范。
-
-```typescript
-function parseMessage(raw: string, ctx: QsoContext, direction: "rx" | "tx"): ParsedMessage {
-  // 1. 归一化
-  let text = raw.toUpperCase().replace(/\s+/g, " ").trim();
-  text = text.replace(/5NN/g, "599");
-  text = text.replace(/\bTNX\b|\bTHX\b/g, "TU");
-  text = text.replace(/<SK>/g, "SK");
-
-  // 2. 识别结束符
-  let end: ParsedMessage["end"] = null;
-  if (/\bPSE\s+K\b/.test(text)) { end = "PSE_K"; text = text.replace(/\bPSE\s+K\b/, ""); }
-  else if (/\bBK\b/.test(text)) { end = "BK"; text = text.replace(/\bBK\b/, ""); }
-  else if (/\bSK\b/.test(text)) { end = "SK"; text = text.replace(/\bSK\b/, ""); }
-  else if (/\bK\b/.test(text)) { end = "K"; text = text.replace(/\bK\b/, ""); }
-  text = text.trim();
-
-  // 3. 移除 DE
-  text = text.replace(/\bDE\b/g, " ").replace(/\s+/g, " ").trim();
-
-  // 4. 提取呼号 token
-  // ITU 呼号格式：1–2 字母前缀 + 数字 + 1–4 字母后缀（见 QSO-PROTOCOL.md「用户呼号」）
-  const CALL_RE = /^[A-Z]{1,2}[0-9][A-Z]{1,4}(?:\/[A-Z0-9]{1,4})?$/;
-  const tokens = text.split(" ");
-  const calls: string[] = [];
-  const msgTokens: string[] = [];
-  for (const t of tokens) {
-    if (t === "CQ") { calls.push("CQ"); }
-    else if (CALL_RE.test(t)) { calls.push(t); }
-    else { msgTokens.push(t); }
-  }
-
-  // 5. 判断 to / from
-  let to: string | null = null;
-  let from: string | null = null;
-  let omitCalls = false;
-
-  if (calls.length === 0) {
-    if (ctx.callsignsConfirmed || ctx.callsignsOmitted) {
-      omitCalls = true;
-      to = direction === "tx" ? ctx.peerCall : ctx.myCall;
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    }
-  } else if (calls.length === 1) {
-    const c = calls[0];
-    if (c === "CQ") {
-      to = "CQ";
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    } else if (c === ctx.myCall) {
-      to = ctx.myCall;
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    } else if (c === ctx.peerCall) {
-      to = ctx.peerCall;
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    } else {
-      to = c;
-      from = direction === "tx" ? ctx.myCall : null;
-    }
-  } else {
-    to = calls[0];
-    from = calls[1];
-  }
-
-  // 6. 识别消息类型
-  let type: ParsedMessage["type"] = "UNKNOWN";
-  let rst: string | null = null;
-
-  const rstMatch = text.match(/\b[1-5][1-9][1-9]\b/);
-  if (rstMatch) {
-    rst = rstMatch[0];
-    type = "RST";
-  } else if (/\bRST\b/.test(text)) {
-    type = "QUERY";
-  } else if (/\b(TU|73|SK)\b/.test(text)) {
-    type = "END";
-  } else if (/\b(QRZ\?|AGN\?|\?)\b/.test(text)) {
-    type = "QUERY";
-  } else if (calls.includes("CQ")) {
-    type = "CQ";
-  } else if (calls.length > 0) {
-    type = "CALL";
-  }
-
-  // 7. 处理 BK
-  if (end === "BK") {
-    ctx.callsignsOmitted = true;
-  }
-
-  return { to, from, type, rst, end, omit_calls: omitCalls, raw };
-}
-```
+> **边界**：字母文本 → 结构化报文（`ParsedMessage`）的工作——归一化、RST 校验、呼号提取、CQ 去重、省略呼号、结束符识别、呼号前缀表校验——已独立成文：[报文解析](./MESSAGE-PARSING.md)。
+>
+> 本文件（CW-PARSING）只负责上述三层编解码；语义解析在 [报文解析](./MESSAGE-PARSING.md)，状态机在 [QSO 协议](./QSO-PROTOCOL.md)，三者各司其职。
