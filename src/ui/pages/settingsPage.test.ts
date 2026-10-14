@@ -179,15 +179,45 @@ describe("设置页", () => {
     expect(host.settings.farnsworthEnabled).toBe(true);
   });
 
-  it("iambic 模式为预留项：可切换但页面提示尚未实现", () => {
+  it("电键类型默认直键，切到 iambic 后出现点键/划键与模式选择", () => {
     const { root, host } = makeHost();
-    expect(root.textContent).toContain("iambic 双桨键控尚未实现");
+    // 默认直键：只显示一个直键按键，不暴露 iambic 专属控件
+    expect(fieldByLabel(root, "电键类型").querySelector("select")!.value).toBe("straight");
+    expect(root.textContent).toContain("直键按键");
+    expect(root.textContent).not.toContain("点键：");
 
-    const select = fieldByLabel(root, "iambic 模式（预留）").querySelector("select")!;
+    const mode = fieldByLabel(root, "电键类型").querySelector("select")!;
+    mode.value = "iambic";
+    mode.dispatchEvent(new Event("change"));
+
+    expect(host.settings.keyMode).toBe("iambic");
+    const after = fieldByLabel(root, "电键类型").querySelector("select")!.value;
+    expect(after).toBe("iambic");
+    expect(root.textContent).toContain("点键：");
+    expect(root.textContent).toContain("划键：");
+    expect(root.textContent).toContain("squeeze");
+  });
+
+  it("iambic 模式 A/B 可切换并持久化到设置", () => {
+    const { root, host } = makeHost({ keyMode: "iambic" });
+
+    const select = fieldByLabel(root, "iambic 模式").querySelector("select")!;
     select.value = "B";
     select.dispatchEvent(new Event("change"));
 
     expect(host.settings.iambicMode).toBe("B");
+  });
+
+  it("点键/划键可重新绑定按键", () => {
+    const { root, host } = makeHost({ keyMode: "iambic", dotCode: "ControlLeft" });
+
+    const btn = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+      b.textContent?.startsWith("点键："),
+    )!;
+    btn.click();
+    document.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyZ" }));
+
+    expect(host.settings.dotCode).toBe("KeyZ");
   });
 
   it("「恢复默认设置」把设置还原为默认值", () => {

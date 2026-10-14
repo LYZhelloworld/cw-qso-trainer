@@ -192,3 +192,85 @@ describe("CW 翻译页", () => {
     expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
   });
 });
+
+describe("CW 页 iambic 双桨输入", () => {
+  const IAMBIC = {
+    keyMode: "iambic" as const,
+    dotCode: "KeyZ",
+    dashCode: "KeyX",
+    wpm: 20, // 点长 60ms
+  };
+
+  const press = (code: string): void => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { code }));
+  };
+  const release = (code: string): void => {
+    document.dispatchEvent(new KeyboardEvent("keyup", { code }));
+  };
+
+  it("iambic 模式下展示双桨键位提示", () => {
+    const { root } = makeHarness(IAMBIC);
+    expect(root.textContent).toContain("点键「KeyZ」");
+    expect(root.textContent).toContain("划键「KeyX」");
+    expect(root.textContent).toContain("电键输入（iambic 双桨）");
+  });
+
+  it("敲一个点键后解码出的字符写入发送框", async () => {
+    const { root } = makeHarness(IAMBIC);
+    const input = root.querySelector("textarea")!;
+
+    press("KeyZ");
+    await sleep(70); // 一个点长 60ms
+    release("KeyZ");
+
+    await vi.waitFor(() => expect(input.value).toBe("E"), { timeout: 2000, interval: 20 });
+  });
+
+  it("squeeze（点划同按）交替发出点划", async () => {
+    const { root } = makeHarness(IAMBIC);
+    const input = root.querySelector("textarea")!;
+
+    press("KeyZ");
+    press("KeyX"); // 双桨同按 -> 点划交替
+    await sleep(250); // 点(60) + 间隔(60) + 划进行到一半
+    release("KeyZ");
+    release("KeyX");
+
+    // 模式 A（默认）：松开双桨即停，敲出 .- = A
+    await vi.waitFor(() => expect(input.value).toBe("A"), { timeout: 2000, interval: 20 });
+  });
+
+  it("空格键插入单词间隔，后续字符被分开", async () => {
+    const { root } = makeHarness(IAMBIC);
+    const input = root.querySelector("textarea")!;
+
+    press("KeyZ");
+    await sleep(70);
+    release("KeyZ");
+    await vi.waitFor(() => expect(input.value).toBe("E"), { timeout: 2000, interval: 20 });
+
+    press("Space"); // 分词
+    press("KeyZ");
+    await sleep(70);
+    release("KeyZ");
+
+    await vi.waitFor(() => expect(input.value).toBe("E E"), { timeout: 2000, interval: 20 });
+  });
+
+  it("直键模式下 iambic 键位不生效", async () => {
+    const { root } = makeHarness({ keyMode: "straight", dotCode: "KeyZ", wpm: 20 });
+    const input = root.querySelector("textarea")!;
+
+    press("KeyZ");
+    await sleep(70);
+    release("KeyZ");
+    await sleep(400);
+
+    expect(input.value).toBe("");
+    expect(root.textContent).toContain("电键输入（直键）");
+  });
+});
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

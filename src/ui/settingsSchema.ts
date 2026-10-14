@@ -7,6 +7,7 @@ import { BANDS } from "./bands.js";
 
 export type UiDifficulty = "novice" | "intermediate" | "hardcore";
 export type IambicMode = "A" | "B";
+export type KeyMode = "straight" | "iambic";
 
 export interface AppSettings {
   /** The user's own callsign (practise callsign; format-checked only). */
@@ -24,9 +25,14 @@ export interface AppSettings {
   assistMode: boolean;
   freqMHz: number;
   bandIndex: number;
+  /** Straight key or iambic paddles. */
+  keyMode: KeyMode;
   /** Physical key (KeyboardEvent.code) used as the straight key. */
   keyCode: string;
-  /** RESERVED: iambic mode is selectable but the keyer is not implemented yet. */
+  /** Iambic paddle keys (KeyboardEvent.code). */
+  dotCode: string;
+  dashCode: string;
+  /** Iambic squeeze behaviour: A drops the latched element, B sends it. */
   iambicMode: IambicMode;
 }
 
@@ -45,7 +51,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   assistMode: false,
   freqMHz: 14.025,
   bandIndex: 2,
+  keyMode: "straight",
   keyCode: "Space",
+  dotCode: "ControlLeft",
+  dashCode: "ControlRight",
   iambicMode: "A",
 };
 
@@ -91,7 +100,16 @@ export function normalizeSettings(raw: unknown): AppSettings {
         ? r.freqMHz
         : DEFAULT_SETTINGS.freqMHz,
     bandIndex,
+    keyMode: r.keyMode === "iambic" ? "iambic" : "straight",
     keyCode: typeof r.keyCode === "string" && r.keyCode.length > 0 ? r.keyCode : DEFAULT_SETTINGS.keyCode,
+    dotCode:
+      typeof r.dotCode === "string" && r.dotCode.length > 0
+        ? r.dotCode
+        : DEFAULT_SETTINGS.dotCode,
+    dashCode:
+      typeof r.dashCode === "string" && r.dashCode.length > 0
+        ? r.dashCode
+        : DEFAULT_SETTINGS.dashCode,
     iambicMode: r.iambicMode === "B" ? "B" : "A",
   };
 }

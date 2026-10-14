@@ -8,6 +8,7 @@ import {
   WPM_MIN,
   validateCallsign,
   type IambicMode,
+  type KeyMode,
   type UiDifficulty,
 } from "../settingsSchema.js";
 import type { AppHost } from "../app.js";
@@ -47,6 +48,26 @@ function checkRow(
   return wrap;
 }
 
+/** Button that captures the next key press and reports its `KeyboardEvent.code`. */
+function keyCaptureButton(
+  label: string,
+  current: string,
+  host: AppHost,
+  onPick: (code: string) => void,
+): HTMLElement {
+  const btn = button(`${label}：${current}（点击后按下要使用的键）`, () => {
+    btn.textContent = "请按下要使用的按键…";
+    const onKey = (e: KeyboardEvent): void => {
+      e.preventDefault();
+      document.removeEventListener("keydown", onKey, true);
+      onPick(e.code);
+    };
+    document.addEventListener("keydown", onKey, true);
+    host.onLeave(() => document.removeEventListener("keydown", onKey, true));
+  });
+  return btn;
+}
+
 export function renderSettings(host: AppHost, root: HTMLElement): void {
   const s = host.settings;
 
@@ -81,23 +102,37 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
   const diffField = el("label", { class: "field" });
   diffField.append(document.createTextNode("难度等级"), diffSelect);
 
-  // --- key binding ---------------------------------------------------------
-  const keyBtn = button(`电键按键：${s.keyCode}（点击后按下要使用的键）`, () => {
-    keyBtn.textContent = "请按下要使用的按键…";
-    const onKey = (e: KeyboardEvent): void => {
-      e.preventDefault();
-      document.removeEventListener("keydown", onKey, true);
-      host.updateSettings({ keyCode: e.code });
-    };
-    document.addEventListener("keydown", onKey, true);
-    host.onLeave(() => document.removeEventListener("keydown", onKey, true));
-  });
+  // --- key mode ------------------------------------------------------------
+  const keyModeSelect = el("select");
+  for (const m of ["straight", "iambic"] as const) {
+    const opt = el("option", { attrs: { value: m } });
+    opt.textContent = m === "straight" ? "直键（手键，手动控制点划）" : "iambic 双桨（自动键）";
+    keyModeSelect.append(opt);
+  }
+  keyModeSelect.value = s.keyMode;
+  keyModeSelect.addEventListener("change", () =>
+    host.updateSettings({ keyMode: keyModeSelect.value as KeyMode }),
+  );
+  const keyModeField = el("label", { class: "field" });
+  keyModeField.append(document.createTextNode("电键类型"), keyModeSelect);
 
-  // --- iambic (reserved) ---------------------------------------------------
+  // --- key bindings --------------------------------------------------------
+  const straightBtn = keyCaptureButton("直键按键", s.keyCode, host, (code) =>
+    host.updateSettings({ keyCode: code }),
+  );
+  const dotBtn = keyCaptureButton("点键", s.dotCode, host, (code) =>
+    host.updateSettings({ dotCode: code }),
+  );
+  const dashBtn = keyCaptureButton("划键", s.dashCode, host, (code) =>
+    host.updateSettings({ dashCode: code }),
+  );
+
+  // --- iambic mode ---------------------------------------------------------
   const iambicSelect = el("select");
   for (const m of ["A", "B"] as const) {
     const opt = el("option", { attrs: { value: m } });
-    opt.textContent = `模式 ${m}`;
+    opt.textContent =
+      m === "A" ? "模式 A（松开双桨即停）" : "模式 B（松开双桨补发记忆元素）";
     iambicSelect.append(opt);
   }
   iambicSelect.value = s.iambicMode;
@@ -105,7 +140,7 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
     host.updateSettings({ iambicMode: iambicSelect.value as IambicMode }),
   );
   const iambicField = el("label", { class: "field" });
-  iambicField.append(document.createTextNode("iambic 模式（预留）"), iambicSelect);
+  iambicField.append(document.createTextNode("iambic 模式"), iambicSelect);
 
   root.append(
     panel("身份", callField),
@@ -130,9 +165,24 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
     ),
     panel(
       "键位",
-      keyBtn,
-      iambicField,
-      el("div", { class: "hint", text: "iambic 双桨键控尚未实现，当前仅支持直键输入。" }),
+      keyModeField,
+      ...(s.keyMode === "iambic"
+        ? [
+            dotBtn,
+            dashBtn,
+            iambicField,
+            el("div", {
+              class: "hint",
+              text: "同时按下点键与划键为 squeeze（点划交替），空格键插入单词间隔。",
+            }),
+          ]
+        : [
+            straightBtn,
+            el("div", {
+              class: "hint",
+              text: "按住该键发报、松开停止，点划时长完全由你控制。",
+            }),
+          ]),
     ),
     panel("其他", button("恢复默认设置", () => host.updateSettings(DEFAULT_SETTINGS), "btn danger")),
   );

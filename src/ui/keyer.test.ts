@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StraightKeyer } from "./keyer.js";
+import { IambicKeyerInput, StraightKeyer } from "./keyer.js";
 
 /** Key A (.-) with a 60 ms dot: down 0..60, gap 60, dash 120..300. */
 function keyA(): StraightKeyer {
@@ -87,5 +87,118 @@ describe("StraightKeyer", () => {
     }, 50);
     k.finish();
     expect(calls).toBe(0);
+  });
+});
+
+/**
+ * The iambic input class owns the timing loop, so tests inject both the clock
+ * and the tick driver — no real timers, fully deterministic.
+ */
+function manualIambic(mode: "A" | "B" = "A") {
+  let clock = 0;
+  const drivers: Array<() => void> = [];
+  const texts: string[] = [];
+  const symbols: string[] = [];
+
+  const input = new IambicKeyerInput({
+    wpm: 20, // dot = 60 ms
+    mode,
+    onText: (t) => texts.push(t),
+    onSymbols: (s) => symbols.push(s),
+    now: () => clock,
+    startTicking: (cb) => {
+      drivers.push(cb);
+      return () => {
+        const i = drivers.indexOf(cb);
+        if (i >= 0) drivers.splice(i, 1);
+      };
+    },
+  });
+
+  /** Move the clock to `t` and run every registered tick callback once. */
+  const tick = (t: number): void => {
+    clock = t;
+    for (const cb of [...drivers]) cb();
+  };
+
+  return { input, texts, symbols, tick, drivers };
+}
+
+describe("IambicKeyerInput", () => {
+  it("敲完一个点后自动 flush 出字符", () => {
+    const { input, texts, tick } = manualIambic();
+    input.press("dot");
+    tick(60);
+    input.release("dot");
+    expect(texts).toEqual([]); // 还在等字符间隔
+
+    tick(240); // 1d 元素间隔 + 2d = 3d 字符间隔结束
+    expect(texts).toEqual(["E"]);
+  });
+
+  it("wordBreak 后下一个字符前补一个空格", () => {
+    const { input, texts, tick } = manualIambic();
+    input.press("dot");
+    tick(60);
+    input.release("dot");
+    tick(240);
+    expect(texts).toEqual(["E"]);
+
+    input.wordBreak();
+    input.press("dot");
+    tick(300);
+    input.release("dot");
+    tick(480);
+
+    expect(texts).toEqual(["E", " ", "E"]);
+  });
+
+  it("finish 收尾时把已开始的元素发完", () => {
+    const { input, texts, tick } = manualIambic();
+    input.press("dot");
+    tick(10); // 元素刚开始
+    input.finish();
+    expect(texts).toEqual(["E"]);
+  });
+
+  it("squeeze 时点划交替，Mode A 松开即停", () => {
+    const { input, tick } = manualIambic("A");
+    input.press("dot");
+    input.press("dash");
+    tick(60); // 点结束
+    tick(120); // 元素间隔结束 -> 划开始
+    tick(300); // 划结束
+    input.release("dot");
+    input.release("dash");
+    tick(600); // 字符间隔结束
+
+    expect(input.text()).toBe("A"); // .-
+  });
+
+  it("同样的 squeeze，Mode B 会补发记忆的元素", () => {
+    const { input, tick } = manualIambic("B");
+    input.press("dot");
+    input.press("dash");
+    tick(60);
+    tick(120);
+    tick(300);
+    input.release("dot");
+    input.release("dash"); // 此时补发记忆的点
+    tick(900);
+
+    expect(input.text()).toBe("R"); // .-.
+  });
+
+  it("clear 清空已发内容", () => {
+    const { input, texts, tick } = manualIambic();
+    input.press("dot");
+    tick(60);
+    input.release("dot");
+    tick(240);
+    expect(texts).toEqual(["E"]);
+
+    input.clear();
+    expect(input.text()).toBe("");
+    expect(input.currentSymbols()).toBe("");
   });
 });

@@ -103,7 +103,7 @@ Tauri 的工作方式是：拿你现有的 Web 前端（HTML / CSS / JS）塞进
 ## 与 UI.md 对照，还差的
 
 - **PWA 离线安装**（`vite-plugin-pwa`）尚未做 —— UI.md 写了要做，上一轮选项里你没勾。**已按上面"目标是 exe"的判断下调优先级，建议不做**。
-- lookahead 流式播放、HAM 自主发 CQ、iambic 键控 —— 见 `STEP5-UI-NOTES.md` 遗留清单。
+- lookahead 流式播放、HAM 自主发 CQ —— 见 `STEP5-UI-NOTES.md` 遗留清单。（iambic 键控已于 2026-10-14 实现：`src/cw/keyer.ts` + 设置页/CW 页接线；仍缺发报侧音。）
 
 ---
 

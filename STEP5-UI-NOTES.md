@@ -66,8 +66,9 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 
 - `tsc --noEmit`：**0 错误**
 - `vite build`：**通过**（33 模块，JS 64.66 kB / CSS 5.03 kB，与加装测试依赖前完全一致）
-- 测试：**全套 167 例通过**（17 个文件）
+- 测试：**全套 200 例通过**（18 个文件）
   - UI 部分 **84 例**：其中 26 例是 node 环境纯逻辑（设置校验 13 / 日志推导 8 / 频段 5），**58 例是 jsdom 下的真实 DOM 交互测试**，含「跑完一次完整 QSO → 自动入库 → 日志页显示」的端到端用例
+  - iambic 键控 **32 例**：核心 `src/cw/keyer.ts` 19 例（含 Mode A/B 差异、squeeze、CQ 往返解码）、UI 封装 6 例、CW 页双桨输入 5 例、设置页电键类型 2 例
 
 > 沙箱内跑测试的注意点（本机无此问题）：多个测试文件并发时，vitest 写临时缓存会被 WorkBuddy 的 fs 沙箱拒 EPERM。规避方式是重定向临时目录并串行执行：
 > `mkdir -p .vitest-tmp && TMP=$PWD/.vitest-tmp TEMP=$PWD/.vitest-tmp npx vitest run --no-file-parallelism`
@@ -76,7 +77,7 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 
 1. ~~**UI 没有自动化测试。**~~ **已解决（2026-10-14）**：装 `jsdom` + `fake-indexeddb` 后，五个页面的关键路径均已自动化覆盖——App 外壳与导航切换、首次免责弹窗与「我已知晓」、频率页频段/调谐/HAM 列表、CW 页遮蔽与单条揭示/宏/发送/新通联、日志页写入/编辑/清空与 IndexedDB 缺失时的降级、设置页呼号校验与各项保存/恢复默认、关于页免责与范围。**仍然无法自动化的是真实浏览器行为**：Web Audio 发声与自动播放限制、实际音频听感、`npm run dev` 下的视觉与手感——这些仍需你手动过一遍。
 2. **浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。音频后端目前每次播放新建并关闭 AudioContext。
-3. **iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。
+3. ~~**iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。~~ **已实现（2026-10-14）**：核心 `src/cw/keyer.ts`（Mode A/B、squeeze 点划记忆、自动 3d/7d 间隔），UI 侧设置页可切「直键 / iambic」并绑定点划键位，CW 页支持双桨输入与空格分词。**仍缺侧音**：发报只出文本，不发声（见下条新增）。
 4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。
 5. **HAM 不会自主定时发 CQ**：频率页是「点按钮触发」，真实的节奏调度循环按 ROADMAP 仍属延后项。
 6. **信号强度条**由频率上 HAM 数量推导，不是真实传播模型。
@@ -85,12 +86,14 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 9. **直键解码的已知边界**：点单位由最短按键时长估计，若一段报文全是划会导致误判（解码器既有说明）。
 10. **设置项在失焦时提交**（change 事件），避免边输入边重渲染打断输入。
 11. **辅助模式的「显示」状态只存在内存**，刷新页面后重置。
+12. **电键发报没有侧音**：无论直键还是 iambic，敲击只产生文本，不会同步播出 CW 音调（音频引擎目前只用于 HAM 发报）。练习手感缺一环。
+13. **iambic 键位默认左右 Ctrl**（`ControlLeft` / `ControlRight`），个别浏览器会把它们吃掉用于自身快捷键；可在设置页改绑。Web 页面失焦时仍捕获不到键盘（需 Tauri，见第 8 条）。
 
 ## 如何验收
 
 ```bash
 npm run build      # 生产构建
-npm test           # 167 例测试（含 jsdom 下的 UI 交互，无需浏览器）
+npm test           # 200 例测试（含 jsdom 下的 UI 交互，无需浏览器）
 npm run typecheck  # 类型检查
 npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```
