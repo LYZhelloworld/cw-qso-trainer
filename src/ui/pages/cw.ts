@@ -87,11 +87,11 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
   });
   input.value = session.draft;
   input.addEventListener("input", () => {
-    session.draft = input.value;
+    session.setDraft(input.value);
   });
   /** Keep both sides in sync so a re-render restores what the user was typing. */
   const setDraft = (text: string): void => {
-    session.draft = text;
+    session.setDraft(text);
     input.value = text;
   };
 
@@ -103,13 +103,19 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
     session.note("通联完成，已写入日志");
   };
 
+  const sendBtn = button("发送", () => send(), "btn primary");
   const send = (): void => {
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || session.isSending) return;
     setDraft("");
+    sendBtn.disabled = true;
     void (async () => {
-      await session.userSend(text);
-      await flushLog();
+      try {
+        await session.userSend(text);
+        await flushLog();
+      } finally {
+        sendBtn.disabled = false;
+      }
       host.refresh();
     })();
   };
@@ -288,7 +294,7 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
       "发送",
       input,
       macros,
-      el("div", { class: "row" }, [button("发送", send, "btn primary")]),
+      el("div", { class: "row" }, [sendBtn]),
       el("div", { class: "hint", text: "Ctrl+Enter 也可发送。发送内容会按设定速度播出 CW 音调。" }),
     ),
     panel(useIambic ? "电键输入（iambic 双桨）" : "电键输入（直键）", keyArea),

@@ -12,6 +12,7 @@ import { renderCw } from "./pages/cw.js";
 import { renderFrequency } from "./pages/frequency.js";
 import { renderLog } from "./pages/logPage.js";
 import { renderSettings } from "./pages/settingsPage.js";
+import { renderErrorPanel } from "./errorPanel.js";
 
 export type PageId = "frequency" | "cw" | "log" | "settings" | "about";
 
@@ -29,6 +30,24 @@ export interface AppHost {
 }
 
 type PageRenderer = (host: AppHost, root: HTMLElement) => void;
+
+/**
+ * Render a page, turning any renderer exception into `onError` instead of letting
+ * it bubble up and blank the whole app. Extracted so the boundary is unit-tested
+ * without mounting a full App.
+ */
+export function safeRenderPage(
+  render: PageRenderer,
+  host: AppHost,
+  root: HTMLElement,
+  onError: (err: unknown) => void,
+): void {
+  try {
+    render(host, root);
+  } catch (err) {
+    onError(err);
+  }
+}
 
 interface PageDef {
   id: PageId;
@@ -56,6 +75,8 @@ export class App implements AppHost {
     this.settings = loadSettings();
     this.session = this.createSession();
     this.startSession();
+    // Resume an in-progress QSO if the user refreshed mid-conversation.
+    this.session.restoreStaging();
   }
 
   /** A fresh session for the current band, with the band populated. */
@@ -101,6 +122,8 @@ export class App implements AppHost {
       this.session.dispose();
       this.session = this.createSession();
       this.startSession();
+      // The staged in-progress QSO belongs to the previous band; drop it.
+      this.session.discardStaging();
     } else {
       this.session.updateSettings(merged);
     }
@@ -148,7 +171,11 @@ export class App implements AppHost {
     this.runCleanups();
     clear(this.pageRoot);
     const def = PAGES.find((p) => p.id === this.page) ?? PAGES[0];
-    def.render(this, this.pageRoot);
+    safeRenderPage(def.render, this, this.pageRoot, (err) => {
+      // A broken page must not take down the nav, other pages, or the live QSO.
+      console.error(`[App] 渲染页面 ${def.id} 出错：`, err);
+      renderErrorPanel(this.pageRoot, def.id, err, () => this.refresh());
+    });
   }
 
   private runCleanups(): void {

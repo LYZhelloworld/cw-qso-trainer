@@ -13,7 +13,7 @@
 
 | 理由 | 依据 |
 |---|---|
-| 规模小 | 5 个静态页面、约 2200 行 UI 代码、产物 64.66 kB |
+| 规模小 | 5 个静态页面、约 2400 行 UI 代码、产物约 83 kB |
 | 运行时零依赖 | 离线可用、安装体积小、没有供应链与升级负担；测试依赖（`jsdom`/`fake-indexeddb`）不进产物，构建产物大小已验证与加装前一致 |
 | 项目性质 | 单人开发、离线练习器，不是要连续迭代多年的商业产品 |
 | 协作收益用不上 | 框架最大的价值是"团队约定"；一个人开发时这部分收益为零，成本却照付 |
@@ -34,13 +34,9 @@
 1. **重绘会弄丢还没发送的报文**（真实缺陷，已修并加回归测试）
    CW 页每次改动设置都会整页重建 DOM，而发送框是新建节点，输入一半的内容直接消失。
    **修法**：把草稿提升到 `QsoSession.draft`，渲染时回填——即"状态放在会话层，不放 DOM"。
-
-### 建议下次修
-
-2. **渲染层没有错误边界**：`App.renderPage()` 直接调用页面渲染函数，**任何一个页面抛异常就是整页白屏**，连导航都点不了。
-   建议给 `renderPage` 包一层 try/catch，出错时渲染一个"该页面出错了"面板并保留导航。成本十几行，收益是不会因为一个页面的小问题瘫掉整个应用。
-3. **并发发送没有保护**：`QsoSession.userSend()` 是异步的，在 HAM 回复（`await`）期间再次点发送，两段报文会交错。建议加一个 busy 标志，忙碌时禁用发送按钮。
-4. **刷新页面等于通联全部作废**：会话只在内存里，没有路由，刷新就回频率页、进行中的 QSO 全丢。练习器至少应该在离开前提示一句，或把当前 QSO 暂存到 localStorage 并询问是否继续。
+2. **渲染层没有错误边界**（已修）：`App.renderPage()` 改为 `safeRenderPage()` 包一层 try/catch；任一页面抛异常时只渲染"该页面出错了"面板 + 重试按钮，导航与其他页面、后台 HAM 调度都不受影响。新增 `src/ui/errorPanel.ts` 与 `safeRenderPage` 单测。
+3. **并发发送没有保护**（已修）：`QsoSession` 增加 `sending` 标志，`userSend` / `userCallsCq` / `hamCallsCq` 在发送中再次被调用时直接丢弃后续，暴露 `isSending` 供 CW 页发送按钮在忙时禁用。有单测验证并发只生效一次、顺序发送不受影响。
+4. **刷新页面等于通联全部作废**（已修）：`QsoMachine` 增加 `snapshot()` / `applySnapshot()` / `fromSnapshot()` 序列化；新增 `src/ui/storage/qsoStaging.ts` 把进行中的 QSO（machine + 对方 HAM + 收发记录 + 草稿）暂存到 localStorage；`App` 构造时 `restoreStaging()` 恢复，`LOGGED` / `FAILED` / `reset` / 换频时清理，避免已完成的 QSO 被复活。有 jsdom 单测覆盖"写入—刷新—恢复—继续到完成"。
 
 ### 只需知道，不必急着改
 
@@ -103,7 +99,7 @@ Tauri 的工作方式是：拿你现有的 Web 前端（HTML / CSS / JS）塞进
 ## 与 UI.md 对照，还差的
 
 - **PWA 离线安装**（`vite-plugin-pwa`）尚未做 —— UI.md 写了要做，上一轮选项里你没勾。**已按上面"目标是 exe"的判断下调优先级，建议不做**。
-- lookahead 流式播放、HAM 自主发 CQ —— 见 `STEP5-UI-NOTES.md` 遗留清单。（iambic 键控已于 2026-10-14 实现：`src/cw/keyer.ts` + 设置页/CW 页接线；仍缺发报侧音。）
+- lookahead 流式播放 —— 见 `STEP5-UI-NOTES.md` 遗留清单。（iambic 键控、发报侧音、HAM 自主发 CQ、以及上节三项健壮性修复，均已于 2026-10-14 实现，见 `STEP5-UI-NOTES.md`。）
 
 ---
 

@@ -418,3 +418,22 @@ table.log input {
   font-size: 12px;
   margin-bottom: 10px;
 }
+
+.error-panel {
+  border-color: #5a2a2a;
+  background: #2a1a1a;
+}
+
+.error-detail {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  color: #e0a0a0;
+  background: #1a1111;
+  border: 1px solid #3a2222;
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  margin: 8px 0;
+}

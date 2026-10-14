@@ -32,6 +32,15 @@ export interface QsoLog {
   date: string;
 }
 
+/** Serializable snapshot of a machine, enough to resume an in-progress QSO. */
+export interface MachineSnapshot {
+  state: QsoState;
+  ctx: QsoContext;
+  lastReply: string | null;
+  lastRetryKey: RetryKey | null;
+  hamOnline: boolean;
+}
+
 /** Sub-conditions that are independently retried; reaching the limit fails the QSO. */
 export type RetryKey = "CALL" | "RST" | "COPY" | "SIGNOFF";
 export const RETRY_LIMIT = 3;
@@ -217,6 +226,33 @@ export class QsoMachine {
     for (const k of RETRY_KEYS) this.ctx.retryCount[k] = 0;
     this.lastReply = null;
     this.lastRetryKey = null;
+  }
+
+  /** Capture the full machine state for persistence (resume after refresh). */
+  snapshot(): MachineSnapshot {
+    return {
+      state: this.state,
+      ctx: { ...this.ctx, retryCount: { ...this.ctx.retryCount } },
+      lastReply: this.lastReply,
+      lastRetryKey: this.lastRetryKey,
+      hamOnline: this.hamOnline,
+    };
+  }
+
+  /** Overwrite this machine's state from a snapshot (inverse of `snapshot`). */
+  applySnapshot(snap: MachineSnapshot): void {
+    this.state = snap.state;
+    this.hamOnline = snap.hamOnline;
+    Object.assign(this.ctx, snap.ctx, { retryCount: { ...snap.ctx.retryCount } });
+    this.lastReply = snap.lastReply;
+    this.lastRetryKey = snap.lastRetryKey;
+  }
+
+  /** Build a machine from a snapshot, paired with the given HAM. */
+  static fromSnapshot(snap: MachineSnapshot, opts: QsoMachineOptions): QsoMachine {
+    const m = new QsoMachine(opts);
+    m.applySnapshot(snap);
+    return m;
   }
 
   // --- Internals --------------------------------------------------------------

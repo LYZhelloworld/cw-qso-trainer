@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { App } from "./app.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { App, safeRenderPage } from "./app.js";
+import { renderErrorPanel } from "./errorPanel.js";
 import { DISCLAIMER_TEXT } from "./disclaimer.js";
 
 const NAV_LABELS = ["频率", "CW 翻译", "日志", "设置", "关于"];
@@ -108,5 +109,51 @@ describe("App 外壳", () => {
     expect(app.session).not.toBe(before);
     expect(app.session.freqMHz).toBe(7.025);
     expect(root.textContent).toContain("7.0250 MHz");
+  });
+});
+
+describe("安全渲染页面边界", () => {
+  it("页面渲染正常时调用 render", () => {
+    const root = document.createElement("div");
+    const render = vi.fn();
+    safeRenderPage(render, {} as never, root, () => {});
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it("render 抛错时交给 onError 而不是抛出", () => {
+    const root = document.createElement("div");
+    const onError = vi.fn();
+    expect(() =>
+      safeRenderPage(
+        () => {
+          throw new Error("boom");
+        },
+        {} as never,
+        root,
+        onError,
+      ),
+    ).not.toThrow();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("onError 接入错误面板后「重试」可重渲染", () => {
+    const root = document.createElement("div");
+    let retried = false;
+    safeRenderPage(
+      () => {
+        throw new Error("x");
+      },
+      {} as never,
+      root,
+      (err) => renderErrorPanel(root, "cw", err, () => {
+        retried = true;
+      }),
+    );
+    const retry = Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => b.textContent === "重试",
+    );
+    expect(retry).toBeDefined();
+    retry?.click();
+    expect(retried).toBe(true);
   });
 });

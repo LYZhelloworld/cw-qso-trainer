@@ -1,6 +1,6 @@
 import { QsoMachine, type QsoState } from "../qso/stateMachine.js";
 import { Frequency } from "../ham/frequency.js";
-import type { VirtualHam } from "../ham/virtualHam.js";
+import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
 import { CwAudioEngine, type EngineRenderOptions } from "../audio/engine.js";
 import { difficultyToEnvironment } from "../audio/environment.js";
@@ -12,6 +12,7 @@ import {
 } from "../ham/activity.js";
 import type { AppSettings } from "./settingsSchema.js";
 import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
+import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
 
 /**
  * Presentation-layer session: pairs one virtual HAM on one frequency with a
@@ -82,6 +83,8 @@ export class QsoSession {
   draft = "";
   /** Set once the finished QSO has been written to the log (prevents duplicates). */
   logWritten = false;
+  /** True while a transmission is in flight; guards against interleaved sends. */
+  private sending = false;
 
   constructor(freqMHz: number, settings: AppSettings, opts: QsoSessionOptions = {}) {
     this.freqMHz = freqMHz;
@@ -154,6 +157,17 @@ export class QsoSession {
     return this.engine.playbackAvailable;
   }
 
+  /** True while a transmission (user or HAM) is being sent — UI disables send. */
+  get isSending(): boolean {
+    return this.sending;
+  }
+
+  /** Update the unsent draft and persist it so a refresh keeps what was typed. */
+  setDraft(value: string): void {
+    this.draft = value;
+    this.persistStaging();
+  }
+
   updateSettings(settings: AppSettings): void {
     this.settings = settings;
   }
@@ -174,37 +188,49 @@ export class QsoSession {
 
   /** A virtual HAM calls CQ on this frequency. */
   async hamCallsCq(ham?: VirtualHam): Promise<void> {
-    const target = ham ?? this.pickHam();
-    // The same HAM calling again must not restart the exchange: repeating hamCq()
-    // on a machine already in PEER_CQ is idempotent, so reuse it and just log
-    // and play the repeated call.
-    const machine =
-      this.machine !== null &&
-      this.ham?.call === target.call &&
-      this.machine.state === "PEER_CQ"
-        ? this.machine
-        : this.startMachine(target);
-    const text = machine.hamCq();
-    this.push("ham", text);
-    await this.playHam(text);
+    if (this.sending) return;
+    this.sending = true;
+    try {
+      const target = ham ?? this.pickHam();
+      // The same HAM calling again must not restart the exchange: repeating hamCq()
+      // on a machine already in PEER_CQ is idempotent, so reuse it and just log
+      // and play the repeated call.
+      const machine =
+        this.machine !== null &&
+        this.ham?.call === target.call &&
+        this.machine.state === "PEER_CQ"
+          ? this.machine
+          : this.startMachine(target);
+      const text = machine.hamCq();
+      this.push("ham", text);
+      await this.playHam(text);
+    } finally {
+      this.sending = false;
+    }
   }
 
   /** The user calls CQ; a single HAM answers after a short delay. */
   async userCallsCq(): Promise<void> {
-    const machine = this.startMachine(this.pickHam());
-    const cq = `CQ CQ CQ DE ${this.myCall()} ${this.myCall()} PSE K`;
-    machine.userSend(cq); // -> USER_CQ
-    this.push("me", cq);
-    await this.playMine(cq);
-    // VIRTUAL-HAM.md: a HAM answers the user's CQ after 1–5 s.
-    await this.wait(answerCqDelayMs(this.rng));
-    const reply = machine.hamAnswerCq();
-    if (reply) {
-      if (this.ham) this.freq.markInQso(this.ham.call);
-      this.push("ham", reply);
-      await this.playHam(reply);
-    } else {
-      this.push("sys", "无人应答，CQ 超时");
+    if (this.sending) return;
+    this.sending = true;
+    try {
+      const machine = this.startMachine(this.pickHam());
+      const cq = `CQ CQ CQ DE ${this.myCall()} ${this.myCall()} PSE K`;
+      machine.userSend(cq); // -> USER_CQ
+      this.push("me", cq);
+      await this.playMine(cq);
+      // VIRTUAL-HAM.md: a HAM answers the user's CQ after 1–5 s.
+      await this.wait(answerCqDelayMs(this.rng));
+      const reply = machine.hamAnswerCq();
+      if (reply) {
+        if (this.ham) this.freq.markInQso(this.ham.call);
+        this.push("ham", reply);
+        await this.playHam(reply);
+      } else {
+        this.push("sys", "无人应答，CQ 超时");
+      }
+    } finally {
+      this.sending = false;
     }
   }
 
@@ -214,36 +240,43 @@ export class QsoSession {
     if (!machine) return;
     const line = text.trim().toUpperCase();
     if (!line) return;
+    // Busy guard: a second send while the first is still being transmitted (or
+    // the HAM is mid-reply) is dropped rather than interleaved with it.
+    if (this.sending) return;
+    this.sending = true;
+    try {
+      // Answering a HAM's CQ: the user has spoken up, so that HAM drops its own
+      // CQ rhythm — no more repeats, and the 3-minute give-up timer stops.
+      if (machine.state === "PEER_CQ" && this.ham) this.freq.markInQso(this.ham.call);
 
-    // Answering a HAM's CQ: the user has spoken up, so that HAM drops its own
-    // CQ rhythm — no more repeats, and the 3-minute give-up timer stops.
-    if (machine.state === "PEER_CQ" && this.ham) this.freq.markInQso(this.ham.call);
+      this.push("me", line);
+      await this.playMine(line);
 
-    this.push("me", line);
-    await this.playMine(line);
-
-    // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
-    if (this.ham && this.rng() < this.ham.missProbability) {
-      const agn = machine.hamMissed();
-      if (agn) {
-        await this.wait(replyDelayMs(this.rng));
-        this.push("ham", agn);
-        await this.playHam(agn);
-        return;
+      // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
+      if (this.ham && this.rng() < this.ham.missProbability) {
+        const agn = machine.hamMissed();
+        if (agn) {
+          await this.wait(replyDelayMs(this.rng));
+          this.push("ham", agn);
+          await this.playHam(agn);
+          return;
+        }
       }
-    }
 
-    const replies = machine.userSend(line);
-    if (replies.length === 0) this.push("sys", "（无应答）");
-    for (const reply of replies) {
-      // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
-      await this.wait(replyDelayMs(this.rng));
-      this.push("ham", reply);
-      await this.playHam(reply);
-    }
+      const replies = machine.userSend(line);
+      if (replies.length === 0) this.push("sys", "（无应答）");
+      for (const reply of replies) {
+        // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
+        await this.wait(replyDelayMs(this.rng));
+        this.push("ham", reply);
+        await this.playHam(reply);
+      }
 
-    // QSO complete: the HAM goes back to listening and will call CQ again.
-    if (machine.state === "LOGGED" && this.ham) this.freq.markListening(this.ham.call);
+      // QSO complete: the HAM goes back to listening and will call CQ again.
+      if (machine.state === "LOGGED" && this.ham) this.freq.markListening(this.ham.call);
+    } finally {
+      this.sending = false;
+    }
   }
 
   /** The log row to persist once a QSO completes, or null if the gate is unmet. */
@@ -289,6 +322,46 @@ export class QsoSession {
     this.lines = [];
     this.draft = "";
     this.logWritten = false;
+    this.dropStaging();
+  }
+
+  /**
+   * Restore an in-progress QSO from the last staging snapshot, if any and if it
+   * still matches this frequency. Called once on app start so an accidental
+   * refresh resumes rather than discarding the conversation.
+   */
+  restoreStaging(): void {
+    const staged = loadStaging();
+    if (!staged) return;
+    // A different band, or nothing worth resuming, or an already-finished QSO:
+    // drop the stale snapshot rather than resurrecting it.
+    if (staged.freqMHz !== this.freqMHz) {
+      clearStaging();
+      return;
+    }
+    if (!staged.machine || !staged.ham) {
+      clearStaging();
+      return;
+    }
+    const active = ["USER_CQ", "PEER_CQ", "EXCHANGE", "SIGNOFF"];
+    if (!active.includes(staged.machine.state)) {
+      clearStaging();
+      return;
+    }
+    const ham = new VirtualHam({
+      call: staged.ham.call,
+      difficulty: staged.ham.difficulty,
+      report: staged.ham.report,
+    });
+    this.ham = ham;
+    this.machine = QsoMachine.fromSnapshot(staged.machine, {
+      myCall: this.myCall(),
+      ham,
+      db: dxccDatabase,
+    });
+    this.lines = staged.lines;
+    this.draft = staged.draft;
+    this.logWritten = staged.logWritten;
   }
 
   // --- internals -----------------------------------------------------------
@@ -370,6 +443,38 @@ export class QsoSession {
   private push(who: Speaker, text: string): void {
     this.lines.push({ who, text });
     this.transcriptListener?.();
+    this.persistStaging();
+  }
+
+  /**
+   * Write the in-progress QSO to staging (localStorage) so a refresh can resume.
+   * A finished or failed QSO is cleared instead — staging is only for the
+   * conversation still underway, and the log already holds the completed record.
+   */
+  private persistStaging(): void {
+    if (this.machine && (this.machine.state === "LOGGED" || this.machine.state === "FAILED")) {
+      clearStaging();
+      return;
+    }
+    saveStaging({
+      freqMHz: this.freqMHz,
+      lines: this.lines,
+      draft: this.draft,
+      logWritten: this.logWritten,
+      machine: this.machine ? this.machine.snapshot() : null,
+      ham: this.ham
+        ? { call: this.ham.call, difficulty: this.ham.difficulty, report: this.ham.report }
+        : null,
+    });
+  }
+
+  private dropStaging(): void {
+    clearStaging();
+  }
+
+  /** Public: drop any staged QSO (e.g. when the user tunes to a new band). */
+  discardStaging(): void {
+    clearStaging();
   }
 
   private async playHam(text: string): Promise<void> {

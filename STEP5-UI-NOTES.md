@@ -1,6 +1,6 @@
 # 第五步 UI：实现说明与遗留问题
 
-分支：`feat/ui`（基于 `master` 的 `476b4f6`）。本文件是进度说明，不是设计文档，故放在仓库根而非 `doc/`。
+分支：`feat/keyer-sidetone`（基于 `master` 的 `476b4f6`，在上游 UI 落地之后继续叠加 iambic / 侧音 / HAM 自主 CQ / 三项健壮性修复）。本文件是进度说明，不是设计文档，故放在仓库根而非 `doc/`。
 
 ---
 
@@ -12,7 +12,7 @@ UI 本身仍然不引框架，理由是与项目既有约定一致——核心�
 
 > **更正（2026-10-14）**：此前写着「沙箱内 npm install 走不通（代理 502），不能引入新依赖」，**这条是错的**。实测在同一环境下 `npm ping` → `PONG`、`npm view jsdom version` → `30.1.2`、`npm install` 均正常。被拦的只是 **git 的 HTTPS CONNECT 隧道**，npm registry 走普通 HTTPS 请求不受影响，不能由前者推出后者。
 
-据此新增了两个 **devDependency，仅用于测试，不进运行时 bundle**（`vite build` 产物仍是 33 模块 / 64.66 kB，与加装依赖前一致）：
+据此新增了两个 **devDependency，仅用于测试，不进运行时 bundle**（`vite build` 产物 38 模块 / 83.11 kB，与加装依赖前一致）：
 
 | 包 | 用途 |
 |---|---|
@@ -65,11 +65,12 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 ## 验证结果
 
 - `tsc --noEmit`：**0 错误**
-- `vite build`：**通过**（36 模块，JS 80.51 kB / CSS 5.03 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
-- 测试：**全套 248 例通过**（22 个文件）
+- `vite build`：**通过**（38 模块，JS 83.11 kB / CSS 5.29 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
+- 测试：**全套 260 例通过**（25 个文件）
   - UI 部分 **95 例**：其中 26 例是 node 环境纯逻辑（设置校验 13 / 日志推导 8 / 频段 5），**69 例是 jsdom 下的真实 DOM 交互测试**，含「跑完一次完整 QSO → 自动入库 → 日志页显示」的端到端用例
   - iambic 键控与侧音 **53 例**：核心 `src/cw/keyer.ts` 20 例（含 Mode A/B 差异、squeeze、CQ 往返解码）、UI 封装 10 例、CW 页双桨输入 5 例、设置页电键类型 2 例、侧音 16 例
   - HAM 自主发 CQ **27 例**：核心 `src/ham/activity.ts` 16 例（区间钳制、反复重呼、3 分钟下线、通联中不下线、恢复守听）、会话层接线 11 例（注入时钟与等待，含「通联中不被其他台呼叫打断」「下线后自动补位」）
+  - 健壮性三项 **12 例**：错误边界面板 2 例 + `safeRenderPage` 边界 3 例（node/jsdom）、发送 busy 保护 2 例（node）、进行中通联暂存 5 例（jsdom，覆盖写入 / 草稿 / 刷新恢复 / 完成即清 / reset 即清）
 
 > 沙箱内跑测试的注意点（本机无此问题）：多个测试文件并发时，vitest 写临时缓存会被 WorkBuddy 的 fs 沙箱拒 EPERM。规避方式是重定向临时目录并串行执行：
 > `mkdir -p .vitest-tmp && TMP=$PWD/.vitest-tmp TEMP=$PWD/.vitest-tmp npx vitest run --no-file-parallelism`
@@ -77,6 +78,9 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 ## 遗留问题与限制
 
 1. ~~**UI 没有自动化测试。**~~ **已解决（2026-10-14）**：装 `jsdom` + `fake-indexeddb` 后，五个页面的关键路径均已自动化覆盖——App 外壳与导航切换、首次免责弹窗与「我已知晓」、频率页频段/调谐/HAM 列表、CW 页遮蔽与单条揭示/宏/发送/新通联、日志页写入/编辑/清空与 IndexedDB 缺失时的降级、设置页呼号校验与各项保存/恢复默认、关于页免责与范围。**仍然无法自动化的是真实浏览器行为**：Web Audio 发声与自动播放限制、实际音频听感、`npm run dev` 下的视觉与手感——这些仍需你手动过一遍。
+1. ~~**UI 没有错误边界，任一页面抛异常就整页白屏。**~~ **已解决（2026-10-14）**：`App.renderPage()` 改用 `safeRenderPage()` 包 try/catch，异常时就地渲染「该页面出错了」面板 + 重试按钮（`src/ui/errorPanel.ts`），导航、其他页面与后台 HAM 调度不受影响；`safeRenderPage` 与错误面板均有单测。
+1. ~~**发送没有并发保护，连点会交错报文。**~~ **已解决（2026-10-14）**：`QsoSession` 增加 `sending` 标志，`userSend` / `userCallsCq` / `hamCallsCq` 发送中再次调用直接丢弃后续，并暴露 `isSending` 供 CW 页发送按钮在忙时禁用；有单测验证并发只生效一次、顺序发送不受影响。
+1. ~~**刷新页面等于进行中的通联全部作废。**~~ **已解决（2026-10-14）**：`QsoMachine` 新增 `snapshot()` / `applySnapshot()` / `fromSnapshot()`；新增 `src/ui/storage/qsoStaging.ts` 把进行中的 QSO（状态机 + 对方 HAM + 收发记录 + 草稿）暂存到 localStorage，`App` 构造时 `restoreStaging()` 恢复，通联完成（`LOGGED`/`FAILED`）、`reset`、换频时清理，避免已完成的 QSO 被复活；有 jsdom 单测覆盖「写入—刷新—恢复—继续到完成」。
 2. **浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。音频后端目前每次播放新建并关闭 AudioContext。
 3. ~~**iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。~~ **已实现（2026-10-14）**：核心 `src/cw/keyer.ts`（Mode A/B、squeeze 点划记忆、自动 3d/7d 间隔），UI 侧设置页可切「直键 / iambic」并绑定点划键位，CW 页支持双桨输入与空格分词。**侧音已实现（2026-10-14）**：`src/audio/sidetone.ts`，直键跟随按键、iambic 跟随元素起止，可在设置页开关与调音量（默认开、40%）。
 4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。**2026-10-14 明确暂缓，不排期。**
@@ -94,7 +98,7 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 
 ```bash
 npm run build      # 生产构建
-npm test           # 248 例测试（含 jsdom 下的 UI 交互，无需浏览器）
+npm test           # 260 例测试（含 jsdom 下的 UI 交互，无需浏览器）
 npm run typecheck  # 类型检查
 npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```
@@ -104,4 +108,4 @@ npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些�
 
 ## Git 状态
 
-改动只在本地 `feat/ui` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。
+改动只在本地 `feat/keyer-sidetone` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。
