@@ -54,8 +54,28 @@ export class App implements AppHost {
 
   constructor(private readonly root: HTMLElement) {
     this.settings = loadSettings();
-    this.session = new QsoSession(this.settings.freqMHz, this.settings);
-    this.session.seedHams(3);
+    this.session = this.createSession();
+    this.startSession();
+  }
+
+  /** A fresh session for the current band, with the band populated. */
+  private createSession(): QsoSession {
+    const session = new QsoSession(this.settings.freqMHz, this.settings);
+    session.seedHams();
+    return session;
+  }
+
+  /**
+   * Populate + start the HAMs' CQ rhythm, and let autonomous activity refresh
+   * the view. Refreshes are skipped while the user has unsent text, so an
+   * incoming CQ can never wipe out a half-typed transmission.
+   */
+  private startSession(): void {
+    this.session.start();
+    this.session.setActivityListener(() => {
+      if (this.session.draft) return;
+      if (this.page === "frequency" || this.page === "cw") this.refresh();
+    });
   }
 
   start(): void {
@@ -76,8 +96,11 @@ export class App implements AppHost {
     saveSettings(merged);
     if (freqChanged) {
       // A different frequency means a different set of HAMs: start over.
-      this.session = new QsoSession(merged.freqMHz, merged);
-      this.session.seedHams(3);
+      // The old session must be disposed first, otherwise its scheduler keeps
+      // ticking forever on a band nobody is listening to.
+      this.session.dispose();
+      this.session = this.createSession();
+      this.startSession();
     } else {
       this.session.updateSettings(merged);
     }
@@ -86,7 +109,7 @@ export class App implements AppHost {
 
   newSession(): void {
     this.session.reset();
-    this.session.seedHams(3);
+    this.session.seedHams();
     this.refresh();
   }
 
@@ -94,6 +117,12 @@ export class App implements AppHost {
     this.page = page;
     this.renderNav();
     this.refresh();
+  }
+
+  /** Release page listeners and stop the HAM scheduler. */
+  dispose(): void {
+    this.runCleanups();
+    this.session.dispose();
   }
 
   refresh(): void {

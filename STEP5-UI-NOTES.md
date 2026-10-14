@@ -65,10 +65,11 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 ## 验证结果
 
 - `tsc --noEmit`：**0 错误**
-- `vite build`：**通过**（33 模块，JS 64.66 kB / CSS 5.03 kB，与加装测试依赖前完全一致）
-- 测试：**全套 200 例通过**（18 个文件）
-  - UI 部分 **84 例**：其中 26 例是 node 环境纯逻辑（设置校验 13 / 日志推导 8 / 频段 5），**58 例是 jsdom 下的真实 DOM 交互测试**，含「跑完一次完整 QSO → 自动入库 → 日志页显示」的端到端用例
-  - iambic 键控 **32 例**：核心 `src/cw/keyer.ts` 19 例（含 Mode A/B 差异、squeeze、CQ 往返解码）、UI 封装 6 例、CW 页双桨输入 5 例、设置页电键类型 2 例
+- `vite build`：**通过**（36 模块，JS 80.51 kB / CSS 5.03 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
+- 测试：**全套 248 例通过**（22 个文件）
+  - UI 部分 **95 例**：其中 26 例是 node 环境纯逻辑（设置校验 13 / 日志推导 8 / 频段 5），**69 例是 jsdom 下的真实 DOM 交互测试**，含「跑完一次完整 QSO → 自动入库 → 日志页显示」的端到端用例
+  - iambic 键控与侧音 **53 例**：核心 `src/cw/keyer.ts` 20 例（含 Mode A/B 差异、squeeze、CQ 往返解码）、UI 封装 10 例、CW 页双桨输入 5 例、设置页电键类型 2 例、侧音 16 例
+  - HAM 自主发 CQ **27 例**：核心 `src/ham/activity.ts` 16 例（区间钳制、反复重呼、3 分钟下线、通联中不下线、恢复守听）、会话层接线 11 例（注入时钟与等待，含「通联中不被其他台呼叫打断」「下线后自动补位」）
 
 > 沙箱内跑测试的注意点（本机无此问题）：多个测试文件并发时，vitest 写临时缓存会被 WorkBuddy 的 fs 沙箱拒 EPERM。规避方式是重定向临时目录并串行执行：
 > `mkdir -p .vitest-tmp && TMP=$PWD/.vitest-tmp TEMP=$PWD/.vitest-tmp npx vitest run --no-file-parallelism`
@@ -78,8 +79,8 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 1. ~~**UI 没有自动化测试。**~~ **已解决（2026-10-14）**：装 `jsdom` + `fake-indexeddb` 后，五个页面的关键路径均已自动化覆盖——App 外壳与导航切换、首次免责弹窗与「我已知晓」、频率页频段/调谐/HAM 列表、CW 页遮蔽与单条揭示/宏/发送/新通联、日志页写入/编辑/清空与 IndexedDB 缺失时的降级、设置页呼号校验与各项保存/恢复默认、关于页免责与范围。**仍然无法自动化的是真实浏览器行为**：Web Audio 发声与自动播放限制、实际音频听感、`npm run dev` 下的视觉与手感——这些仍需你手动过一遍。
 2. **浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。音频后端目前每次播放新建并关闭 AudioContext。
 3. ~~**iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。~~ **已实现（2026-10-14）**：核心 `src/cw/keyer.ts`（Mode A/B、squeeze 点划记忆、自动 3d/7d 间隔），UI 侧设置页可切「直键 / iambic」并绑定点划键位，CW 页支持双桨输入与空格分词。**侧音已实现（2026-10-14）**：`src/audio/sidetone.ts`，直键跟随按键、iambic 跟随元素起止，可在设置页开关与调音量（默认开、40%）。
-4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。
-5. **HAM 不会自主定时发 CQ**：频率页是「点按钮触发」，真实的节奏调度循环按 ROADMAP 仍属延后项。
+4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。**2026-10-14 明确暂缓，不排期。**
+5. ~~**HAM 不会自主定时发 CQ**：频率页是「点按钮触发」。~~ **已实现（2026-10-14）**：核心 `src/ham/activity.ts` —— CQ 间隔 30–60 s 随机、无人应答时反复重呼、连续 3 分钟无应答下线、频段维持 1–3 个活跃；时钟与随机源全部注入、模块内无定时器，故 3 分钟的下线判定可在毫秒内测完。会话层 `QsoSession` 以 1 s 驱动循环推进它，应答延迟 1–5 s、回复延迟 1–3 s（取代原先硬编码的 1200 ms）。频率页显示各台状态（守听 / 呼叫 CQ 中 / 通联中）。**交互约束**：用户已在交换中时，频段上其他台的呼叫不会被接入，以免打断进行中的通联。
 6. **信号强度条**由频率上 HAM 数量推导，不是真实传播模型。
 7. **lookahead 流式播放调度**未实现（ROADMAP 已列为延后），当前是一次性灌 BufferSource。
 8. **全局快捷键**做不到：Web 页面失焦无法捕获键盘，需迁 Tauri 才能解决（UI.md 已知限制）。
@@ -93,7 +94,7 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 
 ```bash
 npm run build      # 生产构建
-npm test           # 200 例测试（含 jsdom 下的 UI 交互，无需浏览器）
+npm test           # 248 例测试（含 jsdom 下的 UI 交互，无需浏览器）
 npm run typecheck  # 类型检查
 npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```

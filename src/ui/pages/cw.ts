@@ -1,4 +1,4 @@
-import { button, el, panel } from "../dom.js";
+import { button, clear, el, panel } from "../dom.js";
 import { IambicKeyerInput, StraightKeyer } from "../keyer.js";
 import { Sidetone } from "../../audio/sidetone.js";
 import type { Paddle } from "../../cw/keyer.js";
@@ -48,22 +48,38 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
 
   // --- transcript ----------------------------------------------------------
   const pane = el("div", { class: "cw-pane" });
-  if (session.lines.length === 0) {
-    pane.append(el("div", { class: "hint", text: "尚无通联内容。请到「频率」页面开始。" }));
-  }
-  for (const line of session.lines) {
-    const row = el("div", { class: `cw-line ${line.who}` });
-    const who = line.who === "me" ? "我" : line.who === "ham" ? "对方" : "系统";
-    row.append(el("span", { class: "who", text: who }));
-    const hidden = line.who === "ham" && !settings.assistMode && !revealed.has(line);
-    if (hidden) {
-      row.append(el("span", { class: "txt masked", text: maskText(line.text) }));
-      row.append(button("显示", () => { revealed.add(line); host.refresh(); }, "btn small"));
-    } else {
-      row.append(el("span", { class: "txt", text: line.text }));
+  /**
+   * Redraws only the transcript, leaving the send box and its draft untouched.
+   * Runs on every appended line, so the user's own transmission shows up the
+   * instant it is sent instead of after the HAM's delayed reply.
+   */
+  const renderTranscript = (): void => {
+    clear(pane);
+    if (session.lines.length === 0) {
+      pane.append(el("div", { class: "hint", text: "尚无通联内容。请到「频率」页面开始。" }));
+      return;
     }
-    pane.append(row);
-  }
+    for (const line of session.lines) {
+      const row = el("div", { class: `cw-line ${line.who}` });
+      const who = line.who === "me" ? "我" : line.who === "ham" ? "对方" : "系统";
+      row.append(el("span", { class: "who", text: who }));
+      const hidden = line.who === "ham" && !settings.assistMode && !revealed.has(line);
+      if (hidden) {
+        row.append(el("span", { class: "txt masked", text: maskText(line.text) }));
+        row.append(
+          button("显示", () => {
+            revealed.add(line);
+            renderTranscript();
+          }, "btn small"),
+        );
+      } else {
+        row.append(el("span", { class: "txt", text: line.text }));
+      }
+      pane.append(row);
+    }
+  };
+  renderTranscript();
+  session.setTranscriptListener(renderTranscript);
 
   // --- send box ------------------------------------------------------------
   const input = el("textarea", {
@@ -278,4 +294,6 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
     panel(useIambic ? "电键输入（iambic 双桨）" : "电键输入（直键）", keyArea),
     panel("操作", controls),
   );
+
+  host.onLeave(() => session.setTranscriptListener(null));
 }

@@ -3,6 +3,13 @@ import { BANDS, FREQ_STEP_MHZ, clampToBand, roundFreq } from "../bands.js";
 import { formatFreqMHz } from "../logRecord.js";
 import type { AppHost } from "../app.js";
 
+/** What each HAM on the band is doing right now. */
+const ACTIVITY_LABEL: Record<string, string> = {
+  listening: "守听",
+  cqing: "呼叫 CQ 中",
+  inQso: "通联中",
+};
+
 /** Frequency page: band switching, tuning, signal strength and band activity. */
 export function renderFrequency(host: AppHost, root: HTMLElement): void {
   const bandIndex = Math.min(Math.max(host.settings.bandIndex, 0), BANDS.length - 1);
@@ -35,8 +42,8 @@ export function renderFrequency(host: AppHost, root: HTMLElement): void {
     button("+ 1 kHz", () => step(FREQ_STEP_MHZ)),
   );
 
-  const hams = host.session.listHams();
-  const level = hams.length === 0 ? 0 : Math.min(5, 2 + hams.length);
+  const roster = host.session.hamActivity();
+  const level = roster.length === 0 ? 0 : Math.min(5, 2 + roster.length);
   const signal = el("div", { class: "signal" });
   for (let i = 0; i < 5; i += 1) signal.append(el("i", { class: i < level ? "on" : "" }));
 
@@ -44,14 +51,14 @@ export function renderFrequency(host: AppHost, root: HTMLElement): void {
   signalRow.append(el("span", { class: "hint", text: "信号强度" }), signal);
 
   const activity = el("div", { class: "col" });
-  if (hams.length === 0) {
+  if (roster.length === 0) {
     activity.append(el("div", { class: "hint", text: "当前频率没有活动" }));
   } else {
-    for (const ham of hams) {
+    for (const entry of roster) {
       const line = el("div", { class: "row" });
-      line.append(el("span", { text: ham.call }));
-      line.append(el("span", { class: "badge", text: ham.difficulty }));
-      line.append(el("span", { class: "hint", text: `发送 RST ${ham.report}` }));
+      line.append(el("span", { text: entry.ham.call }));
+      line.append(el("span", { class: "badge", text: ACTIVITY_LABEL[entry.state] ?? entry.state }));
+      line.append(el("span", { class: "hint", text: `发送 RST ${entry.ham.report}` }));
       activity.append(line);
     }
   }

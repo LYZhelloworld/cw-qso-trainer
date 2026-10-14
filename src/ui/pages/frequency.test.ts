@@ -16,6 +16,7 @@ function makeHost(overrides: Partial<AppSettings> = {}) {
     settings,
     session: {
       listHams: () => [],
+      hamActivity: () => [],
       hamCallsCq: async () => {},
       userCallsCq: async () => {},
     } as unknown as QsoSession,

@@ -7,11 +7,15 @@ const NAV_LABELS = ["频率", "CW 翻译", "日志", "设置", "关于"];
 const ACK_KEY = "cw-qso-trainer:disclaimer-ack";
 const SETTINGS_KEY = "cw-qso-trainer:settings";
 
+/** Every mounted app, so the scheduler it starts is always stopped afterwards. */
+const mounted: App[] = [];
+
 function mountApp(): { app: App; root: HTMLElement } {
   const root = document.createElement("div");
   document.body.append(root);
   const app = new App(root);
   app.start();
+  mounted.push(app);
   return { app, root };
 }
 
@@ -29,6 +33,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Without this each case would leave a live scheduler ticking forever.
+  for (const app of mounted) app.dispose();
+  mounted.length = 0;
   document.body.innerHTML = "";
 });
 

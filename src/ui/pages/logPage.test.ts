@@ -154,7 +154,10 @@ describe("日志页（IndexedDB 可用）", () => {
 
   it("完整跑通一次 QSO 后自动产生一条符合条件的日志", async () => {
     const settings = normalizeSettings({ myCall: "BG7XXX", difficulty: "novice" });
-    const session = new QsoSession(14.025, settings);
+    // No real waiting: this case is about the log record, not the HAM's answer
+    // timing. Leaving the 1–3 s reply delays real would push it past the
+    // default test timeout and make it flaky.
+    const session = new QsoSession(14.025, settings, { delay: async () => {} });
 
     await session.hamCallsCq();
     const peer = session.ham!.call;

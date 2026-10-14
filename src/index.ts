@@ -13,4 +13,5 @@ export * from "./audio/engine.js";
 export { VirtualHam, MISS_PROBABILITY } from "./ham/virtualHam.js";
 export type { VirtualHamOptions } from "./ham/virtualHam.js";
 export * from "./ham/generate.js";
+export * from "./ham/activity.js";
 export * from "./ham/frequency.js";
