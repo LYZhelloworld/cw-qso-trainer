@@ -13,7 +13,7 @@
 - CW 音调：`OscillatorNode` 生成 700 Hz 正弦波
 - QSB 衰落：`GainNode` 包络调制
 - QRM / QRN：额外噪声源 + 带通滤波
-- 调度精度：lookahead 调度器，128 采样粒度（约 2.9 ms @ 44.1 kHz）
+- 播放调度：共享单一 `AudioContext` + lookahead 前瞻调度器（`src/audio/player.ts`）。整段报文先渲染一次（保证 QSB/QRM/QRN 在全段连续、无接缝爆音），再按音频时钟分块调度；返回可中断的 `PlaybackHandle`，`stop()` 可在元素边界打断正在发 CQ 的 HAM，使用户能半途插话应答。Node / jsdom 下无 `AudioContext`，播放立即结束且不抛不挂。
 
 ---
 

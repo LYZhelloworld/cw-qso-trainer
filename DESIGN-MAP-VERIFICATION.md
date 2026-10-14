@@ -108,9 +108,10 @@
 - ✅ QSB（样本级正弦衰落，周期/深度可调，慢 5–15s / 快 1–3s）、QRM（额外干涉载频）、QRN（白噪声）——与文档真实感模拟一致。
 - ✅ `difficultyToEnvironment`：难度→QSB/QRM/QRN 对齐文档难度表（新手无 / 进阶慢衰落偶发 / 硬核快衰落较多 / 自定义）——`Difficulty` 含 `custom` 四档。
 - ✅ WAV 编/解码（16-bit 单声道），可离线产真实可听文件。
-- ✅ `WebAudioBackend`：探测 `AudioContext`，Node 下 `available=false` 且 `play` 抛错可被注入桩或降级——不引 DOM 类型依赖。
+- ✅ 音频后端：惰性**共享单一 AudioContext** + `LookaheadPlayer` 前瞻调度（`src/audio/player.ts`），Node / jsdom 下无 context 时 `play` 立即 resolve 且不抛不挂——不引 DOM 类型依赖。
+- ✅ 首次用户手势（`pointerdown` / `keydown` / `touchstart`）`resume()` 解决浏览器自动播放拦截。
 - ✅ 种子 RNG（mulberry32）保证确定性可复现。
-- ⚠️ **设计简化（合理）**：文档架构提到播放端用"lookahead 调度器、128 采样粒度"。当前 `WebAudioBackend` 一次性把整段 PCM 灌入 `AudioBufferSource` 播放，**未做 lookahead 流式调度**。对离线/CW 练习足够；流式调度属播放端优化，后续可加。
+- ✅ **lookahead 流式调度已落地**：整段渲染一次（保持 QSB/QRM/QRN 连续）后按音频时钟分块调度，返回 `PlaybackHandle{done, stop}`，`stop()` 可在元素边界打断正在呼叫的 HAM，使用户能半途插话应答（详见 `STEP5-UI-NOTES.md` 遗留 #7）。
 
 ---
 

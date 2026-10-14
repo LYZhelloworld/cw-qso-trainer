@@ -65,12 +65,13 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 ## 验证结果
 
 - `tsc --noEmit`：**0 错误**
-- `vite build`：**通过**（38 模块，JS 83.11 kB / CSS 5.29 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
-- 测试：**全套 260 例通过**（25 个文件）
+- `vite build`：**通过**（39 模块，JS 84.39 kB / CSS 5.29 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
+- 测试：**全套 271 例通过**（28 个文件）
   - UI 部分 **95 例**：其中 26 例是 node 环境纯逻辑（设置校验 13 / 日志推导 8 / 频段 5），**69 例是 jsdom 下的真实 DOM 交互测试**，含「跑完一次完整 QSO → 自动入库 → 日志页显示」的端到端用例
   - iambic 键控与侧音 **53 例**：核心 `src/cw/keyer.ts` 20 例（含 Mode A/B 差异、squeeze、CQ 往返解码）、UI 封装 10 例、CW 页双桨输入 5 例、设置页电键类型 2 例、侧音 16 例
   - HAM 自主发 CQ **27 例**：核心 `src/ham/activity.ts` 16 例（区间钳制、反复重呼、3 分钟下线、通联中不下线、恢复守听）、会话层接线 11 例（注入时钟与等待，含「通联中不被其他台呼叫打断」「下线后自动补位」）
   - 健壮性三项 **12 例**：错误边界面板 2 例 + `safeRenderPage` 边界 3 例（node/jsdom）、发送 busy 保护 2 例（node）、进行中通联暂存 5 例（jsdom，覆盖写入 / 草稿 / 刷新恢复 / 完成即清 / reset 即清）
+  - 音频后端 **11 例**：lookahead 调度器 4 例（无 context 立即解析 / 按音频时钟分块覆盖整段 / stop 中断 / 新播放打断旧）、引擎 4 例（Node 无音频不抛不挂 / 存在 AudioContext 时可用 / 注入 context 走调度器 / stop 中断）、会话层音频插话 3 例（HAM CQ 不占用发送 / 用户插话切断环境音频 / 用户发送仍受 busy 保护）
 
 > 沙箱内跑测试的注意点（本机无此问题）：多个测试文件并发时，vitest 写临时缓存会被 WorkBuddy 的 fs 沙箱拒 EPERM。规避方式是重定向临时目录并串行执行：
 > `mkdir -p .vitest-tmp && TMP=$PWD/.vitest-tmp TEMP=$PWD/.vitest-tmp npx vitest run --no-file-parallelism`
@@ -81,12 +82,12 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 1. ~~**UI 没有错误边界，任一页面抛异常就整页白屏。**~~ **已解决（2026-10-14）**：`App.renderPage()` 改用 `safeRenderPage()` 包 try/catch，异常时就地渲染「该页面出错了」面板 + 重试按钮（`src/ui/errorPanel.ts`），导航、其他页面与后台 HAM 调度不受影响；`safeRenderPage` 与错误面板均有单测。
 1. ~~**发送没有并发保护，连点会交错报文。**~~ **已解决（2026-10-14）**：`QsoSession` 增加 `sending` 标志，`userSend` / `userCallsCq` / `hamCallsCq` 发送中再次调用直接丢弃后续，并暴露 `isSending` 供 CW 页发送按钮在忙时禁用；有单测验证并发只生效一次、顺序发送不受影响。
 1. ~~**刷新页面等于进行中的通联全部作废。**~~ **已解决（2026-10-14）**：`QsoMachine` 新增 `snapshot()` / `applySnapshot()` / `fromSnapshot()`；新增 `src/ui/storage/qsoStaging.ts` 把进行中的 QSO（状态机 + 对方 HAM + 收发记录 + 草稿）暂存到 localStorage，`App` 构造时 `restoreStaging()` 恢复，通联完成（`LOGGED`/`FAILED`）、`reset`、换频时清理，避免已完成的 QSO 被复活；有 jsdom 单测覆盖「写入—刷新—恢复—继续到完成」。
-2. **浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。音频后端目前每次播放新建并关闭 AudioContext。
+2. ~~**浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。~~ **已解决（2026-10-14）**：音频后端改为**惰性共享单一 AudioContext**，首次 `pointerdown` / `keydown` / `touchstart` 即 `resume()`（侧音自身的 context 早已如此处理），不再每次播放新建并关闭 context；Node / jsdom 下仍无 context、播放立即 resolve 且不抛不挂。
 3. ~~**iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。~~ **已实现（2026-10-14）**：核心 `src/cw/keyer.ts`（Mode A/B、squeeze 点划记忆、自动 3d/7d 间隔），UI 侧设置页可切「直键 / iambic」并绑定点划键位，CW 页支持双桨输入与空格分词。**侧音已实现（2026-10-14）**：`src/audio/sidetone.ts`，直键跟随按键、iambic 跟随元素起止，可在设置页开关与调音量（默认开、40%）。
 4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。**2026-10-14 明确暂缓，不排期。**
 5. ~~**HAM 不会自主定时发 CQ**：频率页是「点按钮触发」。~~ **已实现（2026-10-14）**：核心 `src/ham/activity.ts` —— CQ 间隔 30–60 s 随机、无人应答时反复重呼、连续 3 分钟无应答下线、频段维持 1–3 个活跃；时钟与随机源全部注入、模块内无定时器，故 3 分钟的下线判定可在毫秒内测完。会话层 `QsoSession` 以 1 s 驱动循环推进它，应答延迟 1–5 s、回复延迟 1–3 s（取代原先硬编码的 1200 ms）。频率页显示各台状态（守听 / 呼叫 CQ 中 / 通联中）。**交互约束**：用户已在交换中时，频段上其他台的呼叫不会被接入，以免打断进行中的通联。
 6. **信号强度条**由频率上 HAM 数量推导，不是真实传播模型。
-7. **lookahead 流式播放调度**未实现（ROADMAP 已列为延后），当前是一次性灌 BufferSource。
+7. ~~**lookahead 流式播放调度**未实现（ROADMAP 已列为延后），当前是一次性灌 BufferSource。~~ **已实现（2026-10-14）**：新增 `src/audio/player.ts` 的 `LookaheadPlayer`——整段渲染一次（保持 QRN/QSB 连续）后按音频时钟分块前瞻调度，返回 `PlaybackHandle{done, stop}`，`stop()` 可随时在元素边界打断；`CwAudioEngine` 改用共享 context + 该调度器。HAM 连续发 CQ 时，用户可**半途插话应答**，会话层 `hamCallsCq` 不再占用 `sending`（HAM CQ 改为非阻塞、后台播放），`userSend` / `userCallsCq` 起始调用 `engine.stop()` 切断环境 HAM 音频；`reset` / `dispose` 亦停音频。
 8. **全局快捷键**做不到：Web 页面失焦无法捕获键盘，需迁 Tauri 才能解决（UI.md 已知限制）。
 9. **直键解码的已知边界**：点单位由最短按键时长估计，若一段报文全是划会导致误判（解码器既有说明）。
 10. **设置项在失焦时提交**（change 事件），避免边输入边重渲染打断输入。

@@ -1,73 +1,99 @@
 import { renderCwAudio, type CwRenderOptions, type RenderResult } from "./render.js";
 import { encodeWav } from "./wav.js";
 import { difficultyToEnvironment, type Difficulty } from "./environment.js";
+import { LookaheadPlayer, type AudioContextLike, type PlaybackHandle } from "./player.js";
 
 /**
- * Playback backend abstraction. The browser path uses Web Audio's AudioContext;
- * under Node (no AudioContext) it reports `available: false` so callers can fall
- * back to rendering a WAV file instead of throwing during unit tests.
+ * High-level CW audio engine. Pure presentation layer: it renders a message to
+ * samples / WAV and (in the browser) plays it through a single shared
+ * `AudioContext`. It does not know about the QSO state machine — but you can
+ * feed it the HAM's reply text to "hear" the HAM.
+ *
+ * Audio backend notes (replacing the old per-play `WebAudioBackend`):
+ * - **One shared context**, created lazily. Browsers start it `suspended` until
+ *   the first user gesture, so we resume it on the first `pointerdown` /
+ *   `keydown` / `touchstart` (and proactively on `play`).
+ * - **Lookahead scheduling** (`LookaheadPlayer`) replaces the old single
+ *   `BufferSource`, so a HAM that is still calling CQ can be cut off the moment
+ *   the operator breaks in.
+ * - Under Node / jsdom there is no `AudioContext`, so `play` resolves
+ *   immediately and `stop` is a safe no-op — playback never throws or hangs.
  */
-export interface PlaybackBackend {
-  readonly available: boolean;
-  play(samples: Float32Array, sampleRate: number): Promise<void>;
+
+/** The contract the UI session depends on (injectable for tests). */
+export interface AudioPlayer {
+  play(text: string, opts?: EngineRenderOptions): PlaybackHandle;
+  stop(): void;
+  readonly playbackAvailable: boolean;
 }
 
-export class WebAudioBackend implements PlaybackBackend {
-  readonly available: boolean;
+export type { PlaybackHandle } from "./player.js";
 
-  constructor() {
-    const g = globalThis as Record<string, unknown>;
-    this.available =
-      typeof g.AudioContext !== "undefined" || typeof g.webkitAudioContext !== "undefined";
-  }
+function audioContextCtor(): (new () => AudioContextLike) | undefined {
+  const g = globalThis as Record<string, unknown>;
+  return (g.AudioContext ?? g.webkitAudioContext) as
+    | (new () => AudioContextLike)
+    | undefined;
+}
 
-  async play(samples: Float32Array, sampleRate: number): Promise<void> {
-    const g = globalThis as Record<string, unknown>;
-    const Ctx = (g.AudioContext ?? g.webkitAudioContext) as new () => AudioContextLike;
-    if (!Ctx) throw new Error("WebAudioBackend: AudioContext unavailable (browser required)");
-    const ctx = new Ctx();
+let sharedCtx: AudioContextLike | null = null;
+let gestureWired = false;
+
+/**
+ * Lazily create (and cache) the one AudioContext the engine uses. Returns null
+ * where audio is unavailable (Node, jsdom), in which case playback is a no-op.
+ */
+function getSharedAudioContext(): AudioContextLike | null {
+  if (sharedCtx) return sharedCtx;
+  const Ctor = audioContextCtor();
+  if (!Ctor) return null;
+  const ctx = new Ctor();
+  sharedCtx = ctx;
+  wireGestureResume(ctx);
+  return ctx;
+}
+
+/** Resume a suspended context on the first user gesture (autoplay policy). */
+function wireGestureResume(ctx: AudioContextLike): void {
+  if (gestureWired) return;
+  gestureWired = true;
+  const g = globalThis as Record<string, unknown>;
+  const add = g.addEventListener as
+    | ((type: string, cb: () => void, opts?: { once?: boolean; capture?: boolean }) => void)
+    | undefined;
+  if (typeof add !== "function") return;
+  const resume = (): void => {
     try {
-      const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-      buffer.copyToChannel(samples, 0);
-      const src = ctx.createBufferSource();
-      src.buffer = buffer;
-      src.connect(ctx.destination);
-      await new Promise<void>((resolve) => {
-        src.onended = () => resolve();
-        src.start();
-      });
-    } finally {
-      void ctx.close();
+      ctx.resume?.();
+    } catch {
+      /* ignore */
     }
+  };
+  for (const ev of ["pointerdown", "keydown", "touchstart"]) {
+    add(ev, resume, { once: true, capture: true });
   }
-}
-
-/** Minimal structural type for the Web Audio bits we use (avoids DOM lib dep). */
-interface AudioContextLike {
-  createBuffer(channels: number, length: number, sampleRate: number): AudioBufferLike;
-  createBufferSource(): AudioBufferSourceLike;
-  destination: unknown;
-  close(): void;
-}
-interface AudioBufferLike {
-  copyToChannel(source: Float32Array, channel: number): void;
-}
-interface AudioBufferSourceLike {
-  buffer: unknown;
-  connect(node: unknown): void;
-  start(): void;
-  onended: (() => void) | null;
 }
 
 export interface EngineRenderOptions extends Omit<CwRenderOptions, "text"> {}
 
 /**
- * High-level CW audio engine. Pure presentation layer: it renders a message to
- * samples / WAV and (in the browser) plays it. It does not know about the QSO
- * state machine — but you can feed it the HAM's reply text to "hear" the HAM.
+ * CW audio engine. The browser path renders to PCM and plays it through the
+ * shared `AudioContext`; under Node it renders but playback is a no-op.
  */
-export class CwAudioEngine {
-  constructor(private readonly backend: PlaybackBackend = new WebAudioBackend()) {}
+export class CwAudioEngine implements AudioPlayer {
+  private readonly player: LookaheadPlayer;
+
+  constructor(opts?: {
+    /** Override the context source (tests). Defaults to the shared browser one. */
+    contextFactory?: () => AudioContextLike | null;
+    /** Override the scheduler timer (tests). */
+    timer?: (cb: () => void, ms: number) => () => void;
+  }) {
+    this.player = new LookaheadPlayer(
+      opts?.contextFactory ?? getSharedAudioContext,
+      opts?.timer ? { timer: opts.timer } : {},
+    );
+  }
 
   /** Render a message to PCM samples (no playback). */
   render(text: string, opts?: EngineRenderOptions): RenderResult {
@@ -96,13 +122,23 @@ export class CwAudioEngine {
     });
   }
 
-  /** Play a message (browser only). Throws if no AudioContext is available. */
-  async play(text: string, opts?: EngineRenderOptions): Promise<void> {
-    const r = renderCwAudio({ text, ...opts });
-    await this.backend.play(r.samples, r.sampleRate);
+  /** Play a message (browser only). Returns a handle; `done` resolves on end/stop. */
+  play(text: string, opts?: EngineRenderOptions): PlaybackHandle {
+    try {
+      const r = renderCwAudio({ text, ...opts });
+      return this.player.play(r.samples, r.sampleRate);
+    } catch {
+      // Rendering should never fail, but never let audio block the QSO flow.
+      return { done: Promise.resolve(), stop() {} };
+    }
+  }
+
+  /** Interrupt any in-flight playback (e.g. operator breaks in on a HAM's CQ). */
+  stop(): void {
+    this.player.stop();
   }
 
   get playbackAvailable(): boolean {
-    return this.backend.available;
+    return audioContextCtor() !== undefined;
   }
 }

@@ -2,7 +2,7 @@ import { QsoMachine, type QsoState } from "../qso/stateMachine.js";
 import { Frequency } from "../ham/frequency.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
-import { CwAudioEngine, type EngineRenderOptions } from "../audio/engine.js";
+import { CwAudioEngine, type AudioPlayer, type EngineRenderOptions } from "../audio/engine.js";
 import { difficultyToEnvironment } from "../audio/environment.js";
 import {
   answerCqDelayMs,
@@ -55,12 +55,14 @@ export interface QsoSessionOptions {
   startTicking?: (cb: () => void) => () => void;
   /** Injected wait (tests), used for the HAM's answer/reply delays. */
   delay?: (ms: number) => Promise<void>;
+  /** Injected audio player (tests); defaults to a real `CwAudioEngine`. */
+  engine?: AudioPlayer;
 }
 
 export class QsoSession {
   readonly freqMHz: number;
   private readonly freq: Frequency;
-  private readonly engine: CwAudioEngine;
+  private readonly engine: AudioPlayer;
   private readonly rng: () => number;
   private readonly now: () => number;
   private readonly startTicking: (cb: () => void) => () => void;
@@ -101,7 +103,7 @@ export class QsoSession {
       });
     this.targetHams = targetHamCount(this.rng);
     this.freq = new Frequency(freqMHz, dxccDatabase, { rng: this.rng, now: this.now });
-    this.engine = new CwAudioEngine();
+    this.engine = opts.engine ?? new CwAudioEngine();
   }
 
   /**
@@ -119,6 +121,7 @@ export class QsoSession {
       this.stopTicking();
       this.stopTicking = null;
     }
+    this.engine.stop(); // cut any in-flight HAM audio when leaving the band
     this.activityListener = null;
   }
 
@@ -186,27 +189,29 @@ export class QsoSession {
     return this.freq.listHams();
   }
 
-  /** A virtual HAM calls CQ on this frequency. */
+  /**
+   * A virtual HAM calls CQ on this frequency. Fire-and-forget: the audio plays
+   * in the background and is *not* guarded by `sending`, so the operator can
+   * break in and answer mid-CQ. A user transmission in progress still suppresses
+   * a new CQ (no point starting one nobody can hear over the user's own keying).
+   */
   async hamCallsCq(ham?: VirtualHam): Promise<void> {
     if (this.sending) return;
-    this.sending = true;
-    try {
-      const target = ham ?? this.pickHam();
-      // The same HAM calling again must not restart the exchange: repeating hamCq()
-      // on a machine already in PEER_CQ is idempotent, so reuse it and just log
-      // and play the repeated call.
-      const machine =
-        this.machine !== null &&
-        this.ham?.call === target.call &&
-        this.machine.state === "PEER_CQ"
-          ? this.machine
-          : this.startMachine(target);
-      const text = machine.hamCq();
-      this.push("ham", text);
-      await this.playHam(text);
-    } finally {
-      this.sending = false;
-    }
+    const target = ham ?? this.pickHam();
+    // The same HAM calling again must not restart the exchange: repeating hamCq()
+    // on a machine already in PEER_CQ is idempotent, so reuse it and just log
+    // and play the repeated call.
+    const machine =
+      this.machine !== null &&
+      this.ham?.call === target.call &&
+      this.machine.state === "PEER_CQ"
+        ? this.machine
+        : this.startMachine(target);
+    const text = machine.hamCq();
+    this.push("ham", text);
+    // Non-blocking: do not await the full CQ, otherwise the user could not
+    // answer until it finished. The audio is cut by the next user transmission.
+    void this.playHam(text);
   }
 
   /** The user calls CQ; a single HAM answers after a short delay. */
@@ -214,6 +219,7 @@ export class QsoSession {
     if (this.sending) return;
     this.sending = true;
     try {
+      this.stopAudio(); // cut any ambient HAM CQ before the user's own call
       const machine = this.startMachine(this.pickHam());
       const cq = `CQ CQ CQ DE ${this.myCall()} ${this.myCall()} PSE K`;
       machine.userSend(cq); // -> USER_CQ
@@ -245,6 +251,8 @@ export class QsoSession {
     if (this.sending) return;
     this.sending = true;
     try {
+      this.stopAudio(); // break in: cut any HAM still calling CQ
+
       // Answering a HAM's CQ: the user has spoken up, so that HAM drops its own
       // CQ rhythm — no more repeats, and the 3-minute give-up timer stops.
       if (machine.state === "PEER_CQ" && this.ham) this.freq.markInQso(this.ham.call);
@@ -316,6 +324,7 @@ export class QsoSession {
   reset(): void {
     // Free the HAM we were working so it resumes its own CQ rhythm.
     if (this.ham) this.freq.markListening(this.ham.call);
+    this.engine.stop(); // cut any in-flight audio along with the QSO
     this.machine?.reset();
     this.machine = null;
     this.ham = null;
@@ -486,6 +495,11 @@ export class QsoSession {
     await this.play(text, {});
   }
 
+  /** Cut any in-flight playback (the operator breaks in on a HAM's CQ). */
+  private stopAudio(): void {
+    this.engine.stop();
+  }
+
   private async play(text: string, extra: EngineRenderOptions): Promise<void> {
     const opts: EngineRenderOptions = {
       wpm: this.settings.wpm,
@@ -496,7 +510,7 @@ export class QsoSession {
       ...extra,
     };
     try {
-      await this.engine.play(text, opts);
+      await this.engine.play(text, opts).done;
     } catch {
       // No AudioContext or blocked autoplay: the text transcript still works.
     }
