@@ -40,6 +40,12 @@ export class QsoSession {
   machine: QsoMachine | null = null;
   ham: VirtualHam | null = null;
   lines: TranscriptLine[] = [];
+  /**
+   * Unsent text sitting in the send box. It lives here rather than in the DOM
+   * because any settings change re-renders the page, which would otherwise
+   * throw away whatever the user was halfway through keying in.
+   */
+  draft = "";
   /** Set once the finished QSO has been written to the log (prevents duplicates). */
   logWritten = false;
 
@@ -171,6 +177,7 @@ export class QsoSession {
     this.machine = null;
     this.ham = null;
     this.lines = [];
+    this.draft = "";
     this.logWritten = false;
   }
 

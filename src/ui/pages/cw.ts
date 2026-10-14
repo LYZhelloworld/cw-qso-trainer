@@ -67,6 +67,15 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
   const input = el("textarea", {
     attrs: { placeholder: "输入要发送的内容，例如 R UR RST 599 BK" },
   });
+  input.value = session.draft;
+  input.addEventListener("input", () => {
+    session.draft = input.value;
+  });
+  /** Keep both sides in sync so a re-render restores what the user was typing. */
+  const setDraft = (text: string): void => {
+    session.draft = text;
+    input.value = text;
+  };
 
   const flushLog = async (): Promise<void> => {
     const record = session.pendingLog();
@@ -79,7 +88,7 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
   const send = (): void => {
     const text = input.value.trim();
     if (!text) return;
-    input.value = "";
+    setDraft("");
     void (async () => {
       await session.userSend(text);
       await flushLog();
@@ -104,13 +113,13 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
     ["73 SK", "R TU 73 SK"],
   ];
   for (const [label, text] of macroList) {
-    macros.append(button(label, () => { input.value = text; }, "btn small"));
+    macros.append(button(label, () => { setDraft(text); }, "btn small"));
   }
 
   // --- straight key --------------------------------------------------------
   const keySymbols = el("div", { class: "hint", text: "" });
   const keyer = new StraightKeyer((text) => {
-    input.value = input.value ? `${input.value} ${text}` : text;
+    setDraft(input.value ? `${input.value} ${text}` : text);
     keySymbols.textContent = `已解码：${text}`;
   });
 

@@ -177,4 +177,18 @@ describe("CW 翻译页", () => {
     const harness = makeHarness();
     expect(harness.cleanups()).toBeGreaterThan(0);
   });
+
+  it("重绘（切换辅助模式）不会弄丢输入框里还没发送的报文", () => {
+    const { root, host } = makeHarness({ assistMode: true });
+    const first = root.querySelector("textarea")!;
+    first.value = "R UR RST 5"; // 输入一半，尚未发送
+    first.dispatchEvent(new Event("input"));
+
+    const assist = root.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    assist.checked = false;
+    assist.dispatchEvent(new Event("change"));
+
+    expect(host.settings.assistMode).toBe(false);
+    expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
+  });
 });
