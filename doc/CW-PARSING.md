@@ -12,12 +12,17 @@
 
 ## 键盘输入与 CW 发送（发送侧 keyer）
 
+> **已实现（2026-10-14）**：核心在 `src/cw/keyer.ts` 的 `IambicKeyer` —— Mode A/B、点划记忆（squeeze）、自动 3d 字符间隔与 7d 单词间隔均已落地。它的时钟与驱动全部由外部注入（每个方法都接收 `now`），因此行为完全确定、可单测。UI 接线见 `src/ui/keyer.ts` 的 `IambicKeyerInput`，设置页可切换「直键 / iambic」并绑定点划键位。
+>
+> 尚未实现：**发报没有侧音（sidetone）**——目前只输出文本，边敲边响尚未接音频引擎。
+
 ### 键位绑定
 
 - 用户可自定义
 - 直键：一个键
 - iambic：点键 + 划键
-- 默认建议：空格为直键；左右 Ctrl 或左右 Shift 为 iambic 点划
+- 默认：空格为直键；`KeyZ` 为点键、`KeyX` 为划键（相邻，便于双桨同按 squeeze；也不与浏览器快捷键冲突）。二者均可在设置页改绑
+- 侧音：发报同时播出监听音。直键跟随按键按下/松开；iambic 只跟随元素起止，自动插入的间隔保持静音。侧音是本地监听音，**不受 QSB/QRM/QRN 影响**（见 [音频环境](./AUDIO-ENVIRONMENT.md)）
 
 ### 直键（Straight Key）
 

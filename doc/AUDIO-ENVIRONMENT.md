@@ -13,15 +13,27 @@
 - CW 音调：`OscillatorNode` 生成 700 Hz 正弦波
 - QSB 衰落：`GainNode` 包络调制
 - QRM / QRN：额外噪声源 + 带通滤波
-- 调度精度：lookahead 调度器，128 采样粒度（约 2.9 ms @ 44.1 kHz）
+- 播放调度：共享单一 `AudioContext` + lookahead 前瞻调度器（`src/audio/player.ts`）。整段报文先渲染一次（保证 QSB/QRM/QRN 在全段连续、无接缝爆音），再按音频时钟分块调度；返回可中断的 `PlaybackHandle`，`stop()` 可在元素边界打断正在发 CQ 的 HAM，使用户能半途插话应答。Node / jsdom 下无 `AudioContext`，播放立即结束且不抛不挂。
 
 ---
 
 ## CW 音调
 
 - 默认：**700 Hz**
-- 可调范围：**400 – 1000 Hz**
+- 可调范围：**300 – 1200 Hz**
 - 波形：正弦波
+
+---
+
+## 发报侧音（Sidetone）
+
+用户自己发报时听到的本地监听音，由 `src/audio/sidetone.ts` 负责。
+
+- 与 HAM 报文不同，侧音**不走 PCM 渲染**：常驻 `OscillatorNode` + `GainNode` 实时开关，按下即响、松开即停，5 ms 斜坡消除键噪
+- 跟随对象：直键跟随按键按下/松开；iambic 只跟随元素阶段，键控器自动插入的字符与单词间隔保持静音
+- **不受难度档影响**：QSB / QRM / QRN 发生在信道上，本地监听音始终是干净的
+- 频率沿用上面的「CW 音调」设置，音量独立（默认 40%），可在设置页开关
+- 无 AudioContext 时（Node、测试环境）静默降级为空操作，不影响发报与单测
 
 ---
 
