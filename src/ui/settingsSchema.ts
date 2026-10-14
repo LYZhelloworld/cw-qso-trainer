@@ -32,6 +32,10 @@ export interface AppSettings {
   /** Iambic paddle keys (KeyboardEvent.code). */
   dotCode: string;
   dashCode: string;
+  /** Sidetone while keying (the rig's monitor tone). */
+  sidetone: boolean;
+  /** Sidetone level, 0..100. Scaled to a 0..1 linear gain for the oscillator. */
+  sidetoneVolume: number;
   /** Iambic squeeze behaviour: A drops the latched element, B sends it. */
   iambicMode: IambicMode;
 }
@@ -40,6 +44,9 @@ export const WPM_MIN = 5;
 export const WPM_MAX = 40;
 export const TONE_MIN = 300;
 export const TONE_MAX = 1200;
+/** Sidetone level shown to the user (percent); mapped to 0..1 gain internally. */
+export const SIDETONE_MIN = 0;
+export const SIDETONE_MAX = 100;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   myCall: "",
@@ -53,9 +60,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   bandIndex: 2,
   keyMode: "straight",
   keyCode: "Space",
-  dotCode: "ControlLeft",
-  dashCode: "ControlRight",
+  // Z/X: adjacent, so both can be squeezed at once; no browser shortcut grabs
+  // them and they are barely used while typing.
+  dotCode: "KeyZ",
+  dashCode: "KeyX",
   iambicMode: "A",
+  sidetone: true,
+  sidetoneVolume: 40,
 };
 
 /** Mirrors the callsign pattern used by MESSAGE-PARSING (ITU-style). */
@@ -111,6 +122,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
         ? r.dashCode
         : DEFAULT_SETTINGS.dashCode,
     iambicMode: r.iambicMode === "B" ? "B" : "A",
+    sidetone:
+      typeof r.sidetone === "boolean" ? r.sidetone : DEFAULT_SETTINGS.sidetone,
+    sidetoneVolume: clampNum(
+      r.sidetoneVolume,
+      DEFAULT_SETTINGS.sidetoneVolume,
+      SIDETONE_MIN,
+      SIDETONE_MAX,
+    ),
   };
 }
 

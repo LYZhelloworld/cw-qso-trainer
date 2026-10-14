@@ -4,6 +4,7 @@ export * from "./qso/stateMachine.js";
 export * from "./cw/morseTable.js";
 export * from "./cw/decoder.js";
 export * from "./cw/encode.js";
+export * from "./audio/sidetone.js";
 export * from "./cw/keyer.js";
 export * from "./audio/render.js";
 export * from "./audio/wav.js";

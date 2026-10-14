@@ -258,4 +258,21 @@ describe("IambicKeyer 回调与其他", () => {
     k.advance(500); // 回到过去
     expect(k.elements().length).toBe(before);
   });
+
+  it("snapshot.keying 只在元素发声时为真（侧音的依据）", () => {
+    const k = new IambicKeyer({ unit: D, mode: "B" });
+    k.press("dot", 0);
+    expect(k.snapshot().keying).toBe(true);
+
+    k.advance(D); // 元素结束，进入 1d 元素间隔
+    expect(k.snapshot().keying).toBe(false);
+    expect(k.snapshot().busy).toBe(true); // 字符还没结束
+
+    k.press("dash", D); // squeeze：下一个元素
+    k.advance(2 * D);
+    expect(k.snapshot().keying).toBe(true);
+
+    k.finish();
+    expect(k.snapshot().keying).toBe(false);
+  });
 });

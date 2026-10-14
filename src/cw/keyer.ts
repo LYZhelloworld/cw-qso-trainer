@@ -45,6 +45,11 @@ export interface IambicKeyerSnapshot {
   pendingSymbol: string;
   /** True while an element or its gap is still in flight. */
   busy: boolean;
+  /**
+   * True only while a tone is actually being sent (element phase), false during
+   * the mandatory gaps. This is what a sidetone monitor must follow.
+   */
+  keying: boolean;
 }
 
 type Phase = "idle" | "element" | "gap";
@@ -217,6 +222,7 @@ export class IambicKeyer {
       text: this.text(),
       pendingSymbol: this.symbol,
       busy: this.phase !== "idle",
+      keying: this.phase === "element",
     };
   }
 

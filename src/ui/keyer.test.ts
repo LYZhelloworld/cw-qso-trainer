@@ -88,6 +88,28 @@ describe("StraightKeyer", () => {
     k.finish();
     expect(calls).toBe(0);
   });
+
+  it("onKeying 跟随按键起停，供侧音发声", () => {
+    const keying: boolean[] = [];
+    const k = new StraightKeyer(() => {}, 50, (on) => keying.push(on));
+    k.keyDown(0);
+    k.keyDown(10); // auto-repeat: 不重复触发
+    k.keyUp(60);
+    expect(keying).toEqual([true, false]);
+  });
+
+  it("按着键时 finish/clear 会把音调停掉", () => {
+    const keying: boolean[] = [];
+    const k = new StraightKeyer(() => {}, 50, (on) => keying.push(on));
+    k.keyDown(0);
+    k.finish();
+    expect(keying).toEqual([true, false]);
+
+    const k2 = new StraightKeyer(() => {}, 50, (on) => keying.push(on));
+    k2.keyDown(0);
+    k2.clear();
+    expect(keying).toEqual([true, false, true, false]);
+  });
 });
 
 /**
@@ -99,12 +121,14 @@ function manualIambic(mode: "A" | "B" = "A") {
   const drivers: Array<() => void> = [];
   const texts: string[] = [];
   const symbols: string[] = [];
+  const keying: boolean[] = [];
 
   const input = new IambicKeyerInput({
     wpm: 20, // dot = 60 ms
     mode,
     onText: (t) => texts.push(t),
     onSymbols: (s) => symbols.push(s),
+    onKeying: (on) => keying.push(on),
     now: () => clock,
     startTicking: (cb) => {
       drivers.push(cb);
@@ -121,7 +145,7 @@ function manualIambic(mode: "A" | "B" = "A") {
     for (const cb of [...drivers]) cb();
   };
 
-  return { input, texts, symbols, tick, drivers };
+  return { input, texts, symbols, keying, tick, drivers };
 }
 
 describe("IambicKeyerInput", () => {
@@ -200,5 +224,34 @@ describe("IambicKeyerInput", () => {
     input.clear();
     expect(input.text()).toBe("");
     expect(input.currentSymbols()).toBe("");
+  });
+
+  it("onKeying 只在元素发声时为真，自动间隔期间保持静默", () => {
+    const { input, keying, tick } = manualIambic();
+    input.press("dot");
+    expect(keying).toEqual([true]); // 点在发
+
+    tick(60); // 点结束，进入 1d 元素间隔
+    expect(keying).toEqual([true, false]);
+    input.release("dot");
+    expect(keying).toEqual([true, false]); // 间隔里松开也不重复触发
+
+    input.press("dash"); // 下一个元素开始
+    tick(120);
+    expect(keying).toEqual([true, false, true]);
+  });
+
+  it("clear / finish 时若还在发声会先把音调停掉", () => {
+    const { input, keying, tick } = manualIambic();
+    input.press("dot");
+    tick(10); // 元素刚开始
+    input.clear();
+    expect(keying).toEqual([true, false]);
+
+    const second = manualIambic();
+    second.input.press("dot");
+    second.tick(10);
+    second.input.finish();
+    expect(second.keying).toEqual([true, false]);
   });
 });

@@ -2,6 +2,8 @@ import { button, el, panel } from "../dom.js";
 import { dxccDatabase } from "../../data/dxcc.js";
 import {
   DEFAULT_SETTINGS,
+  SIDETONE_MAX,
+  SIDETONE_MIN,
   TONE_MAX,
   TONE_MIN,
   WPM_MAX,
@@ -156,6 +158,16 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
       numberRow("Farnsworth 速度 WPM", s.farnsworthWpm, WPM_MIN, s.wpm, (n) =>
         host.updateSettings({ farnsworthWpm: n }),
       ),
+      checkRow("发报侧音（电键输入时听到自己的音调）", s.sidetone, (v) =>
+        host.updateSettings({ sidetone: v }),
+      ),
+      numberRow("侧音音量 (%)", s.sidetoneVolume, SIDETONE_MIN, SIDETONE_MAX, (n) =>
+        host.updateSettings({ sidetoneVolume: n }),
+      ),
+      el("div", {
+        class: "hint",
+        text: "侧音是电台监听音，不受难度档的衰落与干扰影响；浏览器可能要求先点击页面才允许发声。",
+      }),
     ),
     panel(
       "通联",

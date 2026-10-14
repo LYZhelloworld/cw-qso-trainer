@@ -1,5 +1,6 @@
 import { button, el, panel } from "../dom.js";
 import { IambicKeyerInput, StraightKeyer } from "../keyer.js";
+import { Sidetone } from "../../audio/sidetone.js";
 import type { Paddle } from "../../cw/keyer.js";
 import { addLog } from "../storage/logStore.js";
 import type { TranscriptLine } from "../session.js";
@@ -133,6 +134,26 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
 
   const useIambic = settings.keyMode === "iambic";
 
+  // Sidetone: the operator's own monitor tone while keying. It follows the key
+  // (straight) or the element phase (iambic) and is never affected by QSB/QRM.
+  const sidetone = new Sidetone({
+    enabled: settings.sidetone,
+    volume: settings.sidetoneVolume / 100,
+    freqHz: settings.toneHz,
+  });
+  const driveSidetone = (on: boolean): void => {
+    if (on) sidetone.keyDown();
+    else sidetone.keyUp();
+  };
+  const sidetoneHint = el("div", {
+    class: "hint",
+    text: !settings.sidetone
+      ? "侧音：关（可在设置页开启）"
+      : sidetone.available
+        ? `侧音：开（${settings.toneHz} Hz，音量 ${settings.sidetoneVolume}%）`
+        : "侧音：开，但当前环境没有可用的音频输出（仅影响发声，不影响发报）",
+  });
+
   if (useIambic) {
     const iambic = new IambicKeyerInput({
       wpm: settings.wpm,
@@ -141,6 +162,7 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
       onSymbols: (s) => {
         keySymbols.textContent = s ? `正在发：${s}` : "";
       },
+      onKeying: driveSidetone,
     });
 
     keyArea.append(
@@ -148,6 +170,7 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
         text: `点键「${settings.dotCode}」/ 划键「${settings.dashCode}」，同时按下为 squeeze；空格分词（焦点在输入框时不生效）`,
       }),
       keySymbols,
+      sidetoneHint,
       button("结束电键输入", () => { iambic.finish(); keySymbols.textContent = ""; }, "btn small"),
     );
 
@@ -182,16 +205,22 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       iambic.clear();
+      sidetone.dispose();
     });
   } else {
-    const keyer = new StraightKeyer((text) => {
-      setDraft(input.value ? `${input.value} ${text}` : text);
-      keySymbols.textContent = `已解码：${text}`;
-    });
+    const keyer = new StraightKeyer(
+      (text) => {
+        setDraft(input.value ? `${input.value} ${text}` : text);
+          keySymbols.textContent = `已解码：${text}`;
+      },
+      1500,
+      driveSidetone,
+    );
 
     keyArea.append(
       el("div", { text: `按住「${settings.keyCode}」发报（焦点在输入框时不生效）` }),
       keySymbols,
+      sidetoneHint,
       button("结束电键输入", () => { keyer.finish(); keySymbols.textContent = ""; }, "btn small"),
     );
 
@@ -215,6 +244,7 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       keyer.clear();
+      sidetone.dispose();
     });
   }
 

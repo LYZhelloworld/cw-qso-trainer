@@ -26,6 +26,8 @@ export class StraightKeyer {
   constructor(
     private readonly onDecode: (text: string) => void,
     private readonly idleMs: number = DEFAULT_IDLE_MS,
+    /** Tone on/off, for the sidetone. Fires only on an actual change. */
+    private readonly onKeying?: (on: boolean) => void,
   ) {}
 
   get isDown(): boolean {
@@ -44,6 +46,7 @@ export class StraightKeyer {
       this.els[this.els.length - 1].off = now - this.lastUpAt;
     }
     this.downAt = now;
+    this.onKeying?.(true);
   }
 
   keyUp(now: number = Date.now()): void {
@@ -52,12 +55,14 @@ export class StraightKeyer {
     this.downAt = null;
     this.lastUpAt = now;
     this.els.push({ on, off: 0 });
+    this.onKeying?.(false);
     this.timer = setTimeout(() => this.finish(), this.idleMs);
   }
 
   /** Decode what has been keyed so far and hand the text to the callback. */
   finish(): void {
     this.cancelTimer();
+    this.stopTone();
     if (this.els.length === 0) return;
     // A fresh decoder per utterance: MorseDecoder accumulates elements and is
     // never cleared, so reusing one would replay earlier characters.
@@ -71,6 +76,7 @@ export class StraightKeyer {
 
   clear(): void {
     this.cancelTimer();
+    this.stopTone();
     this.els = [];
     this.downAt = null;
     this.lastUpAt = null;
@@ -81,6 +87,12 @@ export class StraightKeyer {
     if (this.els.length === 0) return "";
     const d = estimateUnit(this.els.map((e) => e.on));
     return this.els.map((e) => classifyElement(e.on, d)).join("");
+  }
+
+  private stopTone(): void {
+    if (this.downAt === null) return;
+    this.downAt = null;
+    this.onKeying?.(false);
   }
 
   private cancelTimer(): void {
@@ -98,6 +110,8 @@ export interface IambicInputOptions {
   onText: (text: string) => void;
   /** Echo of the dot-dash symbols of the character being sent. */
   onSymbols?: (symbols: string) => void;
+  /** Tone on/off, for the sidetone. Fires only when the element phase changes. */
+  onKeying?: (on: boolean) => void;
   /** Injectable clock (tests) — defaults to `Date.now`. */
   now?: () => number;
   /**
@@ -120,8 +134,10 @@ export class IambicKeyerInput {
   private readonly startTicking: (cb: () => void) => () => void;
   private readonly onText: (text: string) => void;
   private readonly onSymbols?: (symbols: string) => void;
+  private readonly onKeying?: (on: boolean) => void;
   private stopTicking: (() => void) | null = null;
   private pendingSpace = false;
+  private keyingOn = false;
 
   constructor(opts: IambicInputOptions) {
     this.now = opts.now ?? (() => Date.now());
@@ -133,6 +149,7 @@ export class IambicKeyerInput {
       });
     this.onText = opts.onText;
     this.onSymbols = opts.onSymbols;
+    this.onKeying = opts.onKeying;
     this.keyer = new IambicKeyer({
       wpm: opts.wpm,
       mode: opts.mode,
@@ -152,12 +169,14 @@ export class IambicKeyerInput {
     this.keyer.advance(this.now());
     this.ensureTicking();
     this.onSymbols?.(this.keyer.snapshot().pendingSymbol);
+    this.syncKeying();
   }
 
   release(paddle: Paddle): void {
     this.keyer.release(paddle, this.now());
     this.keyer.advance(this.now());
     this.onSymbols?.(this.keyer.snapshot().pendingSymbol);
+    this.syncKeying();
   }
 
   /** Insert a 7d word gap (bound to the space key in the UI). */
@@ -169,13 +188,16 @@ export class IambicKeyerInput {
   /** Advance the keyer manually; also called by the driver. */
   tick(): void {
     this.keyer.advance(this.now());
-    this.onSymbols?.(this.keyer.snapshot().pendingSymbol);
-    if (!this.keyer.snapshot().busy) this.stop();
+    const snap = this.keyer.snapshot();
+    this.onSymbols?.(snap.pendingSymbol);
+    this.syncKeying();
+    if (!snap.busy) this.stop();
   }
 
   finish(): void {
     this.keyer.finish(this.now());
     this.onSymbols?.("");
+    this.syncKeying();
     this.stop();
   }
 
@@ -184,6 +206,7 @@ export class IambicKeyerInput {
     this.keyer.reset();
     this.pendingSpace = false;
     this.onSymbols?.("");
+    this.syncKeying();
   }
 
   setSpeed(wpm: number): void {
@@ -212,5 +235,16 @@ export class IambicKeyerInput {
       this.stopTicking();
       this.stopTicking = null;
     }
+  }
+
+  /**
+   * Mirror the element phase (not `busy`) so the sidetone sounds during a dot or
+   * dash and stays silent through the gaps the keyer inserts by itself.
+   */
+  private syncKeying(): void {
+    const keying = this.keyer.snapshot().keying;
+    if (keying === this.keyingOn) return;
+    this.keyingOn = keying;
+    this.onKeying?.(keying);
   }
 }
