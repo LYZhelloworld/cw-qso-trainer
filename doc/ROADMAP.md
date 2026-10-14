@@ -1,6 +1,6 @@
 # 开发路线（五步法）
 
-> 本项目的开发分期与每步范围。技术栈见项目根目录 MEMORY.md（TypeScript + Vite + Vitest + Web Audio；平台先原型后定；UI 暂不做）。
+> 本项目的开发分期与每步范围。技术栈见项目根目录 MEMORY.md（TypeScript + Vite + Vitest + Web Audio；**平台定为 Tauri（先 Web 原型、后打包 exe）**；**UI 已于 2026-10-14 实现**）。
 > 策略：**自底向上、每层独立可验证**——先保证"大脑"（状态机）正确，再补输入（解码）、生成（HAM）、感知（音频）、外壳（UI）。
 > 各能力域的设计见对应文档：[CW 编解码](./CW-PARSING.md)、[报文解析](./MESSAGE-PARSING.md)、[通联过程](./QSO-PROTOCOL.md)、[虚拟 HAM 策略](./VIRTUAL-HAM.md)、[音频与电磁环境](./AUDIO-ENVIRONMENT.md)、[UI 界面](./UI.md)。
 
@@ -65,11 +65,13 @@
 
 ## 第五步：用户界面
 
-目标：制作 UI 界面（平台届时已定 Web/PWA 或 Tauri）。
+> **已完成（2026-10-14）**：用**原生 TypeScript + Vite、零 UI 框架**实现，5 个页面（频率 / CW 翻译 / 日志 / 设置 / 关于），持久化（IndexedDB 日志 + localStorage 设置），免责声明常驻。进度与遗留见仓库根 `STEP5-UI-NOTES.md`，技术选型把关见 `UI-TECH-REVIEW.md`。
 
-范围（见 [UI 界面](./UI.md)）：频率 / CW 翻译（辅助模式）/ 日志 / 设置 四个页面，持久化（IndexedDB 日志 + localStorage 设置），免责声明常驻。
+目标：制作 UI 界面。
 
-约束：按用户决定"UI 往后放"，前四步均为无界面、可听 / 可测原型。
+范围（见 [UI 界面](./UI.md)）：频率 / CW 翻译（辅助模式）/ 日志 / 设置 / 关于 五个页面，持久化（IndexedDB 日志 + localStorage 设置），免责声明常驻。
+
+约束：前四步均为无界面、可听 / 可测原型；UI 在第五步落地后，核心逻辑（状态机 / 解码 / HAM / 音频）一行未改，印证了"核心模块纯 TS、UI 只做呈现层"的架构。
 
 ---
 
