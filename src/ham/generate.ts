@@ -104,7 +104,9 @@ function buildCall(
   rng: () => number,
 ): string {
   const prefix = prefixes[randInt(rng, prefixes.length)];
-  const suffixLen = 1 + randInt(rng, 3); // 1..3
+  // A real callsign's suffix is 2–3 letters (e.g. BG7XXX, JA1ABC); a single
+  // trailing letter (BG4I) reads as an illegal call. See VIRTUAL-HAM.md.
+  const suffixLen = 2 + randInt(rng, 2); // 2..3
   return `${prefix}${regionDigit}${randomSuffix(rng, suffixLen)}`;
 }
 

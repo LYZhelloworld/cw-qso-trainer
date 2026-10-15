@@ -437,3 +437,172 @@ table.log input {
   overflow: auto;
   margin: 8px 0;
 }
+
+/* --- rig: the persistent radio face ------------------------------------- */
+
+.rig {
+  background: linear-gradient(180deg, #1b222b, #141a20);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.rig-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.rig-brand {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+}
+
+.rig-freq {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.rig-freq .freq-value {
+  font-family: var(--mono);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(240, 160, 32, 0.25);
+}
+
+.rig:not(.powered) .rig-freq .freq-value {
+  color: var(--muted);
+  text-shadow: none;
+}
+
+.rig-freq .freq-unit {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rig-meta {
+  display: flex;
+  gap: 6px;
+}
+
+.badge.mode {
+  color: var(--accent-2);
+  border-color: #2a4a3a;
+}
+
+.rig-right {
+  display: flex;
+  gap: 8px;
+}
+
+.btn.power {
+  border-color: #4a2a2a;
+  color: var(--danger);
+}
+
+.btn.power.on {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #0e1a0e;
+  font-weight: 600;
+}
+
+.rig-scope {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: 54px;
+  margin-top: 10px;
+  padding: 6px 8px;
+  background: #0c1116;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.scope-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+}
+
+.scope-bars i {
+  flex: 1;
+  background: #22303c;
+  border-radius: 1px;
+}
+
+.rig.powered .scope-bars i {
+  background: linear-gradient(180deg, var(--accent-2), #245e52);
+}
+
+.scope-label {
+  position: absolute;
+  left: 10px;
+  top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.scope-call {
+  position: absolute;
+  right: 10px;
+  top: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.standby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+.standby-icon {
+  font-size: 40px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.standby-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* --- settings sheet ------------------------------------------------------ */
+
+.settings-modal {
+  max-width: 560px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.modal-head h2 {
+  margin: 0;
+}
+
+.settings-body .panel {
+  background: var(--bg);
+}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { renderSettings } from "./settingsPage.js";
+import { renderSettingsPanel } from "./settingsPage.js";
 import { DEFAULT_SETTINGS, TONE_MAX, TONE_MIN, WPM_MAX, normalizeSettings, type AppSettings } from "../settingsSchema.js";
 import { QsoSession } from "../session.js";
 import { dxccDatabase } from "../../data/dxcc.js";
@@ -25,9 +25,7 @@ function makeHost(overrides: Partial<AppSettings> = {}) {
   };
 
   function render(): void {
-    const page = document.createElement("div");
-    renderSettings(host, page);
-    root.replaceChildren(page);
+    root.replaceChildren(renderSettingsPanel(host));
   }
 
   render();

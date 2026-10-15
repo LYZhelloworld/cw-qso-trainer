@@ -4,6 +4,20 @@
 
 ---
 
+## Prototype v2（2026-10-15，分支 `feat/ui-v2`）
+
+用户验收 v1 后提出的三条改动，均在本分支完成（基于已合入的 `master`）：
+
+1. **开台 / 关台开关**：默认**关台**。关台时设备待机，不接收也不播出任何 HAM 消息（避免一打开就被突发报文惊到）；点"开台"后才 `seedHams()` + 启动 CQ 调度。`App` 新增 `powered` 状态与 `setPower()`；关台会停调度器、停音频、清空当前波段并丢弃暂存中的通联。
+2. **电台风格界面**：外壳改为常驻**电台面板**（频率大号显示 + 波段 + 模式 `CW` + 开台/关台 + 设置齿轮），下方一条"波段频谱"示意条（真实瀑布图/频谱属后续版本）。二级导航精简为 **电台 / 日志 / 关于**；**设置**由独立页面改为齿轮弹出的**模态框**。原"频率页"与"CW 翻译页"合并为单一**电台页**（调谐 + 波段活动 + 通联面板）；通联进行中时在同页显示收发记录 / 发送 / 电键输入。
+3. **呼号生成修复**：`src/ham/generate.ts` 的呼号后缀由 1–3 位改为 **2–3 位**（原先会生成 `BG4I` 这类非法呼号）；新增回归测试。
+
+涉及文件：`src/ui/app.ts`（重写外壳）、新增 `src/ui/pages/radio.ts`、`src/ui/pages/cw.ts` 导出改为 `renderQsoPanel`、`src/ui/pages/settingsPage.ts` 导出改为 `renderSettingsPanel(host)`、删除 `src/ui/pages/frequency.ts`；`src/ham/generate.ts`；`src/ui/styles.css`（电台 / 电源 / 频谱 / 模态框样式）。
+
+验证：`tsc` 0 错；`vite build` 通过（39 模块，JS 87.16 kB / CSS 7.24 kB）；**全套 277 例通过**（28 文件，较 v1 的 271 例 +6）。
+
+---
+
 ## 技术选型
 
 **原生 TypeScript + Vite，零运行时依赖。**
@@ -99,14 +113,14 @@ src/ui/pages/{frequency,cw,logPage,settingsPage,about}.ts
 
 ```bash
 npm run build      # 生产构建
-npm test           # 260 例测试（含 jsdom 下的 UI 交互，无需浏览器）
+npm test           # 277 例测试（含 jsdom 下的 UI 交互，无需浏览器）
 npm run typecheck  # 类型检查
 npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```
 
-建议的手动验收路径：设置页填呼号 → 频率页「监听：等 HAM 发 CQ」→ CW 页抄收并应答 → 走完 RST 与 73 SK → 日志页应出现一条记录。
+建议的手动验收路径：齿轮里填呼号 → 电台面板点「开台」→ 电台页「监听：等 HAM 发 CQ」→ 抄收并应答 → 走完 RST 与 73 SK → 日志页应出现一条记录。
 同一流程已有一条自动化用例覆盖（`src/ui/pages/logPage.test.ts` 的「完整跑通一次 QSO」），所以手动验收应把注意力集中在**自动化测不到的部分**：CW 音调是否真的响、音色是否舒服、浏览器首次是否拦自动播放。
 
 ## Git 状态
 
-改动只在本地 `feat/keyer-sidetone` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。
+v1 内容已作为 PR #7（squash）合入 `master`。v2 的改动只在本地 `feat/ui-v2` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。

@@ -70,8 +70,13 @@ function keyCaptureButton(
   return btn;
 }
 
-export function renderSettings(host: AppHost, root: HTMLElement): void {
+/**
+ * The settings body, returned as a standalone element so the app can drop it
+ * into the gear's modal sheet (it used to be a full page of its own).
+ */
+export function renderSettingsPanel(host: AppHost): HTMLElement {
   const s = host.settings;
+  const root = el("div", { class: "settings-body" });
 
   // --- identity ------------------------------------------------------------
   const callInput = el("input", { attrs: { type: "text" } });
@@ -173,7 +178,7 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
       "通联",
       diffField,
       checkRow("辅助模式（默认）", s.assistMode, (v) => host.updateSettings({ assistMode: v })),
-      el("div", { class: "hint", text: "辅助模式也可在 CW 翻译页面随时开关。" }),
+      el("div", { class: "hint", text: "辅助模式也可在通联面板上随时开关。" }),
     ),
     panel(
       "键位",
@@ -198,4 +203,5 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
     ),
     panel("其他", button("恢复默认设置", () => host.updateSettings(DEFAULT_SETTINGS), "btn danger")),
   );
+  return root;
 }

@@ -4,7 +4,7 @@ import { App, safeRenderPage } from "./app.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { DISCLAIMER_TEXT } from "./disclaimer.js";
 
-const NAV_LABELS = ["频率", "CW 翻译", "日志", "设置", "关于"];
+const NAV_LABELS = ["电台", "日志", "关于"];
 const ACK_KEY = "cw-qso-trainer:disclaimer-ack";
 const SETTINGS_KEY = "cw-qso-trainer:settings";
 
@@ -28,6 +28,23 @@ function navButton(root: HTMLElement, label: string): HTMLButtonElement {
   return found;
 }
 
+/** The rig's power button (label carries 开台 / 关台). */
+function powerButton(root: HTMLElement): HTMLButtonElement {
+  const found = Array.from(root.querySelectorAll<HTMLButtonElement>(".rig button")).find((b) =>
+    (b.textContent ?? "").includes("开台") || (b.textContent ?? "").includes("关台"),
+  );
+  if (!found) throw new Error("未找到电源按钮");
+  return found;
+}
+
+function gearButton(root: HTMLElement): HTMLButtonElement {
+  const found = Array.from(root.querySelectorAll<HTMLButtonElement>(".rig button")).find((b) =>
+    (b.textContent ?? "").includes("设置"),
+  );
+  if (!found) throw new Error("未找到设置齿轮");
+  return found;
+}
+
 beforeEach(() => {
   document.body.innerHTML = "";
   localStorage.clear();
@@ -41,12 +58,13 @@ afterEach(() => {
 });
 
 describe("App 外壳", () => {
-  it("渲染标题、五个导航按钮与免责页脚", () => {
+  it("渲染品牌、三个导航按钮、电台头部与免责页脚", () => {
     const { root } = mountApp();
 
     expect(root.querySelector(".app-title")?.textContent).toBe("CW QSO 练习器");
     const labels = Array.from(root.querySelectorAll("nav button")).map((b) => b.textContent);
     expect(labels).toEqual(NAV_LABELS);
+    expect(root.querySelector(".rig")).not.toBeNull();
     expect(root.querySelector(".footer")?.textContent).toBe(DISCLAIMER_TEXT);
   });
 
@@ -73,13 +91,40 @@ describe("App 外壳", () => {
     expect(document.querySelector(".modal-overlay")).toBeNull();
   });
 
-  it("默认落在频率页，点击导航可切换到 CW 翻译页", () => {
+  it("默认关台：电台页显示待机；开台后显示波段界面", () => {
+    const { root, app } = mountApp();
+
+    expect(app.powered).toBe(false);
+    expect(root.textContent).toContain("设备已关机");
+
+    app.setPower(true);
+    expect(root.textContent).toContain("波段与调谐");
+    expect(root.textContent).not.toContain("设备已关机");
+  });
+
+  it("电台头部的电源按钮切换开台/关台", () => {
+    const { root, app } = mountApp();
+
+    expect(powerButton(root).textContent).toContain("开台");
+    powerButton(root).click();
+    expect(app.powered).toBe(true);
+    expect(powerButton(root).textContent).toContain("关台");
+  });
+
+  it("齿轮打开设置面板，可关闭", () => {
+    localStorage.setItem(ACK_KEY, "1");
     const { root } = mountApp();
 
-    expect(root.textContent).toContain("频段");
-    navButton(root, "CW 翻译").click();
-    expect(root.textContent).toContain("通联状态");
-    expect(root.textContent).toContain("收报 / 发报记录");
+    gearButton(root).click();
+    const settings = document.querySelector(".settings-modal");
+    expect(settings).not.toBeNull();
+    expect(settings?.textContent).toContain("身份");
+    expect(settings?.textContent).toContain("本方呼号");
+
+    Array.from(document.querySelectorAll<HTMLButtonElement>(".settings-modal button"))
+      .find((b) => b.textContent === "关闭")!
+      .click();
+    expect(document.querySelector(".settings-modal")).toBeNull();
   });
 
   it("关于页显示版本号与免责声明", () => {
@@ -108,7 +153,7 @@ describe("App 外壳", () => {
 
     expect(app.session).not.toBe(before);
     expect(app.session.freqMHz).toBe(7.025);
-    expect(root.textContent).toContain("7.0250 MHz");
+    expect(root.querySelector(".rig .freq-value")?.textContent).toBe("7.0250");
   });
 });
 

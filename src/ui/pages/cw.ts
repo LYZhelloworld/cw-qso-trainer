@@ -23,7 +23,11 @@ const STATE_LABEL: Record<string, string> = {
   FAILED: "通联失败",
 };
 
-export function renderCw(host: AppHost, root: HTMLElement): void {
+/**
+ * The QSO operating panel (status / transcript / send / keying). Rendered by the
+ * radio page once the user has a partner; it appends its panels to `root`.
+ */
+export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   const session = host.session;
   const settings = host.settings;
 
@@ -56,7 +60,7 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
   const renderTranscript = (): void => {
     clear(pane);
     if (session.lines.length === 0) {
-      pane.append(el("div", { class: "hint", text: "尚无通联内容。请到「频率」页面开始。" }));
+      pane.append(el("div", { class: "hint", text: "尚无通联内容。" }));
       return;
     }
     for (const line of session.lines) {
@@ -283,8 +287,7 @@ export function renderCw(host: AppHost, root: HTMLElement): void {
 
   const controls = el("div", { class: "row" });
   controls.append(
-    button("新通联", () => host.newSession()),
-    button("返回频率", () => host.go("frequency")),
+    button("新通联（结束当前）", () => host.newSession()),
   );
 
   root.append(

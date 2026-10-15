@@ -1,31 +1,38 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { renderFrequency } from "./frequency.js";
+import { renderRadio } from "./radio.js";
 import { BANDS } from "../bands.js";
 import { normalizeSettings, type AppSettings } from "../settingsSchema.js";
 import { QsoSession } from "../session.js";
 import type { AppHost, PageId } from "../app.js";
 
-/** Minimal host double: records updates and re-renders like App does. */
-function makeHost(overrides: Partial<AppSettings> = {}) {
+/** Host double for the radio page. `powered` defaults to on. */
+function makeHost(overrides: Partial<AppSettings> = {}, powered = true) {
   const root = document.createElement("div");
   document.body.append(root);
-  const settings = normalizeSettings({ ...overrides });
+  const settings = normalizeSettings({ myCall: "BG7XXX", ...overrides });
+  const powerLog: boolean[] = [];
 
   const host: AppHost = {
     settings,
     session: {
+      inQso: false,
       listHams: () => [],
       hamActivity: () => [],
       hamCallsCq: async () => {},
       userCallsCq: async () => {},
     } as unknown as QsoSession,
+    powered,
+    setPower(on: boolean) {
+      powerLog.push(on);
+    },
     updateSettings(patch: Partial<AppSettings>) {
       host.settings = normalizeSettings({ ...host.settings, ...patch });
       render();
     },
     newSession() {},
     go(_page: PageId) {},
+    openSettings() {},
     refresh() {
       render();
     },
@@ -34,12 +41,12 @@ function makeHost(overrides: Partial<AppSettings> = {}) {
 
   function render(): void {
     const page = document.createElement("div");
-    renderFrequency(host, page);
+    renderRadio(host, page);
     root.replaceChildren(page);
   }
 
   render();
-  return { host, root, render };
+  return { host, root, render, powerLog };
 }
 
 function findButton(root: HTMLElement, text: string): HTMLButtonElement {
@@ -58,7 +65,25 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("频率页", () => {
+describe("电台页 — 电源", () => {
+  it("关台时显示待机，并提供「开台」按钮，不显示波段内容", () => {
+    const { root, powerLog } = makeHost({}, false);
+
+    expect(root.textContent).toContain("设备已关机");
+    expect(root.querySelector(".band-tabs")).toBeNull();
+
+    findButton(root, "开台").click();
+    expect(powerLog).toEqual([true]);
+  });
+
+  it("开台后显示波段与调谐，不再显示待机", () => {
+    const { root } = makeHost({}, true);
+    expect(root.textContent).not.toContain("设备已关机");
+    expect(root.textContent).toContain("波段与调谐");
+  });
+});
+
+describe("电台页 — 波段与调谐", () => {
   it("列出四个频段并高亮当前频段", () => {
     const { root } = makeHost({ bandIndex: 2 });
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".band-tabs button"));
@@ -76,15 +101,13 @@ describe("频率页", () => {
 
     expect(host.settings.bandIndex).toBe(0);
     expect(host.settings.freqMHz).toBe(BANDS[0].defaultMHz);
-    expect(root.textContent).toContain("3.5500 MHz");
   });
 
-  it("±1 kHz 步进会改变显示频率且不越界", () => {
+  it("±1 kHz 步进会改变频率且不越界", () => {
     const { root, host } = makeHost({ bandIndex: 2, freqMHz: 14.025 });
 
     findButton(root, "+ 1 kHz").click();
     expect(host.settings.freqMHz).toBe(14.026);
-    expect(root.textContent).toContain("14.0260 MHz");
 
     findButton(root, "− 1 kHz").click();
     findButton(root, "− 1 kHz").click();
@@ -95,11 +118,11 @@ describe("频率页", () => {
     const { root, host } = makeHost({ bandIndex: 2, freqMHz: BANDS[2].minMHz });
 
     findButton(root, "− 1 kHz").click();
-
     expect(host.settings.freqMHz).toBe(BANDS[2].minMHz);
-    expect(root.textContent).toContain("14.0000 MHz");
   });
+});
 
+describe("电台页 — 波段活动与通联", () => {
   it("没有活动 HAM 时提示当前频率没有活动", () => {
     const { root } = makeHost();
     expect(root.textContent).toContain("当前频率没有活动");
@@ -118,18 +141,31 @@ describe("频率页", () => {
     expect(root.textContent).toContain("发送 RST");
   });
 
-  it("未填写本方呼号时提示先去设置，填写后提示改为可以开始", () => {
+  it("未填写本方呼号时提示去设置，填写后提示可以开始", () => {
     const empty = makeHost({ myCall: "" });
-    expect(empty.root.textContent).toContain("请先在「设置」页面填写本方呼号");
+    expect(empty.root.textContent).toContain("请先填写本方呼号");
+    expect(findButton(empty.root, "打开设置")).toBeDefined();
 
     const filled = makeHost({ myCall: "BG7XXX" });
-    expect(filled.root.textContent).toContain("选择一种方式开始通联");
-    expect(filled.root.textContent).not.toContain("请先在「设置」页面填写本方呼号");
+    expect(filled.root.textContent).toContain("选择一种方式开始通联吧。");
+    expect(filled.root.textContent).not.toContain("请先填写本方呼号");
   });
 
   it("提供两种发起通联的方式", () => {
     const { root } = makeHost({ myCall: "BG7XXX" });
     expect(findButton(root, "监听：等 HAM 发 CQ")).toBeDefined();
     expect(findButton(root, "我发 CQ")).toBeDefined();
+  });
+
+  it("通联进行中时显示通联面板，而不是「开始通联」", async () => {
+    const session = new QsoSession(14.025, normalizeSettings({ myCall: "BG7XXX" }));
+    await session.hamCallsCq(); // enters PEER_CQ
+    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    host.session = session;
+    host.refresh();
+
+    expect(root.textContent).toContain("通联状态");
+    expect(root.textContent).toContain("收报 / 发报记录");
+    expect(root.textContent).not.toContain("开始通联");
   });
 });
