@@ -191,6 +191,26 @@ describe("CW 翻译页", () => {
     expect(host.settings.assistMode).toBe(false);
     expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
   });
+
+  it("状态行显示对方实际被听到的音调（拨轮对准后回到设定值）", async () => {
+    const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    await session.hamCallsCq();
+    session.retune(session.ham!.freqHz / 1e6); // 拨轮对准台，无偏频
+    render();
+
+    expect(root.textContent).toContain("音调 700 Hz");
+    expect(root.textContent).not.toContain("偏频");
+  });
+
+  it("没有对准频率时状态行标出偏频量", async () => {
+    const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    await session.hamCallsCq();
+    // 把拨轮挪开 1 kHz，制造一个确定的偏频
+    session.retune((session.ham!.freqHz - 1000) / 1e6);
+    render();
+
+    expect(root.textContent).toContain("偏频 +1000 Hz");
+  });
 });
 
 describe("CW 页 iambic 双桨输入", () => {

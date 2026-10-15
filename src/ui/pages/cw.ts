@@ -47,6 +47,22 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     el("span", { class: "badge", text: STATE_LABEL[session.state] ?? session.state }),
   );
   if (session.ham) status.append(el("span", { class: "hint", text: `对方 ${session.ham.call}` }));
+  // The note the partner is actually heard at. Zero-beaten it is the rig's pitch;
+  // off-frequency it is shifted by the detuning (see ham/tuning), which is what
+  // the operator's ear is supposed to notice.
+  const heard = session.partnerToneHz();
+  if (heard !== null) {
+    const detune = session.partnerDetuneHz() ?? 0;
+    const off = Math.abs(detune) >= 50;
+    status.append(
+      el("span", {
+        class: off ? "hint tone-off" : "hint",
+        text: off
+          ? `音调 ${heard} Hz · 偏频 ${detune > 0 ? "+" : ""}${detune} Hz`
+          : `音调 ${heard} Hz`,
+      }),
+    );
+  }
   if (ctx?.rstRx) status.append(el("span", { class: "hint", text: `收 ${ctx.rstRx}` }));
   if (ctx?.rstTx) status.append(el("span", { class: "hint", text: `发 ${ctx.rstTx}` }));
 

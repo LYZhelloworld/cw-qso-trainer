@@ -166,6 +166,20 @@ describe("App 外壳", () => {
     expect(app.session).toBe(before);
     expect(app.session.freqMHz).toBe(14.026);
   });
+
+  it("电台面板显示当前波段的 CW 边带（40m 及以下 LSB，20m 及以上 USB）", () => {
+    const { root, app } = mountApp();
+    const sideband = (): string | null | undefined =>
+      root.querySelector(".rig .badge.sideband")?.textContent;
+
+    expect(sideband()).toBe("USB"); // 默认 14.025 MHz
+
+    app.updateSettings({ freqMHz: 7.025, bandIndex: 1 });
+    expect(sideband()).toBe("LSB");
+
+    app.updateSettings({ freqMHz: 21.025, bandIndex: 3 });
+    expect(sideband()).toBe("USB");
+  });
 });
 
 describe("频谱瀑布图", () => {

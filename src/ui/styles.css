@@ -205,6 +205,11 @@ textarea:focus {
   font-size: 12px;
 }
 
+/* Off-frequency readout: the note is shifted, so the dial is not on the station. */
+.hint.tone-off {
+  color: var(--accent-2);
+}
+
 .err {
   color: var(--danger);
   font-size: 12px;

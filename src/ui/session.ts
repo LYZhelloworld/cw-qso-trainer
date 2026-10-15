@@ -16,6 +16,7 @@ import {
   type SpectrumSignal,
   type SpectrumSnapshot,
 } from "../ham/spectrum.js";
+import { detuneHz, heardToneHz } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
 import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
@@ -87,6 +88,10 @@ export class QsoSession {
    * because it is what the log records and what staging is keyed by.
    */
   freqMHz: number;
+  /** The dial in Hz — the frequency the waterfall centres on. */
+  get dialHz(): number {
+    return Math.round(this.freqMHz * 1e6);
+  }
   private readonly freq: Frequency;
   private readonly engine: AudioPlayer;
   private readonly rng: () => number;
@@ -206,7 +211,24 @@ export class QsoSession {
       });
     }
     for (const bg of this.backgroundSignals()) signals.push(bg);
-    return { centerHz: Math.round(this.freqMHz * 1e6), signals };
+    return { centerHz: this.dialHz, signals };
+  }
+
+  /**
+   * The tone the operator currently hears from the station being worked: the
+   * rig's CW pitch shifted by however far that station sits from the dial (see
+   * `ham/tuning`). Null when there is no partner, or when it has no frequency
+   * (a HAM generated without a band reference).
+   */
+  partnerToneHz(): number | null {
+    if (!this.ham || this.ham.freqHz <= 0) return null;
+    return this.hamToneHz(this.ham);
+  }
+
+  /** How far the partner sits from the dial, in Hz (positive = above). */
+  partnerDetuneHz(): number | null {
+    if (!this.ham || this.ham.freqHz <= 0) return null;
+    return detuneHz(this.ham.freqHz, this.dialHz);
   }
 
   /** The band's decorative carriers (see `spectrum`); built once per session. */
@@ -325,7 +347,7 @@ export class QsoSession {
     this.push("ham", text);
     // Non-blocking: do not await the full CQ, otherwise the user could not
     // answer until it finished. The audio is cut by the next user transmission.
-    void this.playHam(text);
+    void this.playHam(text, target);
   }
 
   /** The user calls CQ; a single HAM answers after a short delay. */
@@ -611,9 +633,32 @@ export class QsoSession {
     clearStaging();
   }
 
-  private async playHam(text: string): Promise<void> {
-    const env = difficultyToEnvironment(this.ham?.difficulty ?? this.settings.difficulty);
-    await this.play(text, { qsb: env.qsb, qrm: env.qrm, qrn: env.qrn });
+  /**
+   * The CW pitch a station is heard at, given where the dial sits: exactly the
+   * configured tone when it is zero-beaten, shifted by the detuning otherwise
+   * (see `ham/tuning`). Falls back to the plain pitch for an unplaced station.
+   */
+  private hamToneHz(ham?: VirtualHam | null): number {
+    const station = ham ?? this.ham;
+    if (!station || station.freqHz <= 0) return this.settings.toneHz;
+    return heardToneHz({
+      toneHz: this.settings.toneHz,
+      stationHz: station.freqHz,
+      dialHz: this.dialHz,
+    });
+  }
+
+  private async playHam(text: string, ham?: VirtualHam): Promise<void> {
+    const speaker = ham ?? this.ham;
+    const env = difficultyToEnvironment(speaker?.difficulty ?? this.settings.difficulty);
+    // `...extra` wins over the default pitch in `play`, so the station is heard
+    // off-key whenever the operator has not tuned it in.
+    await this.play(text, {
+      qsb: env.qsb,
+      qrm: env.qrm,
+      qrn: env.qrn,
+      toneHz: this.hamToneHz(speaker),
+    });
   }
 
   private async playMine(text: string): Promise<void> {

@@ -14,6 +14,7 @@ import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { BANDS, clampToBand, roundFreq } from "./bands.js";
 import { formatFreqMHz } from "./logRecord.js";
+import { sidebandFor } from "../ham/tuning.js";
 import { Waterfall } from "./waterfall.js";
 
 export type PageId = "radio" | "log" | "about";
@@ -358,6 +359,14 @@ export class App implements AppHost {
     const meta = el("div", { class: "rig-meta" });
     meta.append(el("span", { class: "badge", text: band.name }));
     meta.append(el("span", { class: "badge mode", text: "CW" }));
+    // Which sideband the band is worked on (40 m and down LSB, 20 m and up USB).
+    // It is what decides which way the note shifts when a station is detuned.
+    meta.append(
+      el("span", {
+        class: "badge sideband",
+        text: sidebandFor(Math.round(this.settings.freqMHz * 1e6)),
+      }),
+    );
 
     const right = el("div", { class: "rig-right" });
     const power = button(
