@@ -32,6 +32,30 @@ v2 首版把关台实现成了「停调度器 + 停音频 + 清空当前波段�
 
 ---
 
+## Prototype v3：频谱瀑布图（2026-10-15，分支 `feat/ui-v2`）
+
+用户要求把 v2 里那条"示意频谱条"做成**真的瀑布图**：窗口 ±10 kHz、CW 信号按强度显示为亮斑、**调谐时只有最上方新画的行在动**，因此调频会在瀑布上拖出一条曲线。
+
+实现（无新增依赖，全部在本仓库内）：
+
+- **数据模型** `src/ham/spectrum.ts`（新）：`SpectrumSignal` / `SpectrumSnapshot`、`SPECTRUM_SPAN_HZ = 20_000`、`BAND_SIGNAL_SPREAD_HZ = 9_000`、以及装饰性**背景弱载波**生成。
+  - `VirtualHam` 增加 **`freqHz`（绝对频率 Hz）** 与 **`strength`（0..1）**。频率是**绝对值**，不是相对拨轮的——这正是"调谐会画出斜线"的原因：动的不是信号，是窗口。
+  - `generateVirtualHam` 按波段参考频率（`referenceHz`）把台散布在 ±9 kHz 内并给出强度（强度由它报告的 RST 决定，配一点按呼号哈希的个体差异，**不消耗会话 RNG**）。`Frequency` 透传 `referenceHz` / `spreadHz`。
+  - 除可通联的台之外还有 3–6 个**装饰性背景载波**（`workable: false`、强度 < 0.45），让波段看起来像真实波段；它们不参与通联。
+- **渲染器** `src/ui/waterfall.ts`（新，canvas）：纯函数 `renderRow` / `brightnessToRgb` / `freqAtX` / `xAtFreq` / `easeCenter` / `keyingLevel` / `keyingSeed` 全部可单测；`Waterfall` 类负责滚动（`drawImage` 自拷贝下移 1 行 + `putImageData` 写新行）、显示中心缓动、点击调谐、启停与 dispose。
+  - **调谐曲线**：每一行用**该行时刻的显示中心**计算，历史不动；显示中心以约 190 ms 时间常数缓动跟随拨轮，把"一步一跳"抹成平滑曲线。
+  - **CW 点划**：正在呼叫的台按确定性的 CW 键控包络（种子来自呼号 + 频率）呈现点划；守听的台只留一条很暗的载波。
+  - **点击调谐**：点击瀑布把拨轮调到该处；落在可通联电台附近（±300 Hz）自动吸附。关台时拒绝调谐。
+  - **可测性**：时钟（`now`）与帧调度（`schedule`）可注入；`context: null` 可无头运行；**2D context 延迟到元素真正有布局时才获取**，因此在 jsdom 下既不报错也不刷新噪声。
+- **接线**（`src/ui/app.ts`）：瀑布图放在常驻电台面板里，**canvas 与标签只建一次**、跨重绘复用（canvas 的画面存在元素里，重建会丢历史——即"可变状态不放 DOM"这条铁律的又一例）。开台才滚动，关台**冻结**并压暗，标签提示"本波段其他电台仍在活动"。`App.tuneTo(hz)` 负责点击调谐（夹在当前波段内）。
+- 电台页的信号强度条改为**取当前波段最强台的 `strength`**，与瀑布图给同一信号的亮度一致。
+
+涉及文件：新增 `src/ham/spectrum.ts(+test)`、`src/ui/waterfall.ts(+test)`、`src/ui/session.spectrum.test.ts`；改 `src/ham/{virtualHam,generate,frequency}.ts`、`src/ui/{session,app,styles.css}.ts`、`src/ui/pages/radio.ts`、`src/ui/storage/qsoStaging.ts`（暂存快照带上 `freqHz`/`strength`，刷新后恢复到原位）。
+
+验证：`tsc` 0 错；`vite build` 通过（41 模块，JS 96.61 kB / CSS 7.22 kB）；**全套 332 例通过**（32 文件，较 v2.1 的 291 例 +41）。
+
+---
+
 ## 技术选型
 
 **原生 TypeScript + Vite，零运行时依赖。**
@@ -92,8 +116,9 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 ## 验证结果
 
 - `tsc --noEmit`：**0 错误**
-- `vite build`：**通过**（39 模块，JS 88.13 kB / CSS 7.34 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
-- 测试：**全套 291 例通过**（29 个文件）
+- `vite build`：**通过**（41 模块，JS 96.61 kB / CSS 7.22 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
+- 测试：**全套 332 例通过**（32 个文件）
+  - Prototype v3 瀑布图 **41 例**：`src/ui/waterfall.test.ts` 23 例 —— 亮度映射/坐标换算/缓动 **7 例**（亮度单调、`freqAtX`↔`xAtFreq` 互逆、缓动收敛不瞬移）、单行渲染 **5 例**（信号落列正确、**拨轮上移时同一绝对频率的信号向左移＝调谐曲线**、亮度随强度、空频段只有底噪、窗外信号不参与）、CW 键控 **4 例**、组件生命周期与点击调谐 **7 例**（无 context 不抛错、显示中心缓动、电源控滚动、点击交给 onTune / 附近吸附 / 远处不吸附、dispose 后不响应）；`src/ham/spectrum.test.ts` 6 例（±10 kHz、10 Hz 量化、可复现的 PRNG、背景载波弱且标记不可通联且按种子稳定）；`src/ui/session.spectrum.test.ts` 6 例（窗口中心＝拨轮、台都作为可通联信号、**调谐只移窗口不移台**、背景载波、同会话稳定、呼叫中的台标为 active）；`src/ui/app.test.ts` 瀑布图 6 例（canvas 存在、**重绘不换 canvas**、关台/开台文案、点击调谐含夹波段、关台拒绝调谐、会话提供频谱数据）
   - Prototype v2 / v2.1 **14 例**：`app.test.ts` 的环境与电源 4 例（各波段启动即有台 / 关台不清空 / 只有「开机 + 当前波段」在接收 / 换波段再换回不拆波段）、`radio.test.ts` 待机文案 2 例、新增 `session.power.test.ts` 7 例（关台不接话不发声 / 关台后频段仍运转且超时换台 / 关台不清空已建立通联 / 关台不发射 / 再开台续收 / 关台切断音频 / `retune` 不换台）、呼号后缀回归 1 例
   - UI 部分 **95 例**：其中 26 例是 node 环境纯逻辑（设置校验 13 / 日志推导 8 / 频段 5），**69 例是 jsdom 下的真实 DOM 交互测试**，含「跑完一次完整 QSO → 自动入库 → 日志页显示」的端到端用例
   - iambic 键控与侧音 **53 例**：核心 `src/cw/keyer.ts` 20 例（含 Mode A/B 差异、squeeze、CQ 往返解码）、UI 封装 10 例、CW 页双桨输入 5 例、设置页电键类型 2 例、侧音 16 例
@@ -128,12 +153,12 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 
 ```bash
 npm run build      # 生产构建
-npm test           # 291 例测试（含 jsdom 下的 UI 交互，无需浏览器）
+npm test           # 332 例测试（含 jsdom 下的 UI 交互，无需浏览器；canvas 画面本身测不到）
 npm run typecheck  # 类型检查
 npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```
 
-建议的手动验收路径：齿轮里填呼号 → 电台面板点「开台」→ 电台页「监听：等 HAM 发 CQ」→ 抄收并应答 → 走完 RST 与 73 SK → 日志页应出现一条记录。
+建议的手动验收路径：齿轮里填呼号 → 电台面板点「开台」→ **先看几秒瀑布图**（应当看到几条亮斑，正在呼叫的台在冒点划）→ **点「+1 kHz」连按几次**（信号应当斜着拖出一条曲线，而不是整幅平移）→ **在瀑布上点一下某个亮斑**（拨轮应当跳到它上面）→ 电台页「监听：等 HAM 发 CQ」→ 抄收并应答 → 走完 RST 与 73 SK → 日志页应出现一条记录。
 顺便验一下新语义：**不点开台**，逐个波段切过去，每个波段都应当已经有虚拟 HAM 在名单里（关台只是不接收）；开台 → 关台 → 再开台，波段、名单与进行中的通联应当**原样还在**，而不是被清空重来。
 同一流程已有一条自动化用例覆盖（`src/ui/pages/logPage.test.ts` 的「完整跑通一次 QSO」），所以手动验收应把注意力集中在**自动化测不到的部分**：CW 音调是否真的响、音色是否舒服、浏览器首次是否拦自动播放。
 

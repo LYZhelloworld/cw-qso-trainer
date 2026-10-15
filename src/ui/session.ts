@@ -10,6 +10,12 @@ import {
   targetHamCount,
   type HamActivityEvent,
 } from "../ham/activity.js";
+import {
+  buildBackgroundSignals,
+  mulberry32,
+  type SpectrumSignal,
+  type SpectrumSnapshot,
+} from "../ham/spectrum.js";
 import type { AppSettings } from "./settingsSchema.js";
 import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
@@ -67,6 +73,12 @@ export interface QsoSessionOptions {
   delay?: (ms: number) => Promise<void>;
   /** Injected audio player (tests); defaults to a real `CwAudioEngine`. */
   engine?: AudioPlayer;
+  /**
+   * The band's reference frequency in Hz — where this band's stations live.
+   * Defaults to the dial frequency the session was built with. The App passes
+   * the band's nominal centre so the same band always holds the same stations.
+   */
+  referenceHz?: number;
 }
 
 export class QsoSession {
@@ -109,10 +121,19 @@ export class QsoSession {
    * HAMs keep calling CQ either way (see `handleActivity`).
    */
   private receiving = true;
+  /**
+   * Decorative background carriers on this band (see `spectrum`). Built lazily
+   * once per session from its own RNG, so they never disturb the sequence that
+   * drives HAM generation and CQ timing.
+   */
+  private background: SpectrumSignal[] | null = null;
+  /** Where this band's stations live, in Hz. */
+  private readonly referenceHz: number;
 
   constructor(freqMHz: number, settings: AppSettings, opts: QsoSessionOptions = {}) {
     this.freqMHz = freqMHz;
     this.settings = settings;
+    this.referenceHz = opts.referenceHz ?? Math.round(freqMHz * 1e6);
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? (() => Date.now());
     this.wait =
@@ -124,7 +145,11 @@ export class QsoSession {
         return () => clearInterval(id);
       });
     this.targetHams = targetHamCount(this.rng);
-    this.freq = new Frequency(freqMHz, dxccDatabase, { rng: this.rng, now: this.now });
+    this.freq = new Frequency(freqMHz, dxccDatabase, {
+      rng: this.rng,
+      now: this.now,
+      referenceHz: this.referenceHz,
+    });
     this.engine = opts.engine ?? new CwAudioEngine();
   }
 
@@ -158,6 +183,41 @@ export class QsoSession {
   /** Roster with each HAM's state, for the frequency page. */
   hamActivity() {
     return this.freq.activityState();
+  }
+
+  /**
+   * One line's worth of data for the waterfall: the dial (the window centre)
+   * and every signal on the band — the workable HAMs plus the decorative
+   * background carriers. Frequencies are absolute, so tuning past a station
+   * makes it drift across the display instead of moving with the dial.
+   */
+  spectrum(): SpectrumSnapshot {
+    const states = new Map(this.freq.activityState().map((e) => [e.ham.call, e.state]));
+    const signals: SpectrumSignal[] = [];
+    for (const ham of this.freq.listHams()) {
+      signals.push({
+        freqHz: ham.freqHz,
+        strength: ham.strength,
+        call: ham.call,
+        workable: true,
+        // Only a station that is *calling* is keying. One already in a QSO with
+        // us is mostly listening, so it renders as a steady carrier instead.
+        active: states.get(ham.call) === "cqing",
+      });
+    }
+    for (const bg of this.backgroundSignals()) signals.push(bg);
+    return { centerHz: Math.round(this.freqMHz * 1e6), signals };
+  }
+
+  /** The band's decorative carriers (see `spectrum`); built once per session. */
+  private backgroundSignals(): SpectrumSignal[] {
+    if (!this.background) {
+      // Seeded from the band reference, so a band always looks the same and the
+      // session's own RNG sequence (HAM generation, CQ timing) is untouched.
+      const seed = Math.abs(Math.round(this.referenceHz)) % 2147483647;
+      this.background = buildBackgroundSignals(this.referenceHz, mulberry32(seed));
+    }
+    return this.background;
   }
 
   /**
@@ -417,6 +477,8 @@ export class QsoSession {
       call: staged.ham.call,
       difficulty: staged.ham.difficulty,
       report: staged.ham.report,
+      ...(staged.ham.freqHz !== undefined ? { freqHz: staged.ham.freqHz } : {}),
+      ...(staged.ham.strength !== undefined ? { strength: staged.ham.strength } : {}),
     });
     this.ham = ham;
     this.machine = QsoMachine.fromSnapshot(staged.machine, {
@@ -534,7 +596,13 @@ export class QsoSession {
       logWritten: this.logWritten,
       machine: this.machine ? this.machine.snapshot() : null,
       ham: this.ham
-        ? { call: this.ham.call, difficulty: this.ham.difficulty, report: this.ham.report }
+        ? {
+            call: this.ham.call,
+            difficulty: this.ham.difficulty,
+            report: this.ham.report,
+            freqHz: this.ham.freqHz,
+            strength: this.ham.strength,
+          }
         : null,
     });
   }

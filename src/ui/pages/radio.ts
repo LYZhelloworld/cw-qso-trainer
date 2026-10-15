@@ -74,7 +74,10 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
 
   // --- band activity -------------------------------------------------------
   const roster = host.session.hamActivity();
-  const level = roster.length === 0 ? 0 : Math.min(5, 2 + roster.length);
+  // S-meter reading follows the strongest station on the band, so it agrees
+  // with the brightness the waterfall gives that same signal.
+  const strongest = roster.reduce((max, e) => Math.max(max, e.ham.strength ?? 0), 0);
+  const level = roster.length === 0 ? 0 : Math.max(2, Math.min(5, Math.round(strongest * 5)));
   const signal = el("div", { class: "signal" });
   for (let i = 0; i < 5; i += 1) signal.append(el("i", { class: i < level ? "on" : "" }));
   const signalRow = el("div", { class: "row" });

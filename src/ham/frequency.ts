@@ -30,6 +30,13 @@ export interface FrequencyOptions {
   rng?: () => number;
   /** Injected clock (tests). Defaults to Date.now. */
   now?: () => number;
+  /**
+   * Band reference frequency in Hz — stations are scattered around it. Omit to
+   * use the dial frequency this Frequency was built with.
+   */
+  referenceHz?: number;
+  /** Scatter around `referenceHz`, in Hz. */
+  spreadHz?: number;
 }
 
 /**
@@ -48,11 +55,16 @@ export class Frequency {
   readonly freqMHz: number;
   private readonly db: DxccDatabase;
   private readonly activity: HamActivity;
+  /** Where new stations are placed on the band, in Hz. */
+  private readonly referenceHz: number;
+  private readonly spreadHz: number | undefined;
 
   constructor(freqMHz: number, db: DxccDatabase, opts: FrequencyOptions = {}) {
     this.freqMHz = freqMHz;
     this.db = db;
     this.activity = new HamActivity({ rng: opts.rng, now: opts.now });
+    this.referenceHz = opts.referenceHz ?? Math.round(freqMHz * 1e6);
+    this.spreadHz = opts.spreadHz;
   }
 
   /**
@@ -68,15 +80,27 @@ export class Frequency {
     rng?: () => number,
     firstCqDelayMs?: number,
   ): VirtualHam {
-    let ham = generateVirtualHam({ myCall, db: this.db, difficulty, rng });
+    let ham = this.generate(myCall, difficulty, rng);
     // Redraw on a callsign collision with a HAM already on this frequency,
     // otherwise activity.add() would silently drop it and the caller would be
     // handed a HAM that is not actually on the band.
     for (let attempt = 0; attempt < 8 && this.activity.has(ham.call); attempt += 1) {
-      ham = generateVirtualHam({ myCall, db: this.db, difficulty, rng });
+      ham = this.generate(myCall, difficulty, rng);
     }
     this.activity.add(ham, firstCqDelayMs);
     return ham;
+  }
+
+  /** Generate one HAM placed on this band (no roster bookkeeping). */
+  private generate(myCall: string, difficulty?: Difficulty, rng?: () => number): VirtualHam {
+    return generateVirtualHam({
+      myCall,
+      db: this.db,
+      difficulty,
+      rng,
+      referenceHz: this.referenceHz,
+      spreadHz: this.spreadHz,
+    });
   }
 
   /** Currently active HAMs on this frequency. */

@@ -12,8 +12,9 @@ import { renderLog } from "./pages/logPage.js";
 import { renderRadio } from "./pages/radio.js";
 import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
-import { BANDS } from "./bands.js";
+import { BANDS, clampToBand, roundFreq } from "./bands.js";
 import { formatFreqMHz } from "./logRecord.js";
+import { Waterfall } from "./waterfall.js";
 
 export type PageId = "radio" | "log" | "about";
 
@@ -71,12 +72,6 @@ const PAGES: PageDef[] = [
   { id: "about", label: "关于", render: renderAbout },
 ];
 
-/** Decorative band-scope bar heights (0..1). Deterministic, so no jitter. */
-const SCOPE_BARS = 48;
-const SCOPE_HEIGHTS: number[] = Array.from({ length: SCOPE_BARS }, (_, i) =>
-  Math.abs(Math.sin(i * 0.7) * Math.cos(i * 0.23)),
-);
-
 /**
  * The application shell, styled as a radio: a persistent "rig" header (frequency,
  * band, mode, power switch, settings gear) plus a small nav for the secondary
@@ -104,8 +99,24 @@ export class App implements AppHost {
   private powerOn = false;
   private settingsOverlay: HTMLElement | null = null;
   private readonly rigRoot = el("div", { class: "rig" });
+  private readonly rigMain = el("div", { class: "rig-main" });
   private readonly navRoot = el("nav", { class: "nav" });
   private readonly pageRoot = el("div");
+  /**
+   * The waterfall lives in the rig, like a real radio's panadapter. Both the
+   * canvas and its overlay labels are built ONCE and re-used across every
+   * re-render: a canvas holds its picture in the element, so rebuilding it
+   * would throw the whole history away (and re-attaching keeps it).
+   */
+  private readonly scopeCanvas = el("canvas", { class: "scope-canvas" });
+  private readonly scopeLabel = el("span", { class: "scope-label" });
+  private readonly scopeCall = el("span", { class: "scope-call" });
+  private readonly scopeRoot = el("div", { class: "rig-scope" }, [
+    this.scopeCanvas,
+    this.scopeLabel,
+    this.scopeCall,
+  ]);
+  private waterfall: Waterfall | null = null;
   private cleanups: Array<() => void> = [];
 
   constructor(private readonly root: HTMLElement) {
@@ -123,12 +134,16 @@ export class App implements AppHost {
 
   /**
    * A fresh session for one band. The tuned band takes the operator's dial
-   * frequency; every other band starts on its own default.
+   * frequency; every other band starts on its own default. Either way the
+   * band's *reference* (where its stations live) is its nominal centre, so the
+   * same band always holds the same stations however the dial wanders.
    */
   private createSession(bandIndex: number): QsoSession {
     const freqMHz =
       bandIndex === this.activeBand ? this.settings.freqMHz : BANDS[bandIndex].defaultMHz;
-    return new QsoSession(freqMHz, this.settings);
+    return new QsoSession(freqMHz, this.settings, {
+      referenceHz: Math.round(BANDS[bandIndex].defaultMHz * 1e6),
+    });
   }
 
   get powered(): boolean {
@@ -180,10 +195,39 @@ export class App implements AppHost {
     }
     this.applyReceiving();
     this.watchBand(this.activeBand);
+    this.startWaterfall();
     this.renderRig();
     this.renderNav();
     this.renderPage();
     if (!hasAcknowledgedDisclaimer()) this.showDisclaimerModal();
+  }
+
+  /**
+   * Build the waterfall once and let it scroll. It reads the band straight from
+   * the active session on every line, so it stays current without the App
+   * having to push anything at it.
+   */
+  private startWaterfall(): void {
+    if (!this.waterfall) {
+      this.waterfall = new Waterfall(this.scopeCanvas);
+      this.waterfall.setSource(() => this.session.spectrum());
+      this.waterfall.onTune = (hz) => this.tuneTo(hz);
+    }
+    this.waterfall.setSpeed(this.settings.wpm);
+    this.waterfall.setActive(this.powerOn);
+  }
+
+  /**
+   * Tune the dial to an absolute frequency (Hz). Wired to the waterfall's
+   * click-to-tune; clamped to the current band, and refused while powered down
+   * (you cannot tune a radio that is switched off).
+   */
+  tuneTo(hz: number): void {
+    if (!this.powerOn || !Number.isFinite(hz)) return;
+    const band = BANDS[clampBandIndex(this.settings.bandIndex)];
+    const mhz = roundFreq(clampToBand(hz / 1e6, band));
+    if (mhz === this.settings.freqMHz) return;
+    this.updateSettings({ freqMHz: mhz });
   }
 
   /**
@@ -198,6 +242,9 @@ export class App implements AppHost {
     // Resume a QSO that a refresh interrupted; never clobber a live one.
     if (on && !this.session.inQso) this.session.restoreStaging();
     this.applyReceiving();
+    // The panadapter is part of the receiver: it scrolls when we are listening
+    // and freezes (keeping its history) when we are not.
+    this.waterfall?.setActive(on);
     this.refresh();
   }
 
@@ -242,6 +289,8 @@ export class App implements AppHost {
   dispose(): void {
     this.runCleanups();
     for (const s of this.sessions) s.dispose();
+    this.waterfall?.dispose();
+    this.waterfall = null;
     this.settingsOverlay?.remove();
     this.settingsOverlay = null;
   }
@@ -290,8 +339,10 @@ export class App implements AppHost {
 
   /** The radio face: frequency, band, mode, power switch and settings gear. */
   private renderRig(): void {
-    clear(this.rigRoot);
+    // Only the face is rebuilt — the waterfall below it is never detached, so
+    // its history survives every re-render.
     this.rigRoot.classList.toggle("powered", this.powerOn);
+    clear(this.rigMain);
 
     const bandIndex = Math.min(Math.max(this.settings.bandIndex, 0), BANDS.length - 1);
     const band = BANDS[bandIndex];
@@ -317,38 +368,30 @@ export class App implements AppHost {
     power.setAttribute("aria-pressed", String(this.powerOn));
     right.append(power, button("⚙ 设置", () => this.openSettings(), "btn gear"));
 
-    const main = el("div", { class: "rig-main" });
-    main.append(brand, freq, meta, right);
+    this.rigMain.append(brand, freq, meta, right);
 
-    this.rigRoot.append(main, this.buildScope());
+    if (this.rigRoot.childElementCount === 0) {
+      this.rigRoot.append(this.rigMain, this.scopeRoot);
+    }
+    this.waterfall?.setSpeed(this.settings.wpm);
+    this.updateScope();
   }
 
   /**
-   * A lightweight band-scope strip. It is an *illustration*, not a real
-   * waterfall (timing/DSP are future work): a deterministic noise floor with the
-   * station currently calling CQ labelled on top.
+   * Refresh the waterfall's overlay text. Deliberately does not touch the
+   * canvas, so the picture (and its history) is untouched by a re-render.
    */
-  private buildScope(): HTMLElement {
-    const scope = el("div", { class: "rig-scope" });
-    const bars = el("div", { class: "scope-bars" });
-    for (let i = 0; i < SCOPE_BARS; i++) {
-      const b = el("i");
-      b.style.height = `${Math.round(12 + SCOPE_HEIGHTS[i] * 82)}%`;
-      bars.append(b);
-    }
-    scope.append(bars);
-    const label = el("span", {
-      class: "scope-label",
-      // Powered down, the band does not go quiet — say so, so the model is not a
-      // surprise when the operator switches on.
-      text: this.powerOn ? "波段频谱（示意）" : "设备已关机 · 本波段其他电台仍在活动",
-    });
-    scope.append(label);
-    if (this.powerOn) {
-      const cq = this.session.hamActivity().find((e) => e.state === "cqing");
-      if (cq) scope.append(el("span", { class: "scope-call", text: `CQ ${cq.ham.call}` }));
-    }
-    return scope;
+  private updateScope(): void {
+    this.scopeRoot.classList.toggle("off", !this.powerOn);
+    // Powered down the band does not go quiet — the other stations keep calling.
+    // Say so, so "standby" is never mistaken for "empty".
+    this.scopeLabel.textContent = this.powerOn
+      ? "波段频谱 · 点击信号可调谐"
+      : "设备已关机 · 本波段其他电台仍在活动";
+    const cq = this.powerOn
+      ? this.session.hamActivity().find((e) => e.state === "cqing")
+      : undefined;
+    this.scopeCall.textContent = cq ? `CQ ${cq.ham.call}` : "";
   }
 
   private renderNav(): void {

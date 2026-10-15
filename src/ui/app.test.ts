@@ -168,6 +168,62 @@ describe("App 外壳", () => {
   });
 });
 
+describe("频谱瀑布图", () => {
+  it("电台面板里有一块瀑布图 canvas", () => {
+    const { root } = mountApp();
+    expect(root.querySelector(".rig-scope canvas")).not.toBeNull();
+  });
+
+  it("重绘不会换掉 canvas（历史不清空 —— 画面状态在 App 而非 DOM）", () => {
+    const { root, app } = mountApp();
+    const canvas = root.querySelector(".rig-scope canvas");
+
+    app.refresh();
+    app.updateSettings({ freqMHz: 14.026 });
+    app.setPower(true);
+
+    expect(root.querySelector(".rig-scope canvas")).toBe(canvas);
+  });
+
+  it("关台时说明本波段仍在活动；开台后提示可以点信号调谐", () => {
+    const { root, app } = mountApp();
+    expect(root.querySelector(".rig-scope")?.textContent).toContain("设备已关机");
+
+    app.setPower(true);
+    const scope = root.querySelector(".rig-scope");
+    expect(scope?.textContent).toContain("可调谐");
+    expect(scope?.textContent).not.toContain("设备已关机");
+  });
+
+  it("点击频谱能调谐（tuneTo），并夹在当前波段范围内", () => {
+    const { app } = mountApp();
+    app.setPower(true);
+
+    app.tuneTo(14_028_000);
+    expect(app.settings.freqMHz).toBeCloseTo(14.028, 6);
+
+    app.tuneTo(99_000_000); // far outside 20 m
+    expect(app.settings.freqMHz).toBe(BANDS[2].maxMHz);
+  });
+
+  it("关台时不允许调谐（关着的电台不会被点动）", () => {
+    const { app } = mountApp();
+    expect(app.powered).toBe(false);
+
+    app.tuneTo(14_030_000);
+    expect(app.settings.freqMHz).toBe(14.025);
+  });
+
+  it("会话为每个波段提供频谱数据（含窗口中心与信号）", () => {
+    const { app } = mountApp();
+    const snapshot = app.session.spectrum();
+
+    expect(snapshot.centerHz).toBe(Math.round(app.session.freqMHz * 1e6));
+    expect(Array.isArray(snapshot.signals)).toBe(true);
+    expect(snapshot.signals.some((s) => s.workable)).toBe(true);
+  });
+});
+
 describe("环境与电源（关台只是不接收）", () => {
   it("启动后还没开台，每个波段就已经有虚拟 HAM 在活动", () => {
     const { app } = mountApp();

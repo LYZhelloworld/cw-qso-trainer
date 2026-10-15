@@ -515,51 +515,47 @@ table.log input {
   font-weight: 600;
 }
 
+/* --- waterfall (band panadapter) ---------------------------------------- */
+
 .rig-scope {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  height: 54px;
   margin-top: 10px;
-  padding: 6px 8px;
-  background: #0c1116;
   border: 1px solid var(--border);
   border-radius: 6px;
+  background: #000208;
   overflow: hidden;
 }
 
-.scope-bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
+.scope-canvas {
+  display: block;
   width: 100%;
-  height: 100%;
+  height: 72px;
+  cursor: crosshair;
 }
 
-.scope-bars i {
-  flex: 1;
-  background: #22303c;
-  border-radius: 1px;
+/* Powered down the picture freezes; dim it so "frozen" reads as "not receiving". */
+.rig-scope.off .scope-canvas {
+  opacity: 0.45;
+  cursor: default;
 }
 
-.rig.powered .scope-bars i {
-  background: linear-gradient(180deg, var(--accent-2), #245e52);
+.scope-label,
+.scope-call {
+  position: absolute;
+  top: 5px;
+  font-size: 11px;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 .scope-label {
-  position: absolute;
-  left: 10px;
-  top: 6px;
-  font-size: 11px;
+  left: 9px;
   color: var(--muted);
 }
 
 .scope-call {
-  position: absolute;
-  right: 10px;
-  top: 6px;
+  right: 9px;
   font-family: var(--mono);
-  font-size: 11px;
   color: var(--accent);
 }
 
