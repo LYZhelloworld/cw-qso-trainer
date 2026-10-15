@@ -15,8 +15,18 @@ import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
 
 /**
- * Presentation-layer session: pairs one virtual HAM on one frequency with a
- * QsoMachine, plays the CW audio, and keeps the transcript shown on the CW page.
+ * Presentation-layer session: pairs one virtual HAM on one band with a
+ * QsoMachine, plays the CW audio, and keeps the transcript shown on the
+ * operator's screen.
+ *
+ * A session owns TWO things that deliberately have different lifetimes:
+ *  - the **band** (its virtual HAMs and their CQ rhythm, via `Frequency`) — the
+ *    environment. It keeps running whether or not the operator is listening.
+ *  - the **station** (audio, transcript, the QSO in progress) — that is what
+ *    the rig's power switch controls (`receiving`).
+ *
+ * Powering down therefore never touches the band: the other stations do not go
+ * off the air just because we did. See `setReceiving`.
  *
  * Real timers are wired here (the state machine itself stays deterministic).
  */
@@ -60,7 +70,11 @@ export interface QsoSessionOptions {
 }
 
 export class QsoSession {
-  readonly freqMHz: number;
+  /**
+   * Dial frequency for this band. Follows the operator's tuning (see `retune`)
+   * because it is what the log records and what staging is keyed by.
+   */
+  freqMHz: number;
   private readonly freq: Frequency;
   private readonly engine: AudioPlayer;
   private readonly rng: () => number;
@@ -87,6 +101,14 @@ export class QsoSession {
   logWritten = false;
   /** True while a transmission is in flight; guards against interleaved sends. */
   private sending = false;
+  /**
+   * Whether the operator's receiver is open. Off = the rig is powered down.
+   * Defaults to on so a session used on its own (tests, embedding) behaves like
+   * a station that is already listening; the App drives it from the power
+   * switch. Crucially this only gates *hearing and transmitting* — the band's
+   * HAMs keep calling CQ either way (see `handleActivity`).
+   */
+  private receiving = true;
 
   constructor(freqMHz: number, settings: AppSettings, opts: QsoSessionOptions = {}) {
     this.freqMHz = freqMHz;
@@ -176,6 +198,36 @@ export class QsoSession {
   }
 
   /**
+   * Open / close the operator's receiver — the rig's power switch.
+   *
+   * Off means the station neither hears nor transmits: incoming CQ calls are not
+   * picked up, nothing is played, and `userSend` / `userCallsCq` are refused.
+   * It does NOT clear anything. The band, its HAM roster and any QSO already in
+   * progress are left exactly as they were, and the HAMs keep calling CQ in the
+   * background — the environment does not go off the air when we do.
+   */
+  setReceiving(on: boolean): void {
+    if (on === this.receiving) return;
+    this.receiving = on;
+    if (!on) this.engine.stop(); // powering down cuts whatever was being heard
+  }
+
+  get isReceiving(): boolean {
+    return this.receiving;
+  }
+
+  /**
+   * Retune inside the same band. The air is unchanged (a 1 kHz move does not
+   * conjure a new set of stations); only the dial frequency used for logging and
+   * staging follows the operator.
+   */
+  retune(freqMHz: number): void {
+    if (freqMHz === this.freqMHz) return;
+    this.freqMHz = freqMHz;
+    if (this.machine) this.persistStaging();
+  }
+
+  /**
    * Populate the frequency with activity so the band is not empty. With no
    * argument the band keeps 1–3 HAMs (VIRTUAL-HAM.md), decided once per session.
    */
@@ -197,6 +249,8 @@ export class QsoSession {
    */
   async hamCallsCq(ham?: VirtualHam): Promise<void> {
     if (this.sending) return;
+    // A powered-down rig hears nothing, so a CQ is never picked up.
+    if (!this.receiving) return;
     const target = ham ?? this.pickHam();
     // The same HAM calling again must not restart the exchange: repeating hamCq()
     // on a machine already in PEER_CQ is idempotent, so reuse it and just log
@@ -217,6 +271,7 @@ export class QsoSession {
   /** The user calls CQ; a single HAM answers after a short delay. */
   async userCallsCq(): Promise<void> {
     if (this.sending) return;
+    if (!this.receiving) return; // cannot transmit with the rig off
     this.sending = true;
     try {
       this.stopAudio(); // cut any ambient HAM CQ before the user's own call
@@ -249,6 +304,7 @@ export class QsoSession {
     // Busy guard: a second send while the first is still being transmitted (or
     // the HAM is mid-reply) is dropped rather than interleaved with it.
     if (this.sending) return;
+    if (!this.receiving) return; // cannot transmit with the rig off
     this.sending = true;
     try {
       this.stopAudio(); // break in: cut any HAM still calling CQ
@@ -398,13 +454,19 @@ export class QsoSession {
   private handleActivity(events: HamActivityEvent[]): void {
     for (const e of events) {
       if (e.type === "offline") {
-        this.note(`${e.ham.call} 停止呼叫，已下线`);
+        // The band keeps replacing stations that give up whether or not we are
+        // listening; only the *report* of it is withheld while powered down.
+        if (this.receiving) this.note(`${e.ham.call} 停止呼叫，已下线`);
         this.refillHams();
       }
     }
 
     for (const e of events) {
       if (e.type !== "cq") continue;
+      // Powered down: the CQ goes out on the air, we just do not hear it. The
+      // band must still be advanced (which it is — that happened in frequency),
+      // so the station keeps its own rhythm and may still give up.
+      if (!this.receiving) continue;
       // Mid-exchange: ignore other stations calling on the band rather than
       // trampling over the QSO in progress.
       if (this.exchangeInProgress) continue;
@@ -478,11 +540,6 @@ export class QsoSession {
   }
 
   private dropStaging(): void {
-    clearStaging();
-  }
-
-  /** Public: drop any staged QSO (e.g. when the user tunes to a new band). */
-  discardStaging(): void {
     clearStaging();
   }
 

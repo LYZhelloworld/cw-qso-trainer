@@ -82,9 +82,23 @@ const SCOPE_HEIGHTS: number[] = Array.from({ length: SCOPE_BARS }, (_, i) =>
  * band, mode, power switch, settings gear) plus a small nav for the secondary
  * views (log / about). Settings live behind the gear as a modal sheet.
  */
+/** Clamp a band index into range (settings are normalised, but be defensive). */
+function clampBandIndex(index: number): number {
+  return Math.min(Math.max(index, 0), BANDS.length - 1);
+}
+
 export class App implements AppHost {
   settings: AppSettings;
-  session: QsoSession;
+  /**
+   * One session per band — this is the *environment*. Every band's virtual HAMs
+   * are generated when the app opens and keep calling CQ / giving up / being
+   * replaced for as long as it stays open, whether or not the operator is
+   * powered up. The rig's power switch only decides whether we hear the band we
+   * are tuned to; the others simply keep running unheard.
+   */
+  private readonly sessions: QsoSession[];
+  /** Which band the operator is tuned to (index into `sessions`). */
+  private activeBand: number;
   private page: PageId = "radio";
   /** Radio power. Off by default so the band is silent until the user opens up. */
   private powerOn = false;
@@ -96,13 +110,25 @@ export class App implements AppHost {
 
   constructor(private readonly root: HTMLElement) {
     this.settings = loadSettings();
-    // Built but not started: with the station off there is no HAM activity yet.
-    this.session = this.createSession();
+    this.activeBand = clampBandIndex(this.settings.bandIndex);
+    // The air is built up front but no timer runs until `start()`.
+    this.sessions = BANDS.map((_, i) => this.createSession(i));
+    this.sessions[this.activeBand].retune(this.settings.freqMHz);
   }
 
-  /** A fresh, empty session for the current band (population is explicit). */
-  private createSession(): QsoSession {
-    return new QsoSession(this.settings.freqMHz, this.settings);
+  /** The session for the band the operator is currently tuned to. */
+  get session(): QsoSession {
+    return this.sessions[this.activeBand];
+  }
+
+  /**
+   * A fresh session for one band. The tuned band takes the operator's dial
+   * frequency; every other band starts on its own default.
+   */
+  private createSession(bandIndex: number): QsoSession {
+    const freqMHz =
+      bandIndex === this.activeBand ? this.settings.freqMHz : BANDS[bandIndex].defaultMHz;
+    return new QsoSession(freqMHz, this.settings);
   }
 
   get powered(): boolean {
@@ -110,15 +136,30 @@ export class App implements AppHost {
   }
 
   /**
-   * Populate + start the HAMs' CQ rhythm, and let autonomous activity refresh
-   * the view. Refreshes are skipped while the user has unsent text, so an
+   * Power + tuning decide which band (if any) the station is actually hearing.
+   * Everything else keeps running silently.
+   */
+  private applyReceiving(): void {
+    this.sessions.forEach((s, i) => {
+      s.setReceiving(this.powerOn && i === this.activeBand);
+    });
+  }
+
+  /**
+   * Only the band being monitored refreshes the view; the rest keep running in
+   * the background. Refreshes are skipped while the user has unsent text, so an
    * incoming CQ can never wipe out a half-typed transmission.
    */
-  private startSession(): void {
-    this.session.start();
-    this.session.setActivityListener(() => {
-      if (this.session.draft) return;
-      if (this.page === "radio") this.refresh();
+  private watchBand(index: number): void {
+    this.sessions.forEach((s, i) => {
+      if (i !== index) {
+        s.setActivityListener(null);
+        return;
+      }
+      s.setActivityListener(() => {
+        if (s.draft) return;
+        if (this.page === "radio") this.refresh();
+      });
     });
   }
 
@@ -130,49 +171,57 @@ export class App implements AppHost {
       this.pageRoot,
       el("div", { class: "footer", text: DISCLAIMER_TEXT }),
     );
+    // The band exists whether or not anyone is listening: populate every band
+    // and start its CQ rhythm now, so the air is already alive (and evolving)
+    // by the time the operator flips the power switch.
+    for (const s of this.sessions) {
+      s.seedHams();
+      s.start();
+    }
+    this.applyReceiving();
+    this.watchBand(this.activeBand);
     this.renderRig();
     this.renderNav();
     this.renderPage();
     if (!hasAcknowledgedDisclaimer()) this.showDisclaimerModal();
   }
 
-  /** 开台 / 关台. Powering down silences the band; powering up re-populates it. */
+  /**
+   * 开台 / 关台. This is the *receiver* switch: powering down silences the
+   * station and stops it hearing anything, but the band it was on is left
+   * exactly as it was — its HAMs keep calling CQ, because the environment does
+   * not go off the air when we do. Powering up just starts hearing again.
+   */
   setPower(on: boolean): void {
     if (on === this.powerOn) return;
     this.powerOn = on;
-    if (on) {
-      this.session.seedHams();
-      this.startSession();
-      // Resume an in-progress QSO if the user refreshed mid-conversation.
-      this.session.restoreStaging();
-    } else {
-      // A powered-down radio holds nothing: drop the staged QSO and the band.
-      this.session.discardStaging();
-      this.session.dispose();
-      this.session = this.createSession();
-    }
+    // Resume a QSO that a refresh interrupted; never clobber a live one.
+    if (on && !this.session.inQso) this.session.restoreStaging();
+    this.applyReceiving();
     this.refresh();
   }
 
   updateSettings(patch: Partial<AppSettings>): void {
     const merged = normalizeSettings({ ...this.settings, ...patch });
+    const bandChanged = merged.bandIndex !== this.settings.bandIndex;
     const freqChanged = merged.freqMHz !== this.settings.freqMHz;
     this.settings = merged;
     saveSettings(merged);
-    if (freqChanged) {
-      // A different frequency means a different set of HAMs: start over.
-      // The old session must be disposed first, otherwise its scheduler keeps
-      // ticking forever on a band nobody is listening to.
-      this.session.dispose();
-      this.session = this.createSession();
-      this.session.discardStaging();
-      if (this.powerOn) {
-        this.session.seedHams();
-        this.startSession();
-      }
-    } else {
-      this.session.updateSettings(merged);
+    for (const s of this.sessions) s.updateSettings(merged);
+
+    if (bandChanged) {
+      // Tuning away abandons the QSO on the old band — its partner goes back to
+      // calling CQ on a band that keeps running without us. Only the receiver
+      // moves: nothing is torn down and nothing is re-seeded.
+      this.session.reset();
+      this.activeBand = clampBandIndex(merged.bandIndex);
+      this.session.retune(merged.freqMHz);
+      this.watchBand(this.activeBand);
+    } else if (freqChanged) {
+      // Retuning inside the same band: same air, new dial frequency.
+      this.session.retune(merged.freqMHz);
     }
+    this.applyReceiving();
     this.refresh();
     this.renderSettingsModal();
   }
@@ -189,10 +238,10 @@ export class App implements AppHost {
     this.refresh();
   }
 
-  /** Release page listeners and stop the HAM scheduler. */
+  /** Release page listeners and stop every band's scheduler. */
   dispose(): void {
     this.runCleanups();
-    this.session.dispose();
+    for (const s of this.sessions) s.dispose();
     this.settingsOverlay?.remove();
     this.settingsOverlay = null;
   }
@@ -290,7 +339,9 @@ export class App implements AppHost {
     scope.append(bars);
     const label = el("span", {
       class: "scope-label",
-      text: this.powerOn ? "波段频谱（示意）" : "设备已关机",
+      // Powered down, the band does not go quiet — say so, so the model is not a
+      // surprise when the operator switches on.
+      text: this.powerOn ? "波段频谱（示意）" : "设备已关机 · 本波段其他电台仍在活动",
     });
     scope.append(label);
     if (this.powerOn) {

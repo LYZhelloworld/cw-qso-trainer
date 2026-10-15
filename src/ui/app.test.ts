@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, safeRenderPage } from "./app.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { DISCLAIMER_TEXT } from "./disclaimer.js";
+import { BANDS } from "./bands.js";
 
 const NAV_LABELS = ["电台", "日志", "关于"];
 const ACK_KEY = "cw-qso-trainer:disclaimer-ack";
@@ -145,7 +146,7 @@ describe("App 外壳", () => {
     expect(JSON.parse(stored ?? "{}").myCall).toBe("BG7XXX");
   });
 
-  it("切换频率会重建会话（不同频率即不同 HAM 集合）", () => {
+  it("切换波段会切到该波段的会话并显示新频率", () => {
     const { app, root } = mountApp();
     const before = app.session;
 
@@ -154,6 +155,71 @@ describe("App 外壳", () => {
     expect(app.session).not.toBe(before);
     expect(app.session.freqMHz).toBe(7.025);
     expect(root.querySelector(".rig .freq-value")?.textContent).toBe("7.0250");
+  });
+
+  it("同一波段内调谐不会重建会话", () => {
+    const { app } = mountApp();
+    const before = app.session;
+
+    app.updateSettings({ freqMHz: 14.026 });
+
+    expect(app.session).toBe(before);
+    expect(app.session.freqMHz).toBe(14.026);
+  });
+});
+
+describe("环境与电源（关台只是不接收）", () => {
+  it("启动后还没开台，每个波段就已经有虚拟 HAM 在活动", () => {
+    const { app } = mountApp();
+    expect(app.powered).toBe(false);
+
+    for (let i = 0; i < BANDS.length; i += 1) {
+      app.updateSettings({ bandIndex: i, freqMHz: BANDS[i].defaultMHz });
+      expect(app.session.listHams().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("关台不清空：重新开台后还是同一个会话、同一批电台", () => {
+    const { app } = mountApp();
+    app.setPower(true);
+    const session = app.session;
+    const calls = session.listHams().map((h) => h.call).sort();
+
+    app.setPower(false);
+    expect(app.powered).toBe(false);
+    expect(app.session).toBe(session);
+    expect(app.session.listHams().map((h) => h.call).sort()).toEqual(calls);
+
+    app.setPower(true);
+    expect(app.session).toBe(session);
+    expect(app.session.listHams().map((h) => h.call).sort()).toEqual(calls);
+  });
+
+  it("只有「开着台 + 当前波段」才在接收", () => {
+    const { app } = mountApp();
+    expect(app.session.isReceiving).toBe(false);
+
+    app.setPower(true);
+    expect(app.session.isReceiving).toBe(true);
+
+    app.setPower(false);
+    expect(app.session.isReceiving).toBe(false);
+  });
+
+  it("换到别的波段再换回来，原波段没有被拆掉", () => {
+    const { app } = mountApp();
+    app.setPower(true);
+    const first = app.session;
+    const firstCalls = first.listHams().map((h) => h.call).sort();
+
+    app.updateSettings({ bandIndex: 0, freqMHz: BANDS[0].defaultMHz });
+    expect(app.session).not.toBe(first);
+    expect(app.session.isReceiving).toBe(true); // 接收跟着人走
+    expect(app.session.listHams().length).toBeGreaterThan(0);
+
+    app.updateSettings({ bandIndex: 2, freqMHz: BANDS[2].defaultMHz });
+    expect(app.session).toBe(first);
+    expect(app.session.listHams().map((h) => h.call).sort()).toEqual(firstCalls);
   });
 });
 
