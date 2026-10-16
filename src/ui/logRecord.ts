@@ -14,6 +14,11 @@ export interface LogRecord {
   timeUtc: string; // HH:MM:SS
   call: string;
   freqMHz: string; // e.g. "14.0250"
+  /**
+   * Always plain "CW". The rig's CW-L / CW-U (which sideband the receiver is
+   * demodulating) is an operating preference, not a mode — it never reaches the
+   * log, exactly as a real logbook records CW either way.
+   */
   mode: "CW";
   rstRx: string;
   rstTx: string;

@@ -167,18 +167,49 @@ describe("App 外壳", () => {
     expect(app.session.freqMHz).toBe(14.026);
   });
 
-  it("电台面板显示当前波段的 CW 边带（40m 及以下 LSB，20m 及以上 USB）", () => {
+  it("电台面板的模式标签显示 CW 边带（40m 及以下 CW-L，20m 及以上 CW-U）", () => {
     const { root, app } = mountApp();
-    const sideband = (): string | null | undefined =>
-      root.querySelector(".rig .badge.sideband")?.textContent;
+    const mode = (): string | null | undefined =>
+      root.querySelector(".rig .badge.sideband-btn")?.textContent;
 
-    expect(sideband()).toBe("USB"); // 默认 14.025 MHz
+    expect(mode()).toBe("CW-U"); // 默认 14.025 MHz
+    expect(app.session.sideband).toBe("USB");
 
     app.updateSettings({ freqMHz: 7.025, bandIndex: 1 });
-    expect(sideband()).toBe("LSB");
+    expect(mode()).toBe("CW-L");
+    expect(app.session.sideband).toBe("LSB");
 
     app.updateSettings({ freqMHz: 21.025, bandIndex: 3 });
-    expect(sideband()).toBe("USB");
+    expect(mode()).toBe("CW-U");
+  });
+
+  it("点击模式标签可切换边带并固定下来（不再跟随波段）", () => {
+    const { root, app } = mountApp();
+    const label = (): HTMLButtonElement =>
+      root.querySelector<HTMLButtonElement>(".rig .badge.sideband-btn")!;
+
+    // 默认 20m 跟随波段为 USB
+    expect(label().textContent).toBe("CW-U");
+    label().click();
+    expect(app.settings.cwSideband).toBe("LSB");
+    expect(label().textContent).toBe("CW-L");
+    expect(app.session.sideband).toBe("LSB");
+
+    // 固定后换波段仍是 LSB（波段约定只是初始值）
+    app.updateSettings({ freqMHz: 21.025, bandIndex: 3 });
+    expect(label().textContent).toBe("CW-L");
+    expect(app.session.sideband).toBe("LSB");
+  });
+
+  it("瀑布图通带标记宽度跟随所选滤波带宽", () => {
+    const { root, app } = mountApp();
+    const width = (): string =>
+      (root.querySelector<HTMLElement>(".scope-passband")?.style.width ?? "");
+
+    // 500 Hz / 20 kHz = 2.5%
+    expect(width()).toBe("2.5%");
+    app.updateSettings({ passbandHz: 100 });
+    expect(width()).toBe("0.5%");
   });
 });
 

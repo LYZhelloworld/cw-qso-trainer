@@ -1,5 +1,6 @@
 import { button, el, panel } from "../dom.js";
 import { dxccDatabase } from "../../data/dxcc.js";
+import { PASSBAND_HZ, PASSBAND_OPTIONS } from "../../ham/tuning.js";
 import {
   DEFAULT_SETTINGS,
   SIDETONE_MAX,
@@ -9,6 +10,7 @@ import {
   WPM_MAX,
   WPM_MIN,
   validateCallsign,
+  type CwSideband,
   type IambicMode,
   type KeyMode,
   type UiDifficulty,
@@ -149,6 +151,43 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
   const iambicField = el("label", { class: "field" });
   iambicField.append(document.createTextNode("iambic 模式"), iambicSelect);
 
+  // --- CW sideband ---------------------------------------------------------
+  // Which sideband the receiver demodulates decides which way the note moves as
+  // the dial is turned. The rig's mode label (CW-L / CW-U) toggles it too; this
+  // is where "follow the band" is restored.
+  const sidebandSelect = el("select");
+  for (const [value, label] of [
+    ["auto", "自动（跟随波段：40m 及以下 CW-L，20m 及以上 CW-U）"],
+    ["LSB", "CW-L（下边带）"],
+    ["USB", "CW-U（上边带）"],
+  ] as const) {
+    const opt = el("option", { attrs: { value } });
+    opt.textContent = label;
+    sidebandSelect.append(opt);
+  }
+  sidebandSelect.value = s.cwSideband;
+  sidebandSelect.addEventListener("change", () =>
+    host.updateSettings({ cwSideband: sidebandSelect.value as CwSideband }),
+  );
+  const sidebandField = el("label", { class: "field" });
+  sidebandField.append(document.createTextNode("CW 边带"), sidebandSelect);
+
+  // --- receiver filter width ----------------------------------------------
+  // A narrower filter is harder to stay inside, so this is also a difficulty
+  // dial: 500 Hz is forgiving, 100 Hz demands you park on the signal.
+  const passbandSelect = el("select");
+  for (const hz of PASSBAND_OPTIONS) {
+    const opt = el("option", { attrs: { value: String(hz) } });
+    opt.textContent = hz === PASSBAND_HZ ? `${hz} Hz（默认）` : `${hz} Hz`;
+    passbandSelect.append(opt);
+  }
+  passbandSelect.value = String(s.passbandHz);
+  passbandSelect.addEventListener("change", () =>
+    host.updateSettings({ passbandHz: Number(passbandSelect.value) }),
+  );
+  const passbandField = el("label", { class: "field" });
+  passbandField.append(document.createTextNode("接收滤波带宽"), passbandSelect);
+
   root.append(
     panel("身份", callField),
     panel(
@@ -172,6 +211,15 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
       el("div", {
         class: "hint",
         text: "侧音是电台监听音，不受难度档的衰落与干扰影响；浏览器可能要求先点击页面才允许发声。",
+      }),
+    ),
+    panel(
+      "CW 接收",
+      sidebandField,
+      passbandField,
+      el("div", {
+        class: "hint",
+        text: "通带以拨轮频率为中心；带宽越窄，离信号越远就越听不到——500 Hz 最宽松，100 Hz 要求正好停在信号上。带宽不影响通联记录（始终记为 CW）。",
       }),
     ),
     panel(

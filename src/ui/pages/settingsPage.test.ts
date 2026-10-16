@@ -62,9 +62,16 @@ afterEach(() => {
 });
 
 describe("设置页", () => {
-  it("包含身份 / 音频与速度 / 通联 / 键位 / 其他五个区块", () => {
+  it("包含身份 / 音频与速度 / CW 接收 / 通联 / 键位 / 其他六个区块", () => {
     const { root } = makeHost();
-    expect(panelTitles(root)).toEqual(["身份", "音频与速度", "通联", "键位", "其他"]);
+    expect(panelTitles(root)).toEqual([
+      "身份",
+      "音频与速度",
+      "CW 接收",
+      "通联",
+      "键位",
+      "其他",
+    ]);
   });
 
   it("未填呼号时给出错误提示", () => {
@@ -154,6 +161,32 @@ describe("设置页", () => {
     select.dispatchEvent(new Event("change"));
 
     expect(host.settings.difficulty).toBe("hardcore");
+  });
+
+  it("CW 边带默认跟随波段，可手动指定 LSB / USB", () => {
+    const { root, host } = makeHost();
+    const select = fieldByLabel(root, "CW 边带").querySelector("select")!;
+    expect(select.value).toBe("auto");
+    expect(select.textContent).toContain("自动");
+
+    select.value = "USB";
+    select.dispatchEvent(new Event("change"));
+    expect(host.settings.cwSideband).toBe("USB");
+  });
+
+  it("接收滤波带宽默认 500 Hz，可切到 250 / 100 Hz", () => {
+    const { root, host } = makeHost();
+    const select = fieldByLabel(root, "接收滤波带宽").querySelector("select")!;
+    expect(select.value).toBe("500");
+    expect(Array.from(select.querySelectorAll("option")).map((o) => o.value)).toEqual([
+      "500",
+      "250",
+      "100",
+    ]);
+
+    select.value = "100";
+    select.dispatchEvent(new Event("change"));
+    expect(host.settings.passbandHz).toBe(100);
   });
 
   it("辅助模式开关会更新设置", () => {

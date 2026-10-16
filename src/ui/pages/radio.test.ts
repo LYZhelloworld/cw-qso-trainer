@@ -18,6 +18,8 @@ function makeHost(overrides: Partial<AppSettings> = {}, powered = true) {
     session: {
       inQso: false,
       dialHz: 14_025_000,
+      passbandHz: 500,
+      passbandHalfHz: 250,
       listHams: () => [],
       hamActivity: () => [],
       hamCallsCq: async () => true,

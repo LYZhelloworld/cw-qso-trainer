@@ -16,7 +16,14 @@ import {
   type SpectrumSignal,
   type SpectrumSnapshot,
 } from "../ham/spectrum.js";
-import { audibleToneHz, detuneHz, inPassband } from "../ham/tuning.js";
+import {
+  audibleToneHz,
+  detuneHz,
+  inPassband,
+  normalisePassband,
+  resolveSideband,
+  type Sideband,
+} from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
 import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
@@ -91,6 +98,22 @@ export class QsoSession {
   /** The dial in Hz — the frequency the waterfall centres on. */
   get dialHz(): number {
     return Math.round(this.freqMHz * 1e6);
+  }
+  /**
+   * The CW sideband this receiver is on: the band's convention unless the
+   * operator pinned one from the mode label (see `ham/tuning`). It is what
+   * decides which way the note moves as the dial is turned.
+   */
+  get sideband(): Sideband {
+    return resolveSideband(this.settings.cwSideband, this.dialHz);
+  }
+  /** Receiver CW filter width in Hz (500 / 250 / 100), from settings. */
+  get passbandHz(): number {
+    return normalisePassband(this.settings.passbandHz);
+  }
+  /** Half the filter width — how far off the dial a station is still audible. */
+  get passbandHalfHz(): number {
+    return this.passbandHz / 2;
   }
   private readonly freq: Frequency;
   private readonly engine: AudioPlayer;
@@ -236,7 +259,7 @@ export class QsoSession {
   /** True while the partner is inside the passband (i.e. actually audible). */
   partnerInPassband(): boolean {
     if (!this.ham || this.ham.freqHz <= 0) return true;
-    return inPassband(this.ham.freqHz, this.dialHz);
+    return inPassband(this.ham.freqHz, this.dialHz, this.passbandHz);
   }
 
   /**
@@ -246,7 +269,7 @@ export class QsoSession {
    */
   heardActiveHam(): VirtualHam | null {
     const nearest = this.nearestWorkableHam();
-    return nearest && inPassband(nearest.freqHz, this.dialHz) ? nearest : null;
+    return nearest && inPassband(nearest.freqHz, this.dialHz, this.passbandHz) ? nearest : null;
   }
 
   /**
@@ -267,7 +290,7 @@ export class QsoSession {
 
   /** HAMs on the band that the current dial setting cannot hear at all. */
   unheardHams(): VirtualHam[] {
-    return this.freq.listHams().filter((h) => !inPassband(h.freqHz, this.dialHz));
+    return this.freq.listHams().filter((h) => !inPassband(h.freqHz, this.dialHz, this.passbandHz));
   }
 
   /** The band's decorative carriers (see `spectrum`); built once per session. */
@@ -594,7 +617,7 @@ export class QsoSession {
 
   /** True when a station is inside the receiver's passband right now. */
   private canHear(ham: VirtualHam): boolean {
-    return ham.freqHz <= 0 || inPassband(ham.freqHz, this.dialHz);
+    return ham.freqHz <= 0 || inPassband(ham.freqHz, this.dialHz, this.passbandHz);
   }
 
   /** One step of the scheduler (driven by the injected timer). */
@@ -722,6 +745,8 @@ export class QsoSession {
       toneHz: this.settings.toneHz,
       stationHz: station.freqHz,
       dialHz: this.dialHz,
+      sideband: this.sideband,
+      passbandHz: this.passbandHz,
     });
   }
 

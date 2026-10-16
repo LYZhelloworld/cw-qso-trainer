@@ -183,6 +183,62 @@ describe("CW 通带：超出 ±250 Hz 就收不到", () => {
   });
 });
 
+describe("CW 边带偏好与可调滤波带宽", () => {
+  it("默认跟随波段，固定 LSB 后 20m 上的音调方向反过来", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio, { settings: { cwSideband: "LSB" } });
+    const ham = s.seedHams(1)[0];
+
+    expect(s.sideband).toBe("LSB"); // 20m 手动指定 CW-L
+    tuneBelow(s, ham, 180); // 台在拨轮上方 180 Hz
+    await s.hamCallsCq(ham);
+
+    expect(s.partnerToneHz()).toBe(520); // LSB：700 − 180（USB 会是 880）
+    expect(lastTone(audio)).toBe(520);
+  });
+
+  it("固定 USB 后 40m 上的音调方向反过来", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio, { freqMHz: 7.025, settings: { cwSideband: "USB" } });
+    const ham = s.seedHams(1)[0];
+
+    expect(s.sideband).toBe("USB"); // 40m 手动指定 CW-U
+    tuneBelow(s, ham, 180);
+    await s.hamCallsCq(ham);
+
+    expect(s.partnerToneHz()).toBe(880); // USB：700 + 180（LSB 会是 520）
+  });
+
+  it("滤波带宽变窄：250 Hz 时偏 200 Hz 就已经听不到", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio, { settings: { passbandHz: 250 } });
+    const ham = s.seedHams(1)[0];
+
+    expect(s.passbandHz).toBe(250);
+    expect(s.passbandHalfHz).toBe(125);
+
+    tuneBelow(s, ham, 200); // 500 Hz 通带里还听得到，250 Hz 已出界
+    expect(s.heardActiveHam()).toBeNull();
+    expect(await s.hamCallsCq(ham)).toBe(false);
+    expect(audio.calls).toHaveLength(0);
+  });
+
+  it("带宽 100 Hz 时只有正对频（±50 Hz）才收得到", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio, { settings: { passbandHz: 100 } });
+    const ham = s.seedHams(1)[0];
+
+    tuneBelow(s, ham, 0);
+    await s.hamCallsCq(ham);
+    expect(s.partnerInPassband()).toBe(true);
+    expect(s.partnerToneHz()).toBe(700);
+
+    tuneBelow(s, ham, 60); // 越过 ±50 Hz 的界
+    expect(s.partnerInPassband()).toBe(false);
+    expect(s.partnerToneHz()).toBeNull();
+  });
+});
+
 describe("用户自己的发送", () => {
   it("不受偏频影响（自己的信号永远正对频）", async () => {
     const audio = new FakeAudio();

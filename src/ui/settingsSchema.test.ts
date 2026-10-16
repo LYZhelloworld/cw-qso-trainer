@@ -43,6 +43,21 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ iambicMode: "B" }).iambicMode).toBe("B");
     expect(normalizeSettings({ iambicMode: "X" }).iambicMode).toBe("A");
   });
+
+  it("keeps a pinned CW sideband but defaults to auto (follow the band)", () => {
+    expect(normalizeSettings({ cwSideband: "USB" }).cwSideband).toBe("USB");
+    expect(normalizeSettings({ cwSideband: "LSB" }).cwSideband).toBe("LSB");
+    expect(normalizeSettings({ cwSideband: "auto" }).cwSideband).toBe("auto");
+    expect(normalizeSettings({ cwSideband: "bogus" }).cwSideband).toBe("auto");
+    expect(DEFAULT_SETTINGS.cwSideband).toBe("auto");
+  });
+
+  it("keeps a supported filter width but defaults to 500 Hz", () => {
+    expect(normalizeSettings({ passbandHz: 250 }).passbandHz).toBe(250);
+    expect(normalizeSettings({ passbandHz: 100 }).passbandHz).toBe(100);
+    expect(normalizeSettings({ passbandHz: 42 }).passbandHz).toBe(500);
+    expect(DEFAULT_SETTINGS.passbandHz).toBe(500);
+  });
 });
 
 describe("callsignPrefix", () => {

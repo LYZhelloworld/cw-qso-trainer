@@ -14,7 +14,13 @@ import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { BANDS, clampToBand, roundFreq } from "./bands.js";
 import { formatFreqMHz } from "./logRecord.js";
-import { sidebandFor, inPassband, PASSBAND_HZ } from "../ham/tuning.js";
+import {
+  inPassband,
+  otherSideband,
+  resolveSideband,
+  sidebandLabel,
+  type Sideband,
+} from "../ham/tuning.js";
 import { SPECTRUM_SPAN_HZ } from "../ham/spectrum.js";
 import { Waterfall } from "./waterfall.js";
 
@@ -113,15 +119,14 @@ export class App implements AppHost {
   private readonly scopeCanvas = el("canvas", { class: "scope-canvas" });
   /**
    * The receiver's passband drawn on top of the waterfall: a band down the
-   * middle of the display as wide as the CW filter (500 Hz out of the 20 kHz
-   * window). It is always centred because the display is drawn around the dial,
-   * and the filter is centred on the dial too. Anything lit up outside it is on
-   * the band but *not* being received.
+   * middle of the display as wide as the CW filter (by default 500 Hz out of
+   * the 20 kHz window, narrower if the operator picked a tighter filter). It is
+   * always centred because the display is drawn around the dial, and the filter
+   * is centred on the dial too. Anything lit up outside it is on the band but
+   * *not* being received. Its width is refreshed on every render from the
+   * current setting.
    */
-  private readonly scopePassband = el("div", {
-    class: "scope-passband",
-    attrs: { style: `width: ${(PASSBAND_HZ / SPECTRUM_SPAN_HZ) * 100}%` },
-  });
+  private readonly scopePassband = el("div", { class: "scope-passband" });
   private readonly scopeLabel = el("span", { class: "scope-label" });
   private readonly scopeCall = el("span", { class: "scope-call" });
   private readonly scopeRoot = el("div", { class: "rig-scope" }, [
@@ -262,6 +267,16 @@ export class App implements AppHost {
     this.refresh();
   }
 
+  /**
+   * Flip the receiving sideband from the mode label. The band's convention is
+   * the starting point; clicking pins the other one. Only how the receiver
+   * interprets the dial changes — nothing is torn down and the transcript keeps
+   * running, exactly as flipping a real rig's mode mid-QSO would.
+   */
+  private toggleSideband(current: Sideband): void {
+    this.updateSettings({ cwSideband: otherSideband(current) });
+  }
+
   updateSettings(patch: Partial<AppSettings>): void {
     const merged = normalizeSettings({ ...this.settings, ...patch });
     const bandChanged = merged.bandIndex !== this.settings.bandIndex;
@@ -371,15 +386,26 @@ export class App implements AppHost {
 
     const meta = el("div", { class: "rig-meta" });
     meta.append(el("span", { class: "badge", text: band.name }));
-    meta.append(el("span", { class: "badge mode", text: "CW" }));
-    // Which sideband the band is worked on (40 m and down LSB, 20 m and up USB).
-    // It is what decides which way the note shifts when a station is detuned.
-    meta.append(
-      el("span", {
-        class: "badge sideband",
-        text: sidebandFor(Math.round(this.settings.freqMHz * 1e6)),
-      }),
+    // The mode readout is also the sideband switch: CW-L / CW-U. The band's
+    // convention (40 m and down LSB, 20 m and up USB) is only the starting
+    // point — the operator can pin the other sideband by clicking here. Either
+    // way a logged QSO is plain CW (see logRecord).
+    const sideband = resolveSideband(
+      this.settings.cwSideband,
+      Math.round(this.settings.freqMHz * 1e6),
     );
+    const modeBtn = button(
+      sidebandLabel(sideband),
+      () => this.toggleSideband(sideband),
+      "badge mode sideband-btn",
+    );
+    modeBtn.title =
+      this.settings.cwSideband === "auto"
+        ? `${sidebandLabel(sideband)}（本波段默认）· 点击切换到 ${
+            sideband === "USB" ? "CW-L" : "CW-U"
+          }`
+        : `${sidebandLabel(sideband)}（手动指定）· 点击切换（可在设置里恢复跟随波段）`;
+    meta.append(modeBtn);
 
     const right = el("div", { class: "rig-right" });
     const power = button(
@@ -405,11 +431,17 @@ export class App implements AppHost {
    */
   private updateScope(): void {
     this.scopeRoot.classList.toggle("off", !this.powerOn);
-    // Below the dial is the receiver's 500 Hz passband, so only stations inside
-    // it are actually being heard — the rest are visible signals the operator
-    // has not tuned to yet.
+    // The passband marking is as wide as the filter the operator picked.
+    this.scopePassband.style.width = `${
+      (this.session.passbandHz / SPECTRUM_SPAN_HZ) * 100
+    }%`;
+    // Below the dial is the receiver's filter, so only stations inside it are
+    // actually being heard — the rest are visible signals the operator has not
+    // tuned to yet.
     const roster = this.powerOn ? this.session.hamActivity() : [];
-    const audible = roster.filter((e) => inPassband(e.ham.freqHz, this.session.dialHz));
+    const audible = roster.filter((e) =>
+      inPassband(e.ham.freqHz, this.session.dialHz, this.session.passbandHz),
+    );
 
     // Powered down the band does not go quiet — the other stations keep calling.
     // Say so, so "standby" is never mistaken for "empty".

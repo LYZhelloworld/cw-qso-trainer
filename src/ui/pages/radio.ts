@@ -6,7 +6,7 @@ import {
   clampToBand,
   roundFreq,
 } from "../bands.js";
-import { PASSBAND_HALF_HZ, detuneHz, inPassband } from "../../ham/tuning.js";
+import { detuneHz, inPassband } from "../../ham/tuning.js";
 import { renderQsoPanel } from "./cw.js";
 import type { AppHost } from "../app.js";
 
@@ -82,6 +82,10 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     button("+ 100 Hz", () => step(FREQ_FINE_STEP_MHZ), "btn small"),
   );
 
+  // The receiver's filter width is an operator choice (500 / 250 / 100 Hz);
+  // what matters here is that it is centred on the dial and the coarse buttons
+  // land exactly on the 1 kHz station grid.
+  const halfHz = host.session.passbandHalfHz;
   root.append(
     panel(
       "波段与调谐",
@@ -90,7 +94,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
       fineTuning,
       el("div", {
         class: "hint",
-        text: `接收通带 ${PASSBAND_HALF_HZ * 2} Hz（±${PASSBAND_HALF_HZ} Hz），中心就是拨轮频率；电台间隔 1 kHz。`,
+        text: `接收通带 ${halfHz * 2} Hz（±${halfHz} Hz），中心就是拨轮频率；电台间隔 1 kHz。`,
       }),
     ),
   );
@@ -104,9 +108,10 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   // --- band activity -------------------------------------------------------
   const roster = host.session.hamActivity();
   const dialHz = host.session.dialHz;
+  const passbandHz = host.session.passbandHz;
   // S-meter reading follows the strongest station you can actually hear, so it
   // agrees with what the receiver is passing rather than with the whole band.
-  const audible = roster.filter((e) => inPassband(e.ham.freqHz, dialHz));
+  const audible = roster.filter((e) => inPassband(e.ham.freqHz, dialHz, passbandHz));
   const strongest = audible.reduce((max, e) => Math.max(max, e.ham.strength ?? 0), 0);
   const level = audible.length === 0 ? 0 : Math.max(2, Math.min(5, Math.round(strongest * 5)));
   const signal = el("div", { class: "signal" });
@@ -120,7 +125,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   } else {
     for (const entry of roster) {
       const detune = detuneHz(entry.ham.freqHz, dialHz);
-      const heard = inPassband(entry.ham.freqHz, dialHz);
+      const heard = inPassband(entry.ham.freqHz, dialHz, passbandHz);
       const line = el("div", { class: "row" });
       line.append(el("span", { text: entry.ham.call }));
       line.append(el("span", { class: "badge", text: ACTIVITY_LABEL[entry.state] ?? entry.state }));
@@ -143,7 +148,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     activity.append(
       el("div", {
         class: "hint",
-        text: `这 ${roster.length} 个电台当前都在通带之外（拨轮 ±${PASSBAND_HALF_HZ} Hz 内才听得到）。调谐或直接点频谱上的亮斑。`,
+        text: `这 ${roster.length} 个电台当前都在通带之外（拨轮 ±${halfHz} Hz 内才听得到）。调谐或直接点频谱上的亮斑。`,
       }),
     );
   }
