@@ -20,6 +20,25 @@ export const SPECTRUM_SPAN_HZ = 20_000;
 /** Stations on a band are scattered within ±this of the band reference. */
 export const BAND_SIGNAL_SPREAD_HZ = 9_000;
 
+/**
+ * Every station on a band sits on this grid (1 kHz).
+ *
+ * Operators pick round frequencies — 7.010, 7.011, never 7.010.3 — and the
+ * spacing has to be at least the receiver's CW passband (500 Hz, see
+ * `ham/tuning`) or two stations would both fall inside it and interfere. 1 kHz
+ * satisfies that with room to spare: tune onto any station and its neighbour is
+ * already filtered out.
+ */
+export const SIGNAL_GRID_HZ = 1_000;
+
+/** Snap a frequency onto the band's station grid (nearest 1 kHz). */
+export function snapToGrid(hz: number): number {
+  return Math.round(hz / SIGNAL_GRID_HZ) * SIGNAL_GRID_HZ;
+}
+
+/** How many grid slots fit in ±`BAND_SIGNAL_SPREAD_HZ`. */
+export const SIGNAL_GRID_SLOTS = Math.floor(BAND_SIGNAL_SPREAD_HZ / SIGNAL_GRID_HZ);
+
 export interface SpectrumSignal {
   /** Absolute frequency in Hz. */
   freqHz: number;
@@ -60,11 +79,12 @@ export function buildBackgroundSignals(
   count?: number,
 ): SpectrumSignal[] {
   const n = count ?? 3 + Math.floor(rng() * 4); // 3..6
+  const base = snapToGrid(referenceHz);
   const out: SpectrumSignal[] = [];
   for (let i = 0; i < n; i += 1) {
-    const offset = Math.round(((rng() * 2 - 1) * BAND_SIGNAL_SPREAD_HZ) / 10) * 10;
+    const slots = Math.round((rng() * 2 - 1) * SIGNAL_GRID_SLOTS);
     out.push({
-      freqHz: referenceHz + offset,
+      freqHz: base + slots * SIGNAL_GRID_HZ,
       strength: 0.12 + rng() * 0.26, // deliberately weak
       call: "",
       workable: false,
@@ -73,9 +93,4 @@ export function buildBackgroundSignals(
     });
   }
   return out;
-}
-
-/** Spread a station's frequency to the nearest 10 Hz (a tidy waterfall column). */
-export function quantiseHz(hz: number): number {
-  return Math.round(hz / 10) * 10;
 }

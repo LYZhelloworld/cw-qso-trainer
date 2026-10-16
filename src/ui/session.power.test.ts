@@ -54,6 +54,7 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
   it("关台后不再接话：不写报文，也不发声", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它
     h.session.start();
     h.session.setReceiving(false);
 
@@ -66,6 +67,7 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
   it("关台后频段照常运转：到点仍会呼叫，超时仍会换台", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它
     h.session.start();
     h.session.setReceiving(false);
 
@@ -83,6 +85,7 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
   it("关台不清空已建立的通联：报文与对手都留着", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await h.session.hamCallsCq(); // 开台时抄到一台 CQ
     const lines = h.session.lines.length;
     const peer = h.session.ham!.call;
@@ -97,6 +100,7 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
   it("关台时不发射", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await h.session.hamCallsCq();
     const peer = h.session.ham!.call;
 
@@ -111,6 +115,7 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
   it("重新开台后可以继续接收", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它
     h.session.start();
     h.session.setReceiving(false);
     await h.tickTo(5_000);
@@ -126,6 +131,7 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
   it("关台会立刻切断正在播放的音频", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await h.session.hamCallsCq();
     const before = h.audio.stops;
 

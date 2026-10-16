@@ -564,6 +564,35 @@ table.log input {
   color: var(--accent);
 }
 
+/* The receiver's passband, drawn down the middle of the waterfall: the 500 Hz
+   the CW filter actually passes. It is centred because the display is drawn
+   around the dial and the filter is centred on the dial, so a signal lit up
+   outside this band is on the air but not being received. Width is set inline
+   from PASSBAND_HZ / SPECTRUM_SPAN_HZ. */
+.scope-passband {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 1px solid rgba(120, 220, 255, 0.5);
+  border-right: 1px solid rgba(120, 220, 255, 0.5);
+  background: rgba(120, 220, 255, 0.07);
+  pointer-events: none;
+}
+
+/* Powered down nothing is being received, so the passband is not either. */
+.rig-scope.off .scope-passband {
+  opacity: 0.25;
+}
+
+.badge.heard {
+  color: #16202a;
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  font-weight: 600;
+}
+
 .standby {
   display: flex;
   flex-direction: column;

@@ -20,7 +20,12 @@
 import { DxccDatabase, type DxccEntity } from "../data/dxcc.js";
 import { extractLetterPrefix, validateCallsign } from "../message/parse.js";
 import { VirtualHam, type Difficulty } from "./virtualHam.js";
-import { BAND_SIGNAL_SPREAD_HZ, quantiseHz } from "./spectrum.js";
+import {
+  BAND_SIGNAL_SPREAD_HZ,
+  SIGNAL_GRID_HZ,
+  SIGNAL_GRID_SLOTS,
+  snapToGrid,
+} from "./spectrum.js";
 
 export interface GenerateOptions {
   myCall: string;
@@ -29,13 +34,20 @@ export interface GenerateOptions {
   /** Injectable RNG for deterministic tests (defaults to Math.random). */
   rng?: () => number;
   /**
-   * The band's reference frequency in Hz. The new station is scattered within
-   * ±`spreadHz` of it, which is where the waterfall will draw it. Omit for a
-   * station that is not placed on any spectrum (freqHz stays 0).
+   * The band's reference frequency in Hz. The new station is placed on the
+   * nearest 1 kHz grid slot within ±`spreadHz` of it, which is where the
+   * waterfall will draw it. Omit for a station that is not placed on any
+   * spectrum (freqHz stays 0).
    */
   referenceHz?: number;
   /** Scatter around `referenceHz` (defaults to the band's signal spread). */
   spreadHz?: number;
+  /**
+   * Put the station exactly here (Hz, snapped to the grid) instead of
+   * scattering it. Used when a station has to answer the operator *on the
+   * operator's frequency* — see `QsoSession.userCallsCq`.
+   */
+  atHz?: number;
 }
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -131,13 +143,24 @@ function strengthFromReport(report: string, call: string): number {
 }
 
 /**
- * Place a station on the band: an absolute frequency scattered around the band
- * reference, quantised to 10 Hz so it lands on a tidy waterfall column. Without
- * a reference the station is simply not placed (freqHz = 0).
+ * Place a station on the band: an absolute frequency on the 1 kHz grid, within
+ * ±`spreadHz` of the band reference. Without a reference the station is simply
+ * not placed (freqHz = 0); with `atHz` it goes exactly there.
+ *
+ * Draws exactly one number from the RNG either way, so adding this grid did not
+ * shift the sequence that generates callsigns and reports.
  */
-function placeFreq(referenceHz: number | undefined, spreadHz: number, rng: () => number): number {
+function placeFreq(
+  referenceHz: number | undefined,
+  spreadHz: number,
+  atHz: number | undefined,
+  rng: () => number,
+): number {
+  if (atHz !== undefined) return snapToGrid(atHz);
   if (referenceHz === undefined) return 0;
-  return quantiseHz(referenceHz + (rng() * 2 - 1) * spreadHz);
+  const slots = Math.max(1, Math.round(spreadHz / SIGNAL_GRID_HZ));
+  const steps = Math.round((rng() * 2 - 1) * Math.min(slots, SIGNAL_GRID_SLOTS));
+  return snapToGrid(referenceHz) + steps * SIGNAL_GRID_HZ;
 }
 
 function buildCall(
@@ -158,6 +181,7 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
   const db = opts.db;
   const referenceHz = opts.referenceHz;
   const spreadHz = opts.spreadHz ?? BAND_SIGNAL_SPREAD_HZ;
+  const atHz = opts.atHz;
 
   // User context (QTH ≈ centroid of the user's own DXCC entity).
   const uLetterPrefix = extractLetterPrefix(opts.myCall);
@@ -205,7 +229,7 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
         call,
         difficulty,
         report,
-        freqHz: placeFreq(referenceHz, spreadHz, rng),
+        freqHz: placeFreq(referenceHz, spreadHz, atHz, rng),
         strength: strengthFromReport(report, call),
       });
     }
@@ -218,7 +242,7 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
     call: fbCall,
     difficulty,
     report: "599",
-    freqHz: placeFreq(referenceHz, spreadHz, rng),
+    freqHz: placeFreq(referenceHz, spreadHz, atHz, rng),
     strength: strengthFromReport("599", fbCall),
   });
 }

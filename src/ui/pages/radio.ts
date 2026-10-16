@@ -1,5 +1,12 @@
 import { button, el, panel } from "../dom.js";
-import { BANDS, FREQ_STEP_MHZ, clampToBand, roundFreq } from "../bands.js";
+import {
+  BANDS,
+  FREQ_FINE_STEP_MHZ,
+  FREQ_STEP_MHZ,
+  clampToBand,
+  roundFreq,
+} from "../bands.js";
+import { PASSBAND_HALF_HZ, detuneHz, inPassband } from "../../ham/tuning.js";
 import { renderQsoPanel } from "./cw.js";
 import type { AppHost } from "../app.js";
 
@@ -62,9 +69,31 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     host.updateSettings({ freqMHz: next });
   };
   const tuning = el("div", { class: "row" });
-  tuning.append(button("− 1 kHz", () => step(-FREQ_STEP_MHZ)), button("+ 1 kHz", () => step(FREQ_STEP_MHZ)));
+  tuning.append(
+    button("− 1 kHz", () => step(-FREQ_STEP_MHZ)),
+    button("+ 1 kHz", () => step(FREQ_STEP_MHZ)),
+  );
+  // Stations sit on a 1 kHz grid, so the coarse buttons land exactly on one.
+  // The fine buttons are for working the passband edges — they are how the
+  // pitch offset (and its 500 Hz limit) becomes something you can hear.
+  const fineTuning = el("div", { class: "row" });
+  fineTuning.append(
+    button("− 100 Hz", () => step(-FREQ_FINE_STEP_MHZ), "btn small"),
+    button("+ 100 Hz", () => step(FREQ_FINE_STEP_MHZ), "btn small"),
+  );
 
-  root.append(panel("波段与调谐", tabs, tuning));
+  root.append(
+    panel(
+      "波段与调谐",
+      tabs,
+      tuning,
+      fineTuning,
+      el("div", {
+        class: "hint",
+        text: `接收通带 ${PASSBAND_HALF_HZ * 2} Hz（±${PASSBAND_HALF_HZ} Hz），中心就是拨轮频率；电台间隔 1 kHz。`,
+      }),
+    ),
+  );
 
   // --- already in a QSO: show the operating panel --------------------------
   if (host.session.inQso) {
@@ -74,10 +103,12 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
 
   // --- band activity -------------------------------------------------------
   const roster = host.session.hamActivity();
-  // S-meter reading follows the strongest station on the band, so it agrees
-  // with the brightness the waterfall gives that same signal.
-  const strongest = roster.reduce((max, e) => Math.max(max, e.ham.strength ?? 0), 0);
-  const level = roster.length === 0 ? 0 : Math.max(2, Math.min(5, Math.round(strongest * 5)));
+  const dialHz = host.session.dialHz;
+  // S-meter reading follows the strongest station you can actually hear, so it
+  // agrees with what the receiver is passing rather than with the whole band.
+  const audible = roster.filter((e) => inPassband(e.ham.freqHz, dialHz));
+  const strongest = audible.reduce((max, e) => Math.max(max, e.ham.strength ?? 0), 0);
+  const level = audible.length === 0 ? 0 : Math.max(2, Math.min(5, Math.round(strongest * 5)));
   const signal = el("div", { class: "signal" });
   for (let i = 0; i < 5; i += 1) signal.append(el("i", { class: i < level ? "on" : "" }));
   const signalRow = el("div", { class: "row" });
@@ -88,25 +119,53 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     activity.append(el("div", { class: "hint", text: "当前频率没有活动" }));
   } else {
     for (const entry of roster) {
+      const detune = detuneHz(entry.ham.freqHz, dialHz);
+      const heard = inPassband(entry.ham.freqHz, dialHz);
       const line = el("div", { class: "row" });
       line.append(el("span", { text: entry.ham.call }));
       line.append(el("span", { class: "badge", text: ACTIVITY_LABEL[entry.state] ?? entry.state }));
-      line.append(el("span", { class: "hint", text: `发送 RST ${entry.ham.report}` }));
+      line.append(
+        el("span", {
+          class: "hint",
+          text: `${(entry.ham.freqHz / 1e6).toFixed(4)} MHz · ${detune > 0 ? "+" : ""}${detune} Hz`,
+        }),
+      );
+      line.append(
+        el("span", {
+          class: heard ? "badge heard" : "hint tone-off",
+          text: heard ? "通带内" : "通带外",
+        }),
+      );
       activity.append(line);
     }
+  }
+  if (audible.length === 0 && roster.length > 0) {
+    activity.append(
+      el("div", {
+        class: "hint",
+        text: `这 ${roster.length} 个电台当前都在通带之外（拨轮 ±${PASSBAND_HALF_HZ} Hz 内才听得到）。调谐或直接点频谱上的亮斑。`,
+      }),
+    );
   }
   root.append(panel("波段活动", signalRow, activity));
 
   // --- start a QSO ---------------------------------------------------------
+  const nearest = host.session.nearestWorkableHam();
+  const listen = (): void => {
+    // Inside the passband: just let it call. Otherwise sweep to it first, the
+    // way a search would — the operator hears the dial move and then the CQ.
+    const heard = host.session.heardActiveHam();
+    const target = heard ?? nearest;
+    if (!target) return;
+    if (!heard) host.updateSettings({ freqMHz: target.freqHz / 1e6 });
+    void host.session.hamCallsCq(target).then(() => host.refresh());
+  };
+
   const actions = el("div", { class: "row" });
+  const listenBtn = button("监听：等 HAM 发 CQ", listen, "btn primary");
+  listenBtn.disabled = nearest === null;
   actions.append(
-    button(
-      "监听：等 HAM 发 CQ",
-      () => {
-        void host.session.hamCallsCq().then(() => host.refresh());
-      },
-      "btn primary",
-    ),
+    listenBtn,
     button("我发 CQ", () => {
       void host.session.userCallsCq().then(() => host.refresh());
     }),
@@ -114,13 +173,24 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
 
   const start = el("div", { class: "col" });
   start.append(actions);
-  if (host.settings.myCall) {
-    start.append(el("div", { class: "hint", text: "选择一种方式开始通联吧。" }));
-  } else {
+  if (!host.settings.myCall) {
     const warn = el("div", { class: "hint" });
     warn.append(document.createTextNode("请先填写本方呼号："));
     warn.append(button("打开设置", () => host.openSettings?.(), "btn small"));
     start.append(warn);
+  } else if (nearest === null) {
+    start.append(el("div", { class: "hint", text: "这个波段上暂时没有电台，稍等一会儿再看看。" }));
+  } else if (host.session.heardActiveHam() !== null) {
+    start.append(
+      el("div", { class: "hint", text: "拨轮已经对准了一个信号，可以直接监听或应答。" }),
+    );
+  } else {
+    start.append(
+      el("div", {
+        class: "hint",
+        text: "监听会自动扫描到最近的电台；也可以自己用 ± 按钮或点频谱调谐。",
+      }),
+    );
   }
   root.append(panel("开始通联", start));
 }

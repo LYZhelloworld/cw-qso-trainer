@@ -16,7 +16,7 @@ import {
   type SpectrumSignal,
   type SpectrumSnapshot,
 } from "../ham/spectrum.js";
-import { detuneHz, heardToneHz } from "../ham/tuning.js";
+import { audibleToneHz, detuneHz, inPassband } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
 import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
@@ -217,8 +217,10 @@ export class QsoSession {
   /**
    * The tone the operator currently hears from the station being worked: the
    * rig's CW pitch shifted by however far that station sits from the dial (see
-   * `ham/tuning`). Null when there is no partner, or when it has no frequency
-   * (a HAM generated without a band reference).
+   * `ham/tuning`). Null when there is no partner, when it has no frequency (a
+   * HAM generated without a band reference), or when it has been tuned outside
+   * the receiver's passband — an off-frequency station is not a wrong note, it
+   * is silence.
    */
   partnerToneHz(): number | null {
     if (!this.ham || this.ham.freqHz <= 0) return null;
@@ -229,6 +231,43 @@ export class QsoSession {
   partnerDetuneHz(): number | null {
     if (!this.ham || this.ham.freqHz <= 0) return null;
     return detuneHz(this.ham.freqHz, this.dialHz);
+  }
+
+  /** True while the partner is inside the passband (i.e. actually audible). */
+  partnerInPassband(): boolean {
+    if (!this.ham || this.ham.freqHz <= 0) return true;
+    return inPassband(this.ham.freqHz, this.dialHz);
+  }
+
+  /**
+   * The station the operator can hear *and* work right now: inside the
+   * passband, not already in a QSO. Null when the passband holds nobody —
+   * which is the normal state on a band the operator has not tuned across yet.
+   */
+  heardActiveHam(): VirtualHam | null {
+    const nearest = this.nearestWorkableHam();
+    return nearest && inPassband(nearest.freqHz, this.dialHz) ? nearest : null;
+  }
+
+  /**
+   * The band's closest workable station to the dial, however far away — what a
+   * "search" would sweep past first. Also the basis for `heardActiveHam`.
+   */
+  nearestWorkableHam(): VirtualHam | null {
+    const candidates = this.freq
+      .activityState()
+      .filter((e) => e.state !== "inQso")
+      .map((e) => e.ham)
+      .sort(
+        (a, b) =>
+          Math.abs(detuneHz(a.freqHz, this.dialHz)) - Math.abs(detuneHz(b.freqHz, this.dialHz)),
+      );
+    return candidates[0] ?? null;
+  }
+
+  /** HAMs on the band that the current dial setting cannot hear at all. */
+  unheardHams(): VirtualHam[] {
+    return this.freq.listHams().filter((h) => !inPassband(h.freqHz, this.dialHz));
   }
 
   /** The band's decorative carriers (see `spectrum`); built once per session. */
@@ -328,12 +367,19 @@ export class QsoSession {
    * in the background and is *not* guarded by `sending`, so the operator can
    * break in and answer mid-CQ. A user transmission in progress still suppresses
    * a new CQ (no point starting one nobody can hear over the user's own keying).
+   *
+   * Returns false when nothing was heard: the rig is off, we are mid-exchange,
+   * or there is simply no station inside the passband. The caller (a page) uses
+   * that to tell the operator to tune around instead of waiting.
    */
-  async hamCallsCq(ham?: VirtualHam): Promise<void> {
-    if (this.sending) return;
+  async hamCallsCq(ham?: VirtualHam): Promise<boolean> {
+    if (this.sending) return false;
     // A powered-down rig hears nothing, so a CQ is never picked up.
-    if (!this.receiving) return;
-    const target = ham ?? this.pickHam();
+    if (!this.receiving) return false;
+    const target = ham ?? this.pickHam("listen");
+    // Not audible = not heard. The band is not empty, the operator just has not
+    // tuned to anyone yet (the waterfall shows where they are).
+    if (!target || !this.canHear(target)) return false;
     // The same HAM calling again must not restart the exchange: repeating hamCq()
     // on a machine already in PEER_CQ is idempotent, so reuse it and just log
     // and play the repeated call.
@@ -348,6 +394,7 @@ export class QsoSession {
     // Non-blocking: do not await the full CQ, otherwise the user could not
     // answer until it finished. The audio is cut by the next user transmission.
     void this.playHam(text, target);
+    return true;
   }
 
   /** The user calls CQ; a single HAM answers after a short delay. */
@@ -357,7 +404,9 @@ export class QsoSession {
     this.sending = true;
     try {
       this.stopAudio(); // cut any ambient HAM CQ before the user's own call
-      const machine = this.startMachine(this.pickHam());
+      // Whoever answers a CQ is answering *on the caller's frequency*, so a
+      // station is placed right on the dial when the passband holds nobody.
+      const machine = this.startMachine(this.pickHam("call")!);
       const cq = `CQ CQ CQ DE ${this.myCall()} ${this.myCall()} PSE K`;
       machine.userSend(cq); // -> USER_CQ
       this.push("me", cq);
@@ -525,8 +574,27 @@ export class QsoSession {
     return s === "USER_CQ" || s === "EXCHANGE" || s === "SIGNOFF";
   }
 
-  private pickHam(): VirtualHam {
-    return this.freq.activeHam() ?? this.spawnHam();
+  /**
+   * The station to work, given why we are looking for one. You cannot work what
+   * you cannot hear, so the passband always has the first say.
+   *
+   *  - `"call"` — the operator is calling CQ. Whoever answers is answering *on
+   *    the operator's frequency*, so an empty passband gets a new station placed
+   *    right on the dial — exactly what happens on the air.
+   *  - `"listen"` — the operator is tuning around for somebody else's CQ. That
+   *    one has to be *found*, so an empty passband returns null; conjuring a
+   *    station out of the dial would take the searching away.
+   */
+  private pickHam(mode: "call" | "listen"): VirtualHam | null {
+    const heard = this.heardActiveHam();
+    if (heard) return heard;
+    if (mode === "listen") return null;
+    return this.spawnHam(this.dialHz);
+  }
+
+  /** True when a station is inside the receiver's passband right now. */
+  private canHear(ham: VirtualHam): boolean {
+    return ham.freqHz <= 0 || inPassband(ham.freqHz, this.dialHz);
   }
 
   /** One step of the scheduler (driven by the injected timer). */
@@ -551,6 +619,9 @@ export class QsoSession {
       // band must still be advanced (which it is — that happened in frequency),
       // so the station keeps its own rhythm and may still give up.
       if (!this.receiving) continue;
+      // Outside the passband: the filter cuts the station off, so its CQ is
+      // never picked up. It stays on the waterfall for the operator to tune to.
+      if (!this.canHear(e.ham)) continue;
       // Mid-exchange: ignore other stations calling on the band rather than
       // trampling over the QSO in progress.
       if (this.exchangeInProgress) continue;
@@ -567,12 +638,17 @@ export class QsoSession {
     while (this.freq.hamCount < this.targetHams) this.spawnHam();
   }
 
-  private spawnHam(): VirtualHam {
+  /**
+   * Spawn a station on this band. `atHz` pins it to an exact frequency (the
+   * operator's dial, for a station about to answer the operator's CQ).
+   */
+  private spawnHam(atHz?: number): VirtualHam {
     return this.freq.spawnHam(
       this.myCall(),
       this.settings.difficulty,
       undefined,
       this.firstCqDelay(),
+      atHz,
     );
   }
 
@@ -635,13 +711,14 @@ export class QsoSession {
 
   /**
    * The CW pitch a station is heard at, given where the dial sits: exactly the
-   * configured tone when it is zero-beaten, shifted by the detuning otherwise
-   * (see `ham/tuning`). Falls back to the plain pitch for an unplaced station.
+   * configured tone when it is zero-beaten, shifted by the detuning while it is
+   * inside the passband (see `ham/tuning`), and `null` once the filter has cut
+   * it off. Falls back to the plain pitch for an unplaced station.
    */
-  private hamToneHz(ham?: VirtualHam | null): number {
+  private hamToneHz(ham?: VirtualHam | null): number | null {
     const station = ham ?? this.ham;
     if (!station || station.freqHz <= 0) return this.settings.toneHz;
-    return heardToneHz({
+    return audibleToneHz({
       toneHz: this.settings.toneHz,
       stationHz: station.freqHz,
       dialHz: this.dialHz,
@@ -650,6 +727,10 @@ export class QsoSession {
 
   private async playHam(text: string, ham?: VirtualHam): Promise<void> {
     const speaker = ham ?? this.ham;
+    const toneHz = this.hamToneHz(speaker);
+    // Outside the passband we render nothing: the station is filtered out, so
+    // there is no note to play — not even a wrong one.
+    if (toneHz === null) return;
     const env = difficultyToEnvironment(speaker?.difficulty ?? this.settings.difficulty);
     // `...extra` wins over the default pitch in `play`, so the station is heard
     // off-key whenever the operator has not tuned it in.
@@ -657,7 +738,7 @@ export class QsoSession {
       qsb: env.qsb,
       qrm: env.qrm,
       qrn: env.qrn,
-      toneHz: this.hamToneHz(speaker),
+      toneHz,
     });
   }
 

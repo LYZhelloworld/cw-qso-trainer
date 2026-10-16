@@ -28,12 +28,14 @@ describe("进行中通联暂存", () => {
   it("进行中的通联会在推送报文时写入暂存", async () => {
     const s = makeSession();
     s.seedHams(1);
+    const ham = s.listHams()[0];
+    s.retune(ham.freqHz / 1e6); // 对准它，通带内才听得见
     await s.hamCallsCq(); // PEER_CQ
 
     const raw = localStorage.getItem(KEY);
     expect(raw).not.toBeNull();
     const data = JSON.parse(raw!);
-    expect(data.freqMHz).toBe(14.05);
+    expect(data.freqMHz).toBe(ham.freqHz / 1e6); // 拨轮停在通联频率上
     expect(data.machine.state).toBe("PEER_CQ");
     expect(data.lines.length).toBeGreaterThan(0);
     expect(data.ham.call).toBe(s.ham!.call);
@@ -49,6 +51,7 @@ describe("进行中通联暂存", () => {
   it("刷新后可以从暂存恢复进行中的通联并继续到完成", async () => {
     const s1 = makeSession();
     s1.seedHams(1);
+    s1.retune(s1.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await s1.hamCallsCq();
     const peer = s1.ham!.call;
     await s1.userSend(`${peer} DE BG7XXX K`); // -> EXCHANGE
@@ -57,6 +60,7 @@ describe("进行中通联暂存", () => {
 
     // 模拟刷新：同一设置下新建会话并恢复暂存
     const s2 = makeSession();
+    s2.retune(s1.freqMHz); // 拨轮回到同一频率（staging 按频率归属）
     s2.restoreStaging();
     expect(s2.machine).not.toBeNull();
     expect(s2.ham?.call).toBe(peer);
@@ -73,6 +77,7 @@ describe("进行中通联暂存", () => {
   it("已完成的通联不再暂存（防复活）", async () => {
     const s = makeSession();
     s.seedHams(1);
+    s.retune(s.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await s.hamCallsCq();
     const peer = s.ham!.call;
     await s.userSend(`${peer} DE BG7XXX K`);
@@ -86,6 +91,7 @@ describe("进行中通联暂存", () => {
   it("reset 会清空暂存", async () => {
     const s = makeSession();
     s.seedHams(1);
+    s.retune(s.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await s.hamCallsCq();
     expect(localStorage.getItem(KEY)).not.toBeNull();
     s.reset();

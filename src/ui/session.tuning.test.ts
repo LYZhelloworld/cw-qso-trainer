@@ -3,10 +3,13 @@ import { QsoSession } from "./session.js";
 import { normalizeSettings, type AppSettings } from "./settingsSchema.js";
 import type { VirtualHam } from "../ham/virtualHam.js";
 import type { AudioPlayer, EngineRenderOptions, PlaybackHandle } from "../audio/engine.js";
+import { PASSBAND_HALF_HZ } from "../ham/tuning.js";
 
 /**
  * The audible side of the tuning model: a station the operator has not tuned in
- * sounds off-key, and which way it is off depends on the band's sideband.
+ * sounds off-key, and a station further off than the receiver's 500 Hz passband
+ * allows is not heard at all. Which way the note shifts depends on the band's
+ * sideband.
  *
  * No DOM, no real timer. A fake `AudioPlayer` records the pitch each message was
  * rendered at, so the assertions are about what would actually be *heard*.
@@ -53,7 +56,7 @@ function lastTone(audio: FakeAudio): number | undefined {
   return audio.calls[audio.calls.length - 1]?.toneHz;
 }
 
-describe("CW 偏频：听到的音调随失谐变化", () => {
+describe("CW 偏频：通带内的音调随失谐变化", () => {
   it("USB 波段（20m）：台在拨轮上方时，听到的音调高于设定值", async () => {
     const audio = new FakeAudio();
     const s = makeSession(audio);
@@ -72,11 +75,11 @@ describe("CW 偏频：听到的音调随失谐变化", () => {
     const s = makeSession(audio);
     const ham = s.seedHams(1)[0];
 
-    tuneBelow(s, ham, 180); // 台在拨轮上方 180 Hz
+    tuneBelow(s, ham, 200); // 台在拨轮上方 200 Hz
     await s.hamCallsCq(ham);
     const before = s.partnerToneHz()!;
 
-    tuneBelow(s, ham, -320); // 再往上调 500 Hz（台相对落到拨轮下方）
+    tuneBelow(s, ham, -200); // 再往上调 400 Hz（台相对落到拨轮下方）
 
     expect(s.partnerToneHz()).toBeLessThan(before);
   });
@@ -107,29 +110,6 @@ describe("CW 偏频：听到的音调随失谐变化", () => {
     expect(lastTone(audio)).toBe(700);
   });
 
-  it("隔着 1 kHz 一步调谐：台在下方时音调被夹在下限", async () => {
-    const audio = new FakeAudio();
-    const s = makeSession(audio);
-    const ham = s.seedHams(1)[0];
-
-    tuneBelow(s, ham, -1000); // 拨轮比台高 1 kHz
-    await s.hamCallsCq(ham);
-
-    expect(s.partnerDetuneHz()).toBe(-1000);
-    expect(s.partnerToneHz()).toBe(250); // 700 − 1000 → 夹到可听下限
-  });
-
-  it("失谐过大时音调被夹在可听上限，不会跑到几 kHz", async () => {
-    const audio = new FakeAudio();
-    const s = makeSession(audio);
-    const ham = s.seedHams(1)[0];
-
-    tuneBelow(s, ham, 5000);
-    await s.hamCallsCq(ham);
-
-    expect(s.partnerToneHz()).toBe(1800);
-  });
-
   it("跟随设定的 CW 音调：改成 900 Hz 后偏频围绕 900 计算", async () => {
     const audio = new FakeAudio();
     const s = makeSession(audio, { settings: { toneHz: 900 } });
@@ -140,20 +120,83 @@ describe("CW 偏频：听到的音调随失谐变化", () => {
 
     expect(s.partnerToneHz()).toBe(1080); // 900 + 180
   });
+});
 
-  it("用户自己发报不受偏频影响（自己的信号永远正对频）", async () => {
+describe("CW 通带：超出 ±250 Hz 就收不到", () => {
+  it("边缘内听得到，边缘外完全听不到", async () => {
     const audio = new FakeAudio();
     const s = makeSession(audio);
     const ham = s.seedHams(1)[0];
 
-    tuneBelow(s, ham, 900);
+    tuneBelow(s, ham, PASSBAND_HALF_HZ); // 正好落在滤波器边缘
+    await s.hamCallsCq(ham);
+    expect(s.partnerInPassband()).toBe(true);
+    expect(s.partnerToneHz()).toBe(700 + PASSBAND_HALF_HZ);
+
+    tuneBelow(s, ham, -PASSBAND_HALF_HZ - 1); // 偏出 1 Hz
+    expect(s.partnerInPassband()).toBe(false);
+    expect(s.partnerToneHz()).toBeNull();
+  });
+
+  it("通联中调走超过通带：对方的声音直接消失，而不是变尖", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio);
+    const ham = s.seedHams(1)[0];
+
+    tuneBelow(s, ham, 0);
+    await s.hamCallsCq(ham);
+    expect(s.partnerToneHz()).toBe(700);
+
+    tuneBelow(s, ham, 1000); // 1 kHz 一步（40 m/20 m 都是这个步进）
+
+    expect(s.partnerDetuneHz()).toBe(1000); // 位置关系仍然读得出来
+    expect(s.partnerInPassband()).toBe(false);
+    expect(s.partnerToneHz()).toBeNull(); // 不是 1700 Hz，是没声音
+  });
+
+  it("通带外的台不会接入会话（听不见的 CQ 不会被抄收）", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio);
+    const ham = s.seedHams(1)[0];
+
+    tuneBelow(s, ham, -1000); // 拨轮比台高 1 kHz，早已出了滤波器
+
+    const heard = await s.hamCallsCq(ham);
+
+    expect(heard).toBe(false);
+    expect(s.state).toBe("IDLE");
+    expect(audio.calls).toHaveLength(0);
+  });
+
+  it("通带外的台不会被自动选中，也不会被自动播报", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio);
+    s.seedHams(2);
+    // Dial parked *between* two grid slots (…025.5): every station is at least
+    // 500 Hz away, so none of them is inside the 500 Hz passband.
+    s.retune(14.0255);
+
+    const heard = await s.hamCallsCq();
+
+    expect(heard).toBe(false);
+    expect(s.lines).toHaveLength(0);
+  });
+});
+
+describe("用户自己的发送", () => {
+  it("不受偏频影响（自己的信号永远正对频）", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio);
+    const ham = s.seedHams(1)[0];
+
+    tuneBelow(s, ham, 200);
     await s.hamCallsCq(ham);
     const sent = `${ham.call} DE BG7XXX K`;
     await s.userSend(sent);
 
     const mine = audio.calls.find((c) => c.text === sent);
     expect(mine?.toneHz).toBe(700); // 精确的设定音调
-    expect(s.partnerToneHz()).toBe(1600); // 对方的报文仍按偏频播出
+    expect(s.partnerToneHz()).toBe(900); // 对方的报文仍按偏频播出
   });
 
   it("没有通联对象时没有音调可显示", () => {

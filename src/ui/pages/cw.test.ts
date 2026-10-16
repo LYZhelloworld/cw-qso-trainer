@@ -75,6 +75,8 @@ describe("CW 翻译页", () => {
 
   it("对方发来 CQ 后显示一行对方报文", async () => {
     const { root, session, render } = makeHarness({ assistMode: true });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
@@ -87,6 +89,8 @@ describe("CW 翻译页", () => {
 
   it("辅助模式关闭时对方内容被遮蔽并提供单条「显示」", async () => {
     const { root, session, render } = makeHarness({ assistMode: false });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
@@ -98,6 +102,8 @@ describe("CW 翻译页", () => {
 
   it("点击「显示」只揭示该条报文且原文可读", async () => {
     const { root, session, render } = makeHarness({ assistMode: false });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
@@ -111,6 +117,8 @@ describe("CW 翻译页", () => {
 
   it("辅助模式开启时直接显示原文并给出提示横幅", async () => {
     const { root, session, render } = makeHarness({ assistMode: true });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
@@ -144,6 +152,8 @@ describe("CW 翻译页", () => {
 
   it("发送报文后会把「我」这一行追加到记录里", async () => {
     const { root, session, render } = makeHarness({ assistMode: true });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
@@ -163,6 +173,8 @@ describe("CW 翻译页", () => {
 
   it("「新通联」会清空记录并回到初始提示", async () => {
     const { root, session, host } = makeHarness({ assistMode: true });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     host.refresh();
     expect(root.querySelector(".cw-pane")?.textContent).not.toContain("尚无通联内容");
@@ -194,6 +206,8 @@ describe("CW 翻译页", () => {
 
   it("状态行显示对方实际被听到的音调（拨轮对准后回到设定值）", async () => {
     const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     session.retune(session.ham!.freqHz / 1e6); // 拨轮对准台，无偏频
     render();
@@ -204,12 +218,26 @@ describe("CW 翻译页", () => {
 
   it("没有对准频率时状态行标出偏频量", async () => {
     const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
-    // 把拨轮挪开 1 kHz，制造一个确定的偏频
-    session.retune((session.ham!.freqHz - 1000) / 1e6);
+    // 把拨轮挪开 200 Hz（仍在 ±250 Hz 通带内，音调跟着偏）
+    session.retune((session.ham!.freqHz - 200) / 1e6);
     render();
 
-    expect(root.textContent).toContain("偏频 +1000 Hz");
+    expect(root.textContent).toContain("偏频 +200 Hz");
+  });
+
+  it("调出通带后状态行明说对方已经听不到", async () => {
+    const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6);
+    await session.hamCallsCq();
+    session.retune((session.ham!.freqHz - 1000) / 1e6); // 挪开 1 kHz，早已出了滤波器
+    render();
+
+    expect(root.textContent).toContain("通带之外");
+    expect(root.textContent).not.toContain("音调 700 Hz");
   });
 });
 

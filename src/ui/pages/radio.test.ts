@@ -17,10 +17,13 @@ function makeHost(overrides: Partial<AppSettings> = {}, powered = true) {
     settings,
     session: {
       inQso: false,
+      dialHz: 14_025_000,
       listHams: () => [],
       hamActivity: () => [],
-      hamCallsCq: async () => {},
+      hamCallsCq: async () => true,
       userCallsCq: async () => {},
+      heardActiveHam: () => null,
+      nearestWorkableHam: () => null,
     } as unknown as QsoSession,
     powered,
     setPower(on: boolean) {
@@ -139,6 +142,23 @@ describe("电台页 — 波段与调谐", () => {
     findButton(root, "− 1 kHz").click();
     expect(host.settings.freqMHz).toBe(BANDS[2].minMHz);
   });
+
+  it("±100 Hz 微调用来对准通带", () => {
+    const { root, host } = makeHost({ bandIndex: 2, freqMHz: 14.025 });
+
+    findButton(root, "+ 100 Hz").click();
+    expect(host.settings.freqMHz).toBe(14.0251);
+
+    findButton(root, "− 100 Hz").click();
+    findButton(root, "− 100 Hz").click();
+    expect(host.settings.freqMHz).toBe(14.0249);
+  });
+
+  it("说明接收通带宽度与电台间隔", () => {
+    const { root } = makeHost({ bandIndex: 2 });
+    expect(root.textContent).toContain("接收通带 500 Hz");
+    expect(root.textContent).toContain("电台间隔 1 kHz");
+  });
 });
 
 describe("电台页 — 波段活动与通联", () => {
@@ -147,9 +167,10 @@ describe("电台页 — 波段活动与通联", () => {
     expect(root.textContent).toContain("当前频率没有活动");
   });
 
-  it("列出当前频率上的 HAM 与其 RST", () => {
+  it("列出当前频率上的 HAM、频率与是否在通带内", () => {
     const session = new QsoSession(14.025, normalizeSettings({ myCall: "BG7XXX" }));
     session.seedHams(2);
+    session.retune(14.0255); // 拨轮停在两格中间：没有台落在 500 Hz 通带里
     const { root, host } = makeHost({ myCall: "BG7XXX" });
     host.session = session;
     host.refresh();
@@ -157,17 +178,19 @@ describe("电台页 — 波段活动与通联", () => {
     const calls = session.listHams().map((h) => h.call);
     expect(calls.length).toBe(2);
     for (const call of calls) expect(root.textContent).toContain(call);
-    expect(root.textContent).toContain("发送 RST");
+    expect(root.textContent).toContain("MHz");
+    expect(root.textContent).toContain("通带外");
+    expect(root.textContent).toContain("都在通带之外");
   });
 
-  it("未填写本方呼号时提示去设置，填写后提示可以开始", () => {
+  it("未填写本方呼号时提示去设置，填写后不再提示", () => {
     const empty = makeHost({ myCall: "" });
     expect(empty.root.textContent).toContain("请先填写本方呼号");
     expect(findButton(empty.root, "打开设置")).toBeDefined();
 
     const filled = makeHost({ myCall: "BG7XXX" });
-    expect(filled.root.textContent).toContain("选择一种方式开始通联吧。");
     expect(filled.root.textContent).not.toContain("请先填写本方呼号");
+    expect(filled.root.textContent).toContain("暂时没有电台"); // 空波段
   });
 
   it("提供两种发起通联的方式", () => {
@@ -176,8 +199,53 @@ describe("电台页 — 波段活动与通联", () => {
     expect(findButton(root, "我发 CQ")).toBeDefined();
   });
 
+  it("空波段上「监听」不可用", () => {
+    const { root } = makeHost({ myCall: "BG7XXX" });
+    expect(findButton(root, "监听：等 HAM 发 CQ").disabled).toBe(true);
+  });
+
+  it("有电台时「监听」会把拨轮扫过去，并说明会自动扫描", () => {
+    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    host.session = {
+      inQso: false,
+      dialHz: 14_025_000,
+      listHams: () => [],
+      hamActivity: () => [],
+      hamCallsCq: async () => true,
+      userCallsCq: async () => {},
+      heardActiveHam: () => null, // 还没对准
+      nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
+    } as unknown as QsoSession;
+    host.refresh();
+
+    expect(findButton(root, "监听：等 HAM 发 CQ").disabled).toBe(false);
+    expect(root.textContent).toContain("监听会自动扫描到最近的电台");
+
+    findButton(root, "监听：等 HAM 发 CQ").click();
+    expect(host.settings.freqMHz).toBe(14.031); // 自动调谐到该台
+  });
+
+  it("拨轮已经对准信号时不用扫描", () => {
+    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    host.session = {
+      inQso: false,
+      dialHz: 14_031_000,
+      listHams: () => [],
+      hamActivity: () => [],
+      hamCallsCq: async () => true,
+      userCallsCq: async () => {},
+      heardActiveHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
+      nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
+    } as unknown as QsoSession;
+    host.refresh();
+
+    expect(root.textContent).toContain("拨轮已经对准了一个信号");
+  });
+
   it("通联进行中时显示通联面板，而不是「开始通联」", async () => {
     const session = new QsoSession(14.025, normalizeSettings({ myCall: "BG7XXX" }));
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq(); // enters PEER_CQ
     const { root, host } = makeHost({ myCall: "BG7XXX" });
     host.session = session;

@@ -39,6 +39,8 @@ describe("音频插话（break-in）", () => {
     const audio = new FakeAudio();
     const s = makeSession(audio);
     s.seedHams(1);
+    // Sit on the station: a CW receiver only hears what is inside its passband.
+    s.retune(s.listHams()[0].freqHz / 1e6);
 
     await s.hamCallsCq();
     expect(s.state).toBe("PEER_CQ");
@@ -55,6 +57,7 @@ describe("音频插话（break-in）", () => {
     const audio = new FakeAudio();
     const s = makeSession(audio);
     s.seedHams(1);
+    s.retune(s.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
 
     await s.hamCallsCq(); // HAM 开始发 CQ（后台播放）
     expect(audio.stops).toBe(0);
@@ -68,6 +71,7 @@ describe("音频插话（break-in）", () => {
     const audio = new FakeAudio();
     const s = makeSession(audio);
     s.seedHams(1);
+    s.retune(s.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await s.hamCallsCq();
     const peer = s.ham!.call;
 

@@ -159,6 +159,11 @@ describe("日志页（IndexedDB 可用）", () => {
     // default test timeout and make it flaky.
     const session = new QsoSession(14.025, settings, { delay: async () => {} });
 
+    session.seedHams(1);
+    const station = session.listHams()[0];
+    // Tune onto it first: a CW receiver only hears its ±250 Hz passband, and the
+    // log records the dial as it stood during the contact.
+    session.retune(station.freqHz / 1e6);
     await session.hamCallsCq();
     const peer = session.ham!.call;
     await session.userSend(`${peer} DE BG7XXX R UR RST 599 599 BK`);
@@ -170,7 +175,7 @@ describe("日志页（IndexedDB 可用）", () => {
     expect(record).not.toBeNull();
     expect(record!.call).toBe(peer);
     expect(record!.mode).toBe("CW");
-    expect(record!.freqMHz).toBe("14.0250");
+    expect(record!.freqMHz).toBe((station.freqHz / 1e6).toFixed(4));
 
     await addLog(record!);
     session.markLogged();

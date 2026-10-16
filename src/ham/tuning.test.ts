@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_HEARD_HZ,
   MIN_HEARD_HZ,
+  PASSBAND_HALF_HZ,
+  PASSBAND_HZ,
   SIDEBAND_SPLIT_HZ,
+  audibleToneHz,
   detuneHz,
   heardToneHz,
+  inPassband,
   sidebandFor,
 } from "./tuning.js";
 
@@ -54,6 +58,8 @@ describe("CW 偏频音调", () => {
   });
 
   it("偏离过大时夹在可听范围内，不会跑到 0 或几 kHz", () => {
+    // 纯映射的保险丝：真到了这个距离早就被滤波器切掉了（见下面的通带一节），
+    // 这里只保证"钳在可听范围"这条数学性质成立。
     expect(heardToneHz({ toneHz: 700, stationHz: HIGH + 9000, dialHz: HIGH })).toBe(MAX_HEARD_HZ);
     expect(heardToneHz({ toneHz: 700, stationHz: HIGH - 9000, dialHz: HIGH })).toBe(MIN_HEARD_HZ);
     // 音调设在偏低一档时同样受夹（300 − 500 → 下限）
@@ -73,5 +79,36 @@ describe("CW 偏频音调", () => {
     expect(detuneHz(HIGH + 500, HIGH)).toBe(500);
     expect(detuneHz(HIGH - 500, HIGH)).toBe(-500);
     expect(detuneHz(HIGH, HIGH)).toBe(0);
+  });
+});
+
+describe("CW 接收通带（500 Hz，中心是拨轮）", () => {
+  it("带宽 500 Hz，即 ±250 Hz", () => {
+    expect(PASSBAND_HZ).toBe(500);
+    expect(PASSBAND_HALF_HZ).toBe(250);
+  });
+
+  it("±250 Hz 以内听得到，超出就听不到", () => {
+    expect(inPassband(HIGH, HIGH)).toBe(true);
+    expect(inPassband(HIGH + PASSBAND_HALF_HZ, HIGH)).toBe(true);
+    expect(inPassband(HIGH - PASSBAND_HALF_HZ, HIGH)).toBe(true);
+    expect(inPassband(HIGH + PASSBAND_HALF_HZ + 1, HIGH)).toBe(false);
+    expect(inPassband(HIGH - PASSBAND_HALF_HZ - 1, HIGH)).toBe(false);
+    // 隔着一整格（1 kHz）——正是邻台的位置——必然在通带之外
+    expect(inPassband(HIGH + 1000, HIGH)).toBe(false);
+  });
+
+  it("audibleToneHz：通带内给出音调，通带外给 null（不是变尖，是没了）", () => {
+    expect(audibleToneHz({ toneHz: 700, stationHz: HIGH + 200, dialHz: HIGH })).toBe(900);
+    expect(audibleToneHz({ toneHz: 700, stationHz: HIGH - 200, dialHz: HIGH })).toBe(500);
+    expect(audibleToneHz({ toneHz: 700, stationHz: HIGH + 1000, dialHz: HIGH })).toBeNull();
+  });
+
+  it("显示的频率是载波频率：拨轮对准台时听到的就是设定音调", () => {
+    // CW 电台的约定——频率读数上不额外加 PITCH。设 700 Hz 就对在 7.010000，
+    // 听到的正是 700 Hz；换个 PITCH 只改侧音高低，不改频率读数。
+    expect(audibleToneHz({ toneHz: 700, stationHz: LOW, dialHz: LOW })).toBe(700);
+    expect(audibleToneHz({ toneHz: 600, stationHz: LOW, dialHz: LOW })).toBe(600);
+    expect(audibleToneHz({ toneHz: 700, stationHz: HIGH, dialHz: HIGH })).toBe(700);
   });
 });

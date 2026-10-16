@@ -14,7 +14,8 @@ import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { BANDS, clampToBand, roundFreq } from "./bands.js";
 import { formatFreqMHz } from "./logRecord.js";
-import { sidebandFor } from "../ham/tuning.js";
+import { sidebandFor, inPassband, PASSBAND_HZ } from "../ham/tuning.js";
+import { SPECTRUM_SPAN_HZ } from "../ham/spectrum.js";
 import { Waterfall } from "./waterfall.js";
 
 export type PageId = "radio" | "log" | "about";
@@ -110,10 +111,22 @@ export class App implements AppHost {
    * would throw the whole history away (and re-attaching keeps it).
    */
   private readonly scopeCanvas = el("canvas", { class: "scope-canvas" });
+  /**
+   * The receiver's passband drawn on top of the waterfall: a band down the
+   * middle of the display as wide as the CW filter (500 Hz out of the 20 kHz
+   * window). It is always centred because the display is drawn around the dial,
+   * and the filter is centred on the dial too. Anything lit up outside it is on
+   * the band but *not* being received.
+   */
+  private readonly scopePassband = el("div", {
+    class: "scope-passband",
+    attrs: { style: `width: ${(PASSBAND_HZ / SPECTRUM_SPAN_HZ) * 100}%` },
+  });
   private readonly scopeLabel = el("span", { class: "scope-label" });
   private readonly scopeCall = el("span", { class: "scope-call" });
   private readonly scopeRoot = el("div", { class: "rig-scope" }, [
     this.scopeCanvas,
+    this.scopePassband,
     this.scopeLabel,
     this.scopeCall,
   ]);
@@ -392,14 +405,26 @@ export class App implements AppHost {
    */
   private updateScope(): void {
     this.scopeRoot.classList.toggle("off", !this.powerOn);
+    // Below the dial is the receiver's 500 Hz passband, so only stations inside
+    // it are actually being heard — the rest are visible signals the operator
+    // has not tuned to yet.
+    const roster = this.powerOn ? this.session.hamActivity() : [];
+    const audible = roster.filter((e) => inPassband(e.ham.freqHz, this.session.dialHz));
+
     // Powered down the band does not go quiet — the other stations keep calling.
     // Say so, so "standby" is never mistaken for "empty".
-    this.scopeLabel.textContent = this.powerOn
-      ? "波段频谱 · 点击信号可调谐"
-      : "设备已关机 · 本波段其他电台仍在活动";
-    const cq = this.powerOn
-      ? this.session.hamActivity().find((e) => e.state === "cqing")
-      : undefined;
+    if (!this.powerOn) {
+      this.scopeLabel.textContent = "设备已关机 · 本波段其他电台仍在活动";
+    } else if (audible.length === 0) {
+      this.scopeLabel.textContent =
+        roster.length > 0
+          ? `通带内没有信号 · 本波段有 ${roster.length} 个电台（点击亮斑可调谐）`
+          : "波段频谱 · 点击信号可调谐";
+    } else {
+      this.scopeLabel.textContent = "波段频谱 · 点击信号可调谐";
+    }
+
+    const cq = audible.find((e) => e.state === "cqing");
     this.scopeCall.textContent = cq ? `CQ ${cq.ham.call}` : "";
   }
 

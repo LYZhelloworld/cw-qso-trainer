@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { QsoSession } from "./session.js";
 import { normalizeSettings } from "./settingsSchema.js";
+import type { VirtualHam } from "../ham/virtualHam.js";
+
+/**
+ * Tune the dial onto the band's first station. A CW receiver only hears what
+ * falls inside its ±250 Hz passband, so a test that wants a HAM's CQ to be
+ * picked up has to be sitting on that HAM's frequency first — which is exactly
+ * what the operator does with the tuning knob.
+ */
+function tuneOntoFirstHam(s: QsoSession): VirtualHam {
+  const ham = s.listHams()[0];
+  s.retune(ham.freqHz / 1e6);
+  return ham;
+}
 
 /**
  * Wiring tests for the HAMs' autonomous CQ rhythm. Everything time-based is
@@ -47,6 +60,7 @@ describe("HAM 自主发 CQ", () => {
   it("到点才呼叫，之前频率是安静的", async () => {
     const h = makeSession();
     h.session.seedHams(1); // rng=0 -> 首呼延迟取 5 s
+    tuneOntoFirstHam(h.session);
     h.session.start();
 
     await h.tickTo(4_000);
@@ -60,6 +74,7 @@ describe("HAM 自主发 CQ", () => {
   it("无人应答时反复重呼，且不重置已建立的状态", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
 
     await h.tickTo(5_000);
@@ -74,6 +89,7 @@ describe("HAM 自主发 CQ", () => {
   it("连续 3 分钟无应答则下线，并补上新台", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000);
 
@@ -87,12 +103,17 @@ describe("HAM 自主发 CQ", () => {
   });
 
   it("通联中不会被频段上其他台的呼叫打断", async () => {
+    // A 500 Hz passband only ever holds one station, so on a band with two of
+    // them only the one the dial is on can be heard at all — the deeper
+    // "ignore the rest while mid-exchange" rule is covered by
+    // session.tuning/passband tests. What this pins down is that a second
+    // calling station never joins the session.
     const h = makeSession();
-    h.session.seedHams(2); // 两台首呼都是 5 s
+    h.session.seedHams(2);
+    tuneOntoFirstHam(h.session);
     h.session.start();
 
     await h.tickTo(5_000);
-    // 同一时刻两台都在呼叫，但只有一台被接入会话
     expect(h.session.lines.filter((l) => l.who === "ham").length).toBe(1);
   });
 });
@@ -101,6 +122,7 @@ describe("用户应答后", () => {
   it("该台停止自己的呼叫节奏", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000); // HAM 发 CQ
 
@@ -116,6 +138,7 @@ describe("用户应答后", () => {
   it("HAM 的回复前会等待 1–3 秒", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000);
 
@@ -130,6 +153,7 @@ describe("用户应答后", () => {
   it("通联结束后该台回到守听并可再次呼叫", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000);
 

@@ -3,7 +3,8 @@ import {
   BAND_SIGNAL_SPREAD_HZ,
   buildBackgroundSignals,
   mulberry32,
-  quantiseHz,
+  SIGNAL_GRID_HZ,
+  snapToGrid,
   SPECTRUM_SPAN_HZ,
 } from "./spectrum.js";
 
@@ -15,9 +16,11 @@ describe("spectrum constants", () => {
     expect(SPECTRUM_SPAN_HZ / 2).toBe(10_000);
   });
 
-  it("quantises to 10 Hz so peaks land on a tidy column", () => {
-    expect(quantiseHz(14_025_007)).toBe(14_025_010);
-    expect(quantiseHz(14_025_004)).toBe(14_025_000);
+  it("snaps stations onto the 1 kHz grid operators actually use", () => {
+    expect(SIGNAL_GRID_HZ).toBe(1_000);
+    expect(snapToGrid(14_025_400)).toBe(14_025_000);
+    expect(snapToGrid(14_025_600)).toBe(14_026_000);
+    expect(snapToGrid(REF)).toBe(REF);
   });
 });
 
@@ -42,6 +45,7 @@ describe("buildBackgroundSignals", () => {
     expect(signals.length).toBeLessThanOrEqual(6);
     for (const s of signals) {
       expect(Math.abs(s.freqHz - REF)).toBeLessThanOrEqual(BAND_SIGNAL_SPREAD_HZ);
+      expect(s.freqHz % SIGNAL_GRID_HZ).toBe(0); // 装饰载波也在 1 kHz 网格上
       expect(s.strength).toBeGreaterThan(0);
       expect(s.strength).toBeLessThan(0.45); // weak by design
       expect(s.workable).toBe(false); // decorative: never a QSO partner

@@ -73,26 +73,44 @@ export class Frequency {
    * @param firstCqDelayMs Override for this HAM's first CQ. Omit for the spec
    *   interval (30–60 s); pass something short so a freshly tuned band makes
    *   noise soon instead of leaving the user staring at silence.
+   * @param atHz Place the station exactly here (Hz) instead of scattering it
+   *   over the band — used for a station that answers the operator on the
+   *   operator's own frequency.
    */
   spawnHam(
     myCall: string,
     difficulty?: Difficulty,
     rng?: () => number,
     firstCqDelayMs?: number,
+    atHz?: number,
   ): VirtualHam {
-    let ham = this.generate(myCall, difficulty, rng);
-    // Redraw on a callsign collision with a HAM already on this frequency,
-    // otherwise activity.add() would silently drop it and the caller would be
-    // handed a HAM that is not actually on the band.
-    for (let attempt = 0; attempt < 8 && this.activity.has(ham.call); attempt += 1) {
-      ham = this.generate(myCall, difficulty, rng);
+    let ham = this.generate(myCall, difficulty, rng, atHz);
+    // Redraw on a collision with a HAM already on this frequency — a shared
+    // callsign would be silently dropped by activity.add(), and a shared
+    // frequency slot would put two stations in one waterfall column. A station
+    // deliberately placed with `atHz` is exempt: the operator asked for that
+    // exact spot.
+    for (let attempt = 0; attempt < 8 && this.collides(ham, atHz); attempt += 1) {
+      ham = this.generate(myCall, difficulty, rng, atHz);
     }
     this.activity.add(ham, firstCqDelayMs);
     return ham;
   }
 
+  /** True when this station clashes with one already on the frequency. */
+  private collides(ham: VirtualHam, atHz?: number): boolean {
+    if (this.activity.has(ham.call)) return true;
+    if (atHz !== undefined || ham.freqHz <= 0) return false;
+    return this.activity.list().some((e) => e.ham.freqHz === ham.freqHz);
+  }
+
   /** Generate one HAM placed on this band (no roster bookkeeping). */
-  private generate(myCall: string, difficulty?: Difficulty, rng?: () => number): VirtualHam {
+  private generate(
+    myCall: string,
+    difficulty?: Difficulty,
+    rng?: () => number,
+    atHz?: number,
+  ): VirtualHam {
     return generateVirtualHam({
       myCall,
       db: this.db,
@@ -100,6 +118,7 @@ export class Frequency {
       rng,
       referenceHz: this.referenceHz,
       spreadHz: this.spreadHz,
+      atHz,
     });
   }
 
