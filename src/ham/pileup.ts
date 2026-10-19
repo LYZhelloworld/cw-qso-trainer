@@ -34,13 +34,12 @@ export const PILEUP_SILENCE_MAX_MS = 7_000;
 export const PILEUP_MAX_CALLS = 4;
 
 export interface PileupCaller {
-  ham: VirtualHam;
   /**
-   * Whether the session conjured this station for the pile-up. A spawned
-   * caller leaves the band when the pile-up ends; a station that was already
-   * on the band just goes back to listening.
+   * One of the band's *listeners* (see `ham/answerers`), borrowed from the pool
+   * for the duration of the pile-up. It holds no slot: it is audible only while
+   * it transmits, and when the pile-up ends it goes back to listening.
    */
-  spawned: boolean;
+  ham: VirtualHam;
   /** Absolute time of its next transmission. */
   nextCallAt: number;
   /** Transmissions made so far (the first call counts as one). */

@@ -5,7 +5,9 @@
  * Per VIRTUAL-HAM.md:
  *  - Calls CQ every 30–60 s at random, repeating while nobody answers
  *  - Goes offline after 3 minutes without an answer
- *  - 12–18 HAMs are active on a band at a time
+ *  - 12–18 HAMs are *calling* on a band at a time (the band's callers; the
+ *    stations that only answer CQ are a separate, much larger population — see
+ *    `ham/answerers`)
  *  - Answers the user's CQ after 1–5 s
  *  - Replies to the user's answer after 1–3 s
  *
@@ -30,7 +32,7 @@ export const GIVE_UP_MS = 180_000;
 export const RESUME_CQ_DELAY_MIN_MS = 2_000;
 export const RESUME_CQ_DELAY_MAX_MS = 6_000;
 /**
- * Number of HAMs kept active on one band.
+ * Number of *calling* stations kept active on one band.
  *
  * A real CW band segment is busy, and — this is the point — wider than any one
  * screen: the stations are scattered over ±25 kHz (`ham/spectrum`) while the
@@ -38,6 +40,10 @@ export const RESUME_CQ_DELAY_MAX_MS = 6_000;
  * than by looking at a list. 12–18 stations over 51 grid slots is roughly one
  * every 3 kHz: enough to keep hunting, thin enough that a 500 Hz passband is
  * usually empty until you land on somebody.
+ *
+ * Only callers count here. The stations that merely answer CQ hold no slot and
+ * are not part of this number — that pool is far larger and lives in
+ * `ham/answerers`.
  */
 export const ACTIVE_HAMS_MIN = 12;
 export const ACTIVE_HAMS_MAX = 18;

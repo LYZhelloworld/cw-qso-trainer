@@ -68,27 +68,27 @@ export function hamQsoGapMs(rng: () => number = Math.random): number {
 }
 
 /**
- * Pick two stations that are free to work each other.
+ * Pick the station that opens the exchange.
  *
- * Any station not already in a QSO qualifies, and a station that is *calling
- * CQ* is preferred as the caller: that is precisely what happens on the air —
- * somebody answers the CQ that is already going out. A station already in a QSO
- * is never taken, which also guarantees the operator's own partner is left
- * alone mid-exchange.
+ * It must be a *caller* — a station on the spectrum that is calling CQ — because
+ * the answerer is drawn from the band's listening pool (`ham/answerers`) and has
+ * no frequency of its own. A station already in a QSO is never taken, which also
+ * guarantees the operator's own partner is left alone mid-exchange.
+ *
+ * The caller is drawn from the stations currently calling CQ when there are any:
+ * that is precisely what happens on the air — somebody answers the CQ that is
+ * already going out.
  */
-export function pickHamQsoPair(
+export function pickHamQsoCaller(
   entries: ReadonlyArray<{ ham: VirtualHam; state: HamActivityState }>,
   rng: () => number = Math.random,
-): [VirtualHam, VirtualHam] | null {
+): VirtualHam | null {
   if (entries.length < HAM_QSO_MIN_STATIONS) return null;
   const free = entries.filter((e) => e.state !== "inQso");
+  // The caller plus at least one station left over for the operator to work.
   if (free.length < 2) return null;
 
-  // Prefer a station that is already calling CQ as the one being answered.
   const calling = free.filter((e) => e.state === "cqing");
   const pool = calling.length > 0 ? calling : free;
-  const a = pool[randInt(0, pool.length - 1, rng)].ham;
-  const rest = free.filter((e) => e.ham !== a);
-  const b = rest[randInt(0, rest.length - 1, rng)].ham;
-  return [a, b];
+  return pool[randInt(0, pool.length - 1, rng)].ham;
 }

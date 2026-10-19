@@ -67,6 +67,40 @@ describe("用户发 CQ 后的堆叠", () => {
     expect(h.session.ham).toBeNull(); // 还没有点名，没有「对方」
   });
 
+  it("应答者来自守听池：频段名单一台都不多", async () => {
+    const h = makeSession();
+    h.session.seedHams(4);
+    h.session.start();
+    const before = h.session
+      .hamActivity()
+      .map((e) => e.ham.call)
+      .sort();
+
+    await h.session.userCallsCq();
+    const callers = h.session.pileupCallers();
+    expect(callers.length).toBeGreaterThanOrEqual(2);
+    // 它们不占频率槽：频段上还是那 4 台。
+    expect(
+      h.session
+        .hamActivity()
+        .map((e) => e.ham.call)
+        .sort(),
+    ).toEqual(before);
+    for (const c of callers) expect(c.role).toBe("answerer");
+
+    // 点名之后仍然是同一批台：应答方是池里的人，不是从频段上拉下来的。
+    await h.untilHam();
+    const chosen = h.session.heardPileupCallers()[0];
+    await h.session.userSend(`${chosen.call} DE BG7XXX K`);
+    expect(h.session.ham?.call).toBe(chosen.call);
+    expect(
+      h.session
+        .hamActivity()
+        .map((e) => e.ham.call)
+        .sort(),
+    ).toEqual(before);
+  });
+
   it("每台隔开一段自己的静默后才报呼号", async () => {
     const h = makeSession();
     h.session.start();

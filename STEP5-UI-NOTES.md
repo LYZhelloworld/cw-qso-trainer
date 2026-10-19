@@ -204,6 +204,24 @@ v2 首版把关台实现成了「停调度器 + 停音频 + 清空当前波段�
 
 ---
 
+## Prototype v3.8：两类虚拟 HAM（2026-10-19，分支 `feat/ui-v2`）
+
+用户的模型纠正：**「一种是只发 CQ 的，一种是只应答 CQ 的。这两种 HAM 同时存在，甚至只应答的那个可以有更多个，远超频率能容纳的上限。」** 之前把两者混成了一种——所有台都在同一个 `HamActivity` 名单里，堆叠应答从名单里挑、挑不够再往拨轮上 `spawnHam`，于是「应答者」既占了频段名额，也进了瀑布图。
+
+- **新模块 `src/ham/answerers.ts`**：`AnswererPool`，每个波段 **80–120** 台守听者（`ANSWERER_POOL_MIN/MAX`，远高于 51 个槽位）。**按需生成**：只有真被取用才生成，用完 `release()` 归还（并把 `freqHz` 清零）。`VirtualHam.role` 区分 `caller` / `answerer`。
+- **应答者不进入 `HamActivity`**：所以不占槽位、不进活动列表、不出现在瀑布图。唯一例外是**正在发射**时——`spectrum()` 显式补上「正在空中的应答者」（堆叠应答者、从池子里来的通联对象），因为那时它确实是个载波。
+- **堆叠改为只从池子取**：`formPileup()` 不再复用频段上的台、也不再 `spawnHam`；`PileupCaller.spawned` 字段删除（人人都来自池子）。你发一次 CQ，波段名单**一台都不会多**。
+- **后台互连改成「呼叫台 + 池里的应答台」**：`pickHamQsoPair` → `pickHamQsoCaller`（只挑呼叫方，仍≥3 台、优先 cqing）；应答方 `drawAnswerers(1)` 取来，`bHomeHz` 与 `Frequency.moveHam()` 随之删除——**它从来没有自己的频点，也就没有「回原位」**。签完 `73` 后 `releaseAnswerer(b)`，呼叫方 `resumeCq()`。
+- **通联结束的分流**：`QsoSession.endStation()` —— caller 走 `markListening()`，answerer 走 `releaseAnswerer()`（回池子）。`pickHam("call" | "listen")` 里那个「空通带就凭空生成一台」的分支随之删除（现在空通带发 CQ 由池子应答，不需要它）。
+
+涉及文件：新增 `src/ham/answerers.ts`(+test)；改 `src/ham/virtualHam.ts`、`src/ham/generate.ts`、`src/ham/frequency.ts`、`src/ham/activity.ts`、`src/ham/hamQso.ts`(+test)、`src/ham/pileup.ts`(+test)、`src/ui/session.ts`(+`session.hamQso.test.ts` 重写、`session.pileup.test.ts` +1)；文档 `doc/VIRTUAL-HAM.md`（新增「两类虚拟 HAM」一节）、`doc/UI.md`。
+
+验证：`tsc` 0 错；`vite build` 通过；**全套 426 例通过**（39 文件，较 v3.7 的 418 例 +8）。
+
+**一个设计后果**：后台互连的应答方不再「回自己原来的频点」，因为它在模型里从来没有频点。频段名单因此在整个通联前后完全一致——这也是这次改动的验收点：**看得见的台不变，看不见的台随便多**。
+
+---
+
 ## 技术选型
 
 **原生 TypeScript + Vite，零运行时依赖。**
@@ -265,7 +283,8 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 
 - `tsc --noEmit`：**0 错误**
 - `vite build`：**通过**（42 模块，JS 105.94 kB / CSS 7.87 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
-- 测试：**全套 418 例通过**（38 个文件）
+- 测试：**全套 426 例通过**（39 个文件）
+  - Prototype v3.8 两类虚拟 HAM **+8 例**：`src/ham/answerers.test.ts` 7 例（80–120 与远高于 51 槽、角色与频率为 0、不占用频段呼号、按需生成、release 后可再取、池空不再生成）；`src/ui/session.pileup.test.ts` +1（发 CQ 前后频段名单不变、点名的台 `role === "answerer"`）；`src/ham/hamQso.test.ts` 的配对段改为只测呼叫方；`src/ui/session.hamQso.test.ts` 7 例全部改写为「只多出一个忙着的台 + 应答方从不在名单上 + 结束后频段原样」
   - Prototype v3.7 波段切片 / 互连不可见 / 插不进去 **净 +3 例**：`src/ham/spectrum.test.ts` 新增 2 例（`inSpectrumWindow` 的边界与可指定宽度）；`src/ui/pages/radio.test.ts` 删掉 2 例「互连可见性」、把「列出当前频率上的 HAM」改写为「**窗口内才列、窗口外不列**」；`src/ui/session.hamQso.test.ts` 6 例全部改写为**只凭可观测事实**断言（两台同频且都 `inQso`、调过去听得到 6 行、在这个频率发 CQ 无人应答、那一对照旧把话说完（插不进去）、签完 73 后呼叫方 2–6 s 内重新呼叫、不被当成可通联对象、结束后回原频点、自己通联时不插入）
   - Prototype v3.6 HAM 互相通联 **17 例**：纯逻辑 `src/ham/hamQso.test.ts` 8 例（6 行脚本的内容与交替顺序、30–90 s / 0.6–1.6 s 区间与越界钳制、至少 3 台、优先挑正在呼叫的台、只从非通联台里挑、永远选中两个不同台）；会话 `src/ui/session.hamQso.test.ts` 6 例（见 v3.7；v3.6 时曾是「在占用频率发 CQ 被拒」等可见性断言）；电台页 `src/ui/pages/radio.test.ts` 2 例（v3.7 已删）
   - Prototype v3.5 波段密度 **3 例**：`src/ham/activity.test.ts` 区间改为 12–18（含越界钳制与 `resumeCq` 的重呼延迟）、`src/ham/ham.test.ts` 1 例（连摆 12 台仍各自独占一个 1 kHz 槽位）、`src/ui/session.activity.test.ts` 2 例（默认播种得到 12–18 台且频率不重复；**显式设 3 台后补位仍回到 3 台**）

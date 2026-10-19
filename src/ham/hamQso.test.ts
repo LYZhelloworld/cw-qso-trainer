@@ -8,7 +8,7 @@ import {
   hamQsoGapMs,
   hamQsoIntervalMs,
   hamQsoScript,
-  pickHamQsoPair,
+  pickHamQsoCaller,
 } from "../ham/hamQso.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 
@@ -53,16 +53,16 @@ describe("间隔区间", () => {
   });
 });
 
-describe("挑选一对台", () => {
+describe("挑选呼叫方", () => {
   const idle = (call: string): { ham: VirtualHam; state: "listening" } => ({
     ham: ham(call),
     state: "listening",
   });
 
-  it("至少要有 3 台：两台互连 + 留一台给操作者", () => {
-    expect(pickHamQsoPair([idle("A1AAA"), idle("A2AAA")], low)).toBeNull();
+  it("至少要有 3 台：一台呼叫、一台应答，还要留一台给操作者", () => {
+    expect(pickHamQsoCaller([idle("A1AAA"), idle("A2AAA")], low)).toBeNull();
     expect(HAM_QSO_MIN_STATIONS).toBe(3);
-    expect(pickHamQsoPair([idle("A1AAA"), idle("A2AAA"), idle("A3AAA")], low)).not.toBeNull();
+    expect(pickHamQsoCaller([idle("A1AAA"), idle("A2AAA"), idle("A3AAA")], low)).not.toBeNull();
   });
 
   it("优先让正在呼叫 CQ 的那台当呼叫方（现实里就是有人应了它）", () => {
@@ -71,9 +71,7 @@ describe("挑选一对台", () => {
       { ham: ham("A2AAA"), state: "listening" as const },
       idle("A3AAA"),
     ];
-    const pair = pickHamQsoPair(entries, low)!;
-    expect(pair[0].call).toBe("A1AAA");
-    expect(pair[1].call).not.toBe("A1AAA");
+    expect(pickHamQsoCaller(entries, low)!.call).toBe("A1AAA");
   });
 
   it("已通联中的台不参与", () => {
@@ -83,25 +81,20 @@ describe("挑选一对台", () => {
       idle("A3AAA"),
       idle("A4AAA"),
     ];
-    const pair = pickHamQsoPair(entries, low)!;
-    expect(["A3AAA", "A4AAA"]).toContain(pair[0].call);
-    expect(["A3AAA", "A4AAA"]).toContain(pair[1].call);
+    expect(["A3AAA", "A4AAA"]).toContain(pickHamQsoCaller(entries, low)!.call);
   });
 
-  it("任何时候都选出两个不同的台", () => {
+  it("选出来的一定是频段上的台（应答方来自池子，不在这里挑）", () => {
+    const entries = [idle("A1AAA"), idle("A2AAA"), idle("A3AAA"), idle("A4AAA")];
     for (let i = 0; i < 20; i += 1) {
-      const rng = (() => {
-        let a = i * 7919 + 1;
-        return () => {
-          a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
-          return a / 4294967296;
-        };
-      })();
-      const pair = pickHamQsoPair(
-        [idle("A1AAA"), idle("A2AAA"), idle("A3AAA"), idle("A4AAA")],
-        rng,
-      )!;
-      expect(pair[0].call).not.toBe(pair[1].call);
+      let a = i * 7919 + 1;
+      const rng = () => {
+        a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+        return a / 4294967296;
+      };
+      const picked = pickHamQsoCaller(entries, rng)!;
+      expect(entries.map((e) => e.ham.call)).toContain(picked.call);
+      expect(picked.role).toBe("caller");
     }
   });
 
@@ -111,6 +104,6 @@ describe("挑选一对台", () => {
       { ham: ham("A2AAA"), state: "inQso" as const },
       idle("A3AAA"),
     ];
-    expect(pickHamQsoPair(entries, low)).toBeNull();
+    expect(pickHamQsoCaller(entries, low)).toBeNull();
   });
 });

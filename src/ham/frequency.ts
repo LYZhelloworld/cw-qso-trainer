@@ -11,9 +11,10 @@
  */
 
 import { DxccDatabase } from "../data/dxcc.js";
+import { AnswererPool, answererPoolSize } from "./answerers.js";
 import { generateVirtualHam } from "./generate.js";
 import { SIGNAL_GRID_HZ, SIGNAL_GRID_SLOTS, snapToGrid } from "./spectrum.js";
-import { VirtualHam, type Difficulty } from "./virtualHam.js";
+import { VirtualHam, type Difficulty, type HamRole } from "./virtualHam.js";
 import {
   HamActivity,
   type HamActivityEntry,
@@ -56,6 +57,8 @@ export class Frequency {
   readonly freqMHz: number;
   private readonly db: DxccDatabase;
   private readonly activity: HamActivity;
+  /** The band's listeners: the stations that answer CQ (see `ham/answerers`). */
+  private readonly answerers: AnswererPool;
   /** Where new stations are placed on the band, in Hz. */
   private readonly referenceHz: number;
   private readonly spreadHz: number | undefined;
@@ -66,6 +69,7 @@ export class Frequency {
     this.activity = new HamActivity({ rng: opts.rng, now: opts.now });
     this.referenceHz = opts.referenceHz ?? Math.round(freqMHz * 1e6);
     this.spreadHz = opts.spreadHz;
+    this.answerers = new AnswererPool({ size: answererPoolSize(opts.rng) });
   }
 
   /**
@@ -141,6 +145,7 @@ export class Frequency {
     difficulty?: Difficulty,
     rng?: () => number,
     atHz?: number,
+    role: HamRole = "caller",
   ): VirtualHam {
     return generateVirtualHam({
       myCall,
@@ -150,7 +155,36 @@ export class Frequency {
       referenceHz: this.referenceHz,
       spreadHz: this.spreadHz,
       atHz,
+      role,
     });
+  }
+
+  /**
+   * Take stations out of the band's listening pool — the ones that answer a CQ.
+   *
+   * They are **not** put on the roster and not given a frequency: an answerer
+   * only becomes audible while it is transmitting, and the station it answers
+   * decides where (a pile-up is co-channel). The pool is deliberately much
+   * larger than the band's slot count, so this is not limited by the spectrum.
+   *
+   * `taken` is the calls on the band already; a listener must not share one.
+   */
+  drawAnswerers(
+    myCall: string,
+    count: number,
+    taken: ReadonlySet<string> = new Set<string>(),
+    rng?: () => number,
+  ): VirtualHam[] {
+    return this.answerers.draw(
+      count,
+      () => this.generate(myCall, undefined, rng, undefined, "answerer"),
+      taken,
+    );
+  }
+
+  /** The station stopped transmitting: it goes back to listening off the band. */
+  releaseAnswerer(ham: VirtualHam): void {
+    this.answerers.release(ham);
   }
 
   /** Currently active HAMs on this frequency. */
@@ -209,15 +243,6 @@ export class Frequency {
     this.activity.remove(call);
   }
 
-  /**
-   * Retune a station that is already on the band. Used when one station answers
-   * another's CQ: it moves onto the caller's frequency, so the exchange is
-   * co-channel and the operator can hear both sides on one dial setting.
-   */
-  moveHam(call: string, hz: number): void {
-    const entry = this.activity.list().find((e) => e.ham.call === call);
-    if (entry) entry.ham.freqHz = snapToGrid(hz);
-  }
 }
 
 /**

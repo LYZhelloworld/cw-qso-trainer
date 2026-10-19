@@ -15,7 +15,6 @@ import { VirtualHam } from "./virtualHam.js";
 function caller(call: string): PileupCaller {
   return {
     ham: new VirtualHam({ call, difficulty: "novice" }),
-    spawned: true,
     nextCallAt: 0,
     calls: 0,
   };

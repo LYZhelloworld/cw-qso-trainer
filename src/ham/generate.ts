@@ -19,7 +19,7 @@
 
 import { DxccDatabase, type DxccEntity } from "../data/dxcc.js";
 import { extractLetterPrefix, validateCallsign } from "../message/parse.js";
-import { VirtualHam, type Difficulty } from "./virtualHam.js";
+import { VirtualHam, type Difficulty, type HamRole } from "./virtualHam.js";
 import {
   BAND_SIGNAL_SPREAD_HZ,
   SIGNAL_GRID_HZ,
@@ -48,6 +48,13 @@ export interface GenerateOptions {
    * operator's frequency* — see `QsoSession.userCallsCq`.
    */
   atHz?: number;
+  /**
+   * Which population the new station belongs to. An `answerer` is never placed
+   * on the band: it holds no slot and only appears when it answers a CQ, so no
+   * frequency is generated for it (the caller sets it while the station is
+   * transmitting).
+   */
+  role?: HamRole;
 }
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -182,6 +189,10 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
   const referenceHz = opts.referenceHz;
   const spreadHz = opts.spreadHz ?? BAND_SIGNAL_SPREAD_HZ;
   const atHz = opts.atHz;
+  const role = opts.role ?? "caller";
+  // An answerer has no slot: it is only audible while it is answering someone,
+  // and the station it answers decides the frequency.
+  const freqHz = () => (role === "answerer" ? 0 : placeFreq(referenceHz, spreadHz, atHz, rng));
 
   // User context (QTH ≈ centroid of the user's own DXCC entity).
   const uLetterPrefix = extractLetterPrefix(opts.myCall);
@@ -229,8 +240,9 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
         call,
         difficulty,
         report,
-        freqHz: placeFreq(referenceHz, spreadHz, atHz, rng),
+        freqHz: freqHz(),
         strength: strengthFromReport(report, call),
+        role,
       });
     }
   }
@@ -242,7 +254,8 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
     call: fbCall,
     difficulty,
     report: "599",
-    freqHz: placeFreq(referenceHz, spreadHz, atHz, rng),
+    freqHz: freqHz(),
     strength: strengthFromReport("599", fbCall),
+    role,
   });
 }

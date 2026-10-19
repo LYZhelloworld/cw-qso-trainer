@@ -23,22 +23,17 @@ class FakeAudio implements AudioPlayer {
   stop(): void {}
 }
 
-/** Two stations sharing one frequency, both flagged in-QSO: a background pair. */
-interface BackgroundPair {
-  a: VirtualHam;
-  b: VirtualHam;
-}
-
 /**
- * HAM-to-HAM exchanges are background life on the band: they start on their own,
- * run a scripted six-line QSO at the operator's keying speed, and are audible
- * only when the dial sits on their frequency.
+ * HAM-to-HAM exchanges are background life on the band: a station that is
+ * calling CQ gets answered by somebody out of the listening pool, they run the
+ * scripted six-line QSO, and the whole thing is audible only when the dial sits
+ * on that frequency.
  *
  * There is deliberately no accessor for "is a pair working right now" — nobody
- * can see another pair's QSO, so the session does not report one. Everything
- * below is therefore asserted through what an operator could actually observe:
- * two stations sharing a slot with nobody answering them (shown here through
- * their activity state), and the audio they produce when you tune onto them.
+ * can see another station's QSO, so the session does not report one. Everything
+ * below is asserted through what an operator could observe: the band's roster
+ * (one station busy, the rest untouched), and the audio produced when you tune
+ * onto it.
  */
 function makeSession(seed = 11) {
   let t = 0;
@@ -64,47 +59,44 @@ function makeSession(seed = 11) {
   };
 
   /**
-   * A dial setting with no station inside the passband: 25 kHz past the edge of
-   * the band slice (±25 kHz), so no CQ is picked up and the operator stays out
-   * of any QSO while the band lives its own life.
+   * A dial setting with no station inside the passband: 50 kHz past the band
+   * reference, outside the ±25 kHz slice, so no CQ is picked up and the operator
+   * stays out of any QSO while the band lives its own life.
    */
   session.retune(14.1);
 
-  /** The background pair, if the band has one and we are not in a QSO. */
-  const pair = (): BackgroundPair | null => {
+  /**
+   * The station on the band that is busy working somebody. The answerer is not
+   * on the roster — it holds no slot — so exactly one station ever shows up
+   * here, and its frequency is the one to tune to.
+   */
+  const busy = (): VirtualHam | null => {
     if (session.inQso) return null;
     const working = session.hamActivity().filter((e) => e.state === "inQso");
-    for (let i = 0; i < working.length; i += 1) {
-      for (let j = i + 1; j < working.length; j += 1) {
-        const a = working[i].ham;
-        const b = working[j].ham;
-        if (a.freqHz === b.freqHz) return { a, b };
-      }
-    }
-    return null;
+    return working.length === 1 ? working[0].ham : null;
   };
 
   return {
     session,
     audio,
     tickTo,
-    pair,
+    busy,
     now: () => t,
     /** Step the clock until a background exchange appears. */
-    async untilExchange(maxMs = 200_000): Promise<BackgroundPair> {
+    async untilExchange(maxMs = 200_000): Promise<VirtualHam> {
       for (let at = 1_000; at <= maxMs; at += 1_000) {
         await tickTo(at);
-        const found = pair();
+        const found = busy();
         if (found) return found;
       }
-      throw new Error("波段上一直没有出现互相通联的一对");
+      throw new Error("波段上一直没有出现互相通联");
     },
     /** Step 0.5 s at a time until the exchange ends; returns where it ended. */
     async runToEnd(step = 500, maxMs = 180_000): Promise<number | null> {
       const from = t;
       for (let at = from + step; at <= from + maxMs; at += step) {
         await tickTo(at);
-        if (!pair()) return at;
+        if (!busy()) return at;
       }
       return null;
     },
@@ -112,48 +104,52 @@ function makeSession(seed = 11) {
 }
 
 describe("HAM 互相通联（后台，对操作者不可见）", () => {
-  it("波段上会自己出现一对：应答方挪到呼叫方的频点上", async () => {
+  it("应答方来自守听池：频段台数不变，只多出一个忙着的台", async () => {
     const h = makeSession();
-    h.session.seedHams(4);
+    const before = h.session.seedHams(4).map((x) => x.call);
     h.session.start();
 
-    const q = await h.untilExchange();
-    expect(q.a.freqHz).toBe(q.b.freqHz); // 应答方调到了呼叫方的频率上
-    expect(h.session.hamActivity().filter((e) => e.state === "inQso")).toHaveLength(2);
-    // 两者都在 1 kHz 网格上：同频是通联造成的，不是落点出错。
-    expect(q.a.freqHz % 1_000).toBe(0);
+    const caller = await h.untilExchange();
+    expect(before).toContain(caller.call); // 呼叫方本来就是频段上的台
+    // 应答方不占频率槽：频段名单仍是原来那 4 台，没有多出一台。
+    expect(h.session.hamActivity().map((e) => e.ham.call).sort()).toEqual([...before].sort());
+    expect(caller.freqHz % 1_000).toBe(0);
   });
 
-  it("调过去就能听到完整的 6 行，顺序与协议一致；调开之前一个字也没有", async () => {
+  it("调过去就能听到完整的 6 行；应答方从来不在频段名单上", async () => {
     const h = makeSession();
     h.session.seedHams(4);
     h.session.start();
-    const q = await h.untilExchange();
+    const caller = await h.untilExchange();
 
-    // 之前不在通带内，一个字也没播出；现在把拨轮对准它们。
+    // 之前不在通带内，一个字也没播出；现在把拨轮对准它。
     expect(h.audio.calls).toHaveLength(0);
-    h.session.retune(q.a.freqHz / 1e6);
+    h.session.retune(caller.freqHz / 1e6);
     const endedAt = await h.runToEnd();
-
     expect(endedAt).not.toBeNull();
-    // 谁先开口由配对决定；这里只要求整段报文符合协议、顺序一致。
-    const script = (caller: VirtualHam, answerer: VirtualHam): string[] => [
+
+    // 呼叫方先开口，应答方从第二行里认出来。
+    expect(h.audio.calls).toHaveLength(6);
+    expect(h.audio.calls[0]).toBe(`CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`);
+    const answerer = h.audio.calls[1].split(" ")[2];
+    expect(h.audio.calls).toEqual([
       `CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`,
-      `${caller.call} DE ${answerer.call} K`,
+      `${caller.call} DE ${answerer} K`,
       "R UR RST 599 599 BK",
       "R UR RST 599 BK",
       "R TU 73 SK",
       "R TU 73 SK",
-    ];
-    expect([script(q.a, q.b), script(q.b, q.a)]).toContainEqual(h.audio.calls);
+    ]);
+    // 守听的那个台从头到尾没进过频段名单：它没有频率，也不该有。
+    expect(h.session.hamActivity().some((e) => e.ham.call === answerer)).toBe(false);
   });
 
   it("在这个频率上发 CQ 插不进去：没有人应答，那一对照样把话说完", async () => {
     const h = makeSession();
     h.session.seedHams(4);
     h.session.start();
-    const q = await h.untilExchange();
-    h.session.retune(q.a.freqHz / 1e6);
+    const caller = await h.untilExchange();
+    h.session.retune(caller.freqHz / 1e6);
 
     h.audio.calls = [];
     await h.session.userCallsCq();
@@ -165,77 +161,65 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
     expect(h.session.lines.some((l) => l.text.includes("通联"))).toBe(false);
 
     // 那一对既没有让位也没有被打断，仍在原频率上通联。
-    expect(h.pair()).not.toBeNull();
-    const scriptOf = (caller: VirtualHam, answerer: VirtualHam): string[] => [
-      `CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`,
-      `${caller.call} DE ${answerer.call} K`,
-      "R UR RST 599 599 BK",
-      "R UR RST 599 BK",
-      "R TU 73 SK",
-      "R TU 73 SK",
-    ];
-    const pairLines = new Set([...scriptOf(q.a, q.b), ...scriptOf(q.b, q.a)]);
-    h.audio.calls = [];
+    expect(h.busy()).not.toBeNull();
     const from = h.now();
     for (let at = from + 1_000; at <= from + 20_000; at += 1_000) {
       await h.tickTo(at);
     }
-    expect(h.audio.calls.some((c) => pairLines.has(c))).toBe(true);
+    expect(h.audio.calls.length).toBeGreaterThan(1);
   });
 
   it("通联结束后，原来那个呼叫方接着呼叫 CQ", async () => {
     const h = makeSession();
     h.session.seedHams(4);
     h.session.start();
-    const q = await h.untilExchange();
-    h.session.retune(q.a.freqHz / 1e6);
+    const caller = await h.untilExchange();
+    h.session.retune(caller.freqHz / 1e6);
 
     expect(await h.runToEnd()).not.toBeNull();
-    // 谁先开口由配对决定：呼叫方从第一行 CQ 里认出来。
-    const first = h.audio.calls.find((c) => c.startsWith("CQ CQ CQ DE"));
-    const caller = first!.split(" ")[4];
-    const ownCq = `CQ CQ CQ DE ${caller} ${caller} PSE K`;
+    const ownCq = `CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`;
     expect(h.audio.calls.filter((c) => c === ownCq)).toHaveLength(1);
 
     // 签完 73 后几秒内重新开口（2–6 s），而不是等 30–60 s 的常规间隔。
     let seenCqing = false;
     for (let at = h.now() + 500; at <= h.now() + 10_000; at += 500) {
       await h.tickTo(at);
-      if (h.session.hamActivity().some((e) => e.ham.call === caller && e.state === "cqing")) {
+      if (h.session.hamActivity().some((e) => e.ham.call === caller.call && e.state === "cqing")) {
         seenCqing = true;
         break;
       }
     }
     expect(seenCqing).toBe(true);
     expect(h.audio.calls.filter((c) => c === ownCq).length).toBeGreaterThanOrEqual(2);
-  }, 20_000);
+  });
 
-  it("互连中的两台不会被当成可通联对象", async () => {
+  it("应答方不被当成可通联对象：它根本不在名单上", async () => {
     const h = makeSession();
     h.session.seedHams(4);
     h.session.start();
-    const q = await h.untilExchange();
-    h.session.retune(q.a.freqHz / 1e6);
+    const caller = await h.untilExchange();
+    h.session.retune(caller.freqHz / 1e6);
 
     expect(h.session.heardActiveHam()).toBeNull();
     const nearest = h.session.nearestWorkableHam();
-    expect(nearest?.call).not.toBe(q.a.call);
-    expect(nearest?.call).not.toBe(q.b.call);
+    expect(nearest?.call).not.toBe(caller.call);
   });
 
-  it("结束后两台回到守听，应答方回到自己的频点，波段不出现同频两台", async () => {
+  it("结束后频段原样：还是那几台，各占一个槽，没有多出来的台", async () => {
     const h = makeSession();
-    const before = new Map(h.session.seedHams(4).map((x) => [x.call, x.freqHz]));
+    const before = h.session.seedHams(4).map((x) => [x.call, x.freqHz] as const);
     h.session.start();
-    const q = await h.untilExchange();
+    await h.untilExchange();
 
     await h.runToEnd();
 
-    const after = h.session.listHams();
-    expect(after).toHaveLength(4);
-    expect(new Set(after.map((x) => x.freqHz)).size).toBe(4); // 各占一个槽
-    expect(after.find((x) => x.call === q.b.call)!.freqHz).toBe(before.get(q.b.call));
-    expect(h.session.hamActivity().every((e) => e.state !== "inQso")).toBe(true);
+    const after = h.session.hamActivity();
+    expect(after).toHaveLength(before.length);
+    expect(new Set(after.map((e) => e.ham.freqHz)).size).toBe(before.length); // 各占一个槽
+    for (const [call, freqHz] of before) {
+      expect(after.find((e) => e.ham.call === call)?.ham.freqHz).toBe(freqHz);
+    }
+    expect(after.every((e) => e.state !== "inQso")).toBe(true);
   });
 
   it("操作者自己正在通联时，后台不会插入一对", async () => {
@@ -253,11 +237,8 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
     for (let at = from + 1_000; at <= from + 120_000; at += 1_000) {
       await h.tickTo(at);
     }
-    // 没有任何两台处于通联状态还共用一个频点 —— 后台那一对被压住了。
-    const byFreq = new Map<number, number>();
-    for (const e of h.session.hamActivity().filter((x) => x.state === "inQso")) {
-      byFreq.set(e.ham.freqHz, (byFreq.get(e.ham.freqHz) ?? 0) + 1);
-    }
-    expect([...byFreq.values()].every((n) => n < 2)).toBe(true);
+    // 除了操作者自己那台，没有任何台在后台通联。
+    const working = h.session.hamActivity().filter((e) => e.state === "inQso");
+    expect(working.length).toBeLessThanOrEqual(1);
   });
 });
