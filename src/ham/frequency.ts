@@ -12,6 +12,7 @@
 
 import { DxccDatabase } from "../data/dxcc.js";
 import { generateVirtualHam } from "./generate.js";
+import { SIGNAL_GRID_HZ, SIGNAL_GRID_SLOTS, snapToGrid } from "./spectrum.js";
 import { VirtualHam, type Difficulty } from "./virtualHam.js";
 import {
   HamActivity,
@@ -84,17 +85,47 @@ export class Frequency {
     firstCqDelayMs?: number,
     atHz?: number,
   ): VirtualHam {
+    const source = rng ?? Math.random;
     let ham = this.generate(myCall, difficulty, rng, atHz);
     // Redraw on a collision with a HAM already on this frequency — a shared
     // callsign would be silently dropped by activity.add(), and a shared
     // frequency slot would put two stations in one waterfall column. A station
     // deliberately placed with `atHz` is exempt: the operator asked for that
     // exact spot.
-    for (let attempt = 0; attempt < 8 && this.collides(ham, atHz); attempt += 1) {
+    for (let attempt = 0; attempt < 16 && this.collides(ham, atHz); attempt += 1) {
       ham = this.generate(myCall, difficulty, rng, atHz);
+    }
+    // A busy band (5–9 stations share 19 grid slots) can exhaust the redraws.
+    // Rather than dropping the station on top of another, move it to a slot that
+    // is still free. Only stations placed by the generator get moved — an `atHz`
+    // station was put somewhere on purpose.
+    if (atHz === undefined && this.collides(ham, atHz)) {
+      const free = this.freeSlotHz(source);
+      if (free !== null) {
+        for (let attempt = 0; attempt < 16 && this.collides(ham, atHz); attempt += 1) {
+          ham = this.generate(myCall, difficulty, rng, free);
+        }
+      }
     }
     this.activity.add(ham, firstCqDelayMs);
     return ham;
+  }
+
+  /**
+   * A 1 kHz grid slot near the band reference that no station occupies, or null
+   * when the band is genuinely full. Picks among the free slots at random so a
+   * crowded band still spreads its stations out.
+   */
+  private freeSlotHz(rng: () => number): number | null {
+    const base = snapToGrid(this.referenceHz);
+    const taken = new Set(this.activity.list().map((e) => e.ham.freqHz));
+    const free: number[] = [];
+    for (let step = -SIGNAL_GRID_SLOTS; step <= SIGNAL_GRID_SLOTS; step += 1) {
+      const hz = base + step * SIGNAL_GRID_HZ;
+      if (!taken.has(hz)) free.push(hz);
+    }
+    if (free.length === 0) return null;
+    return free[Math.min(free.length - 1, Math.floor(rng() * free.length))];
   }
 
   /** True when this station clashes with one already on the frequency. */

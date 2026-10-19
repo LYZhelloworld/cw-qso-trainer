@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { VirtualHam, MISS_PROBABILITY } from "./virtualHam.js";
 import { generateVirtualHam, haversineKm } from "./generate.js";
 import { Frequency, planHamToHam } from "./frequency.js";
+import { BAND_SIGNAL_SPREAD_HZ, SIGNAL_GRID_HZ } from "./spectrum.js";
 import { dxccDatabase } from "../data/dxcc.js";
 
 /** Deterministic PRNG so distribution tests are reproducible. */
@@ -109,6 +110,21 @@ describe("Frequency", () => {
     expect(ham.call).toMatch(/^[A-Z]{1,2}[0-9][A-Z]{2,3}$/);
     expect(f.listHams()).toHaveLength(1);
     expect(f.activeHam()?.call).toBe(ham.call);
+  });
+
+  it("波段上摆满台时也不会两台共用一个频率槽", () => {
+    const f = new Frequency(14.0, dxccDatabase);
+    const rng = mulberry32(99);
+    for (let i = 0; i < 12; i += 1) f.spawnHam("BG7XXX", "novice", rng);
+
+    const hams = f.listHams();
+    expect(hams).toHaveLength(12);
+    const freqs = hams.map((h) => h.freqHz);
+    expect(new Set(freqs).size).toBe(12);
+    for (const hz of freqs) {
+      expect(hz % SIGNAL_GRID_HZ).toBe(0); // 都在 1 kHz 网格上
+      expect(Math.abs(hz - 14_000_000)).toBeLessThanOrEqual(BAND_SIGNAL_SPREAD_HZ);
+    }
   });
 
   it("exposes a reserved HAM-to-HAM plan stub (step 3 placeholder)", () => {

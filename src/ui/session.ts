@@ -130,8 +130,12 @@ export class QsoSession {
   private readonly now: () => number;
   private readonly startTicking: (cb: () => void) => () => void;
   private readonly wait: (ms: number) => Promise<void>;
-  /** How many HAMs this band keeps active (1–3, fixed for the session). */
-  private readonly targetHams: number;
+  /**
+   * How many HAMs this band keeps active (5–9 by default, fixed for the
+   * session). An explicit `seedHams(n)` overrides it, and the band refills back
+   * to that number after a HAM gives up — "keep n stations", not "spawn n once".
+   */
+  private targetHams: number;
   private settings: AppSettings;
   private stopTicking: (() => void) | null = null;
   private activityListener: ((events: HamActivityEvent[]) => void) | null = null;
@@ -423,11 +427,12 @@ export class QsoSession {
 
   /**
    * Populate the frequency with activity so the band is not empty. With no
-   * argument the band keeps 1–3 HAMs (VIRTUAL-HAM.md), decided once per session.
+   * argument the band keeps 5–9 HAMs (VIRTUAL-HAM.md), decided once per session;
+   * an explicit count also becomes the level the band refills to.
    */
   seedHams(count?: number): VirtualHam[] {
-    const target = count ?? this.targetHams;
-    while (this.freq.hamCount < target) this.spawnHam();
+    if (count !== undefined) this.targetHams = count;
+    while (this.freq.hamCount < this.targetHams) this.spawnHam();
     return this.listHams();
   }
 

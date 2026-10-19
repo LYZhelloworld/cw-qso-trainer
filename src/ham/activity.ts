@@ -5,7 +5,7 @@
  * Per VIRTUAL-HAM.md:
  *  - Calls CQ every 30–60 s at random, repeating while nobody answers
  *  - Goes offline after 3 minutes without an answer
- *  - 1–3 HAMs are active on a band at a time
+ *  - 5–9 HAMs are active on a band at a time
  *  - Answers the user's CQ after 1–5 s
  *  - Replies to the user's answer after 1–3 s
  *
@@ -22,9 +22,17 @@ export const CQ_INTERVAL_MIN_MS = 30_000;
 export const CQ_INTERVAL_MAX_MS = 60_000;
 /** Continuous silence after a CQ before the HAM gives up (3 min). */
 export const GIVE_UP_MS = 180_000;
-/** Number of HAMs kept active on one band. */
-export const ACTIVE_HAMS_MIN = 1;
-export const ACTIVE_HAMS_MAX = 3;
+/**
+ * Number of HAMs kept active on one band.
+ *
+ * A real CW band segment is busy: a handful of stations, not one or two. The
+ * ceiling is set by the spectrum, not by taste — stations sit on the 1 kHz grid
+ * within ±9 kHz of the band reference (`ham/spectrum`), so 19 slots exist and
+ * every station is visible in the waterfall window. 9 leaves room for the
+ * decorative background carriers and for a pile-up's temporary callers.
+ */
+export const ACTIVE_HAMS_MIN = 5;
+export const ACTIVE_HAMS_MAX = 9;
 /** Delay before a HAM answers the user's CQ (1–5 s). */
 export const ANSWER_CQ_DELAY_MIN_MS = 1_000;
 export const ANSWER_CQ_DELAY_MAX_MS = 5_000;
@@ -72,7 +80,7 @@ export function replyDelayMs(rng: () => number = Math.random): number {
   return randInt(REPLY_DELAY_MIN_MS, REPLY_DELAY_MAX_MS, rng);
 }
 
-/** How many HAMs to keep active on one band (1–3). */
+/** How many HAMs to keep active on one band (5–9). */
 export function targetHamCount(rng: () => number = Math.random): number {
   return randInt(ACTIVE_HAMS_MIN, ACTIVE_HAMS_MAX, rng);
 }

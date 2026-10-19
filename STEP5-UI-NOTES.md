@@ -152,6 +152,21 @@ v2 首版把关台实现成了「停调度器 + 停音频 + 清空当前波段�
 
 ---
 
+## Prototype v3.5：波段更热闹——每波段 5–9 台（2026-10-19，分支 `feat/ui-v2`）
+
+用户反馈「一个波段只有三个台吗？我觉得可以有更多」。这是个纯密度调整，不动任何交互语义。
+
+- **数量**：`ACTIVE_HAMS_MIN / MAX` 由 **1–3** 改为 **5–9**，每个波段各自抽一次并固定。真实 CW 波段就该是「一片信号」，而不是一两个台。
+- **容量上限来自频谱**：台站仍对齐 **1 kHz 网格**、落在波段参考频率 **±9 kHz** 内，共 **19 个槽位**（`SIGNAL_GRID_SLOTS`）。台一多，随机落点撞车的概率明显上升，所以 `spawnHam` 的重抽次数 **8 → 16**，并且仍撞车时**改落一个空槽**（`freeSlotHz`，在空闲槽里随机挑），不再把两台叠在同一列。装饰载波（3–6 个）另算，最多时约 15 / 19 列有内容。
+- **补位语义修正**：`seedHams(n)` 现在把 n 同时设为**补位目标**（原来只补到会话的随机默认值）。所以「显式设 3 台」在有人 3 分钟无应答下线后仍是 3 台，而不是跳回 5–9。
+- **要更多需要放宽频谱**：19 是 ±9 kHz / 1 kHz 网格的硬上限。想再往上（比如十几二十台）得把台站摊到更宽的波段切片上，那样瀑布窗口一次只看得见其中一部分——**调谐时会不断遇到新台**，是另一种体验，等需要时再做。
+
+涉及文件：`src/ham/activity.ts`、`src/ham/frequency.ts`、`src/ui/session.ts`、`src/ham/activity.test.ts`、`src/ham/ham.test.ts`、`src/ui/session.activity.test.ts`；文档 `doc/VIRTUAL-HAM.md`。
+
+验证：`tsc` 0 错；`vite build` 通过（42 模块，JS 105.94 kB / CSS 7.87 kB）；**全套 398 例通过**（36 文件，较 v3.4 的 395 例 +3）。
+
+---
+
 ## 技术选型
 
 **原生 TypeScript + Vite，零运行时依赖。**
@@ -212,8 +227,9 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 ## 验证结果
 
 - `tsc --noEmit`：**0 错误**
-- `vite build`：**通过**（42 模块，JS 101.76 kB / CSS 7.87 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
-- 测试：**全套 380 例通过**（34 个文件）
+- `vite build`：**通过**（42 模块，JS 105.94 kB / CSS 7.87 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
+- 测试：**全套 398 例通过**（36 个文件）
+  - Prototype v3.5 波段密度 **3 例**：`src/ham/activity.test.ts` 区间改为 5–9（含越界钳制）、`src/ham/ham.test.ts` 1 例（连摆 12 台仍各自独占一个 1 kHz 槽位）、`src/ui/session.activity.test.ts` 2 例（默认播种得到 5–9 台且频率不重复；**显式设 3 台后补位仍回到 3 台**）
   - Prototype v3.3 边带切换 / 可调带宽 **15 例**：`src/ham/tuning.test.ts` 新增 5 例（`resolveSideband` 跟随波段或固定、模式标签 `CW-L` / `CW-U` 与 `otherSideband`、`PASSBAND_OPTIONS` 与 `normalisePassband` 回落、`inPassband` 自定义带宽边界 ±带宽/2、通带越窄越先静默）；`src/ui/settingsSchema.test.ts` 2 例（`cwSideband` 保留 LSB/USB 其余回落 auto、`passbandHz` 只接受 500/250/100）；`src/ui/session.tuning.test.ts` 4 例（20m 上固定 LSB → 音调方向反转、40m 上固定 USB → 反向、250 Hz 时偏 200 Hz 即听不到、100 Hz 时只有 ±50 Hz 内收得到）；`src/ui/app.test.ts` 新增/改写 3 例（模式标签随波段显示 CW-L / CW-U、**点击标签切换并固定**、**瀑布通带标记宽度跟随带宽** 2.5% → 0.5%）；`src/ui/pages/settingsPage.test.ts` 2 例（CW 边带与接收滤波带宽两个下拉的默认值、选项与提交）
   - Prototype v3.2 CW 通带 / 1 kHz 网格 **12 例**：`src/ham/tuning.test.ts` 新增 4 例（带宽 = 500 Hz / ±250 Hz 内外的 `inPassband` 分界 / `audibleToneHz` 通带内给音调、通带外给 null / **频率读数即载波频率**：PITCH 只决定侧音高低）、`src/ham/spectrum.test.ts` 1 例（`snapToGrid` 落到 1 kHz 格、装饰载波也在网格上）；`src/ui/session.tuning.test.ts` 重写为 12 例（通带内音调偏移 USB/LSB 方向、正对频回设定值、**通带边缘外 1 Hz 即静默**、**通联中调走 1 kHz 声音直接消失而不是变尖**、通带外的台不接入会话且一点声音都不播、空通带不会被自动选中、用户自己发报不受影响）；`src/ui/pages/radio.test.ts` 新增 5 例（**±100 Hz 微调**、通带与网格说明文案、活动列表标出通带内外、空波段「监听」置灰、有台时「监听」**自动把拨轮扫过去**、已对准时不扫描）；`src/ui/pages/cw.test.ts` 1 例（调出通带后状态行明说"已在通带之外"）
   - Prototype v3.1 CW 偏频 **21 例**：纯模型 `src/ham/tuning.test.ts` 9 例（边带划分含 10 MHz 分界、正对频回到设定音调、USB/LSB 方向相反、单调性、失谐线性不取整、上下限夹取、显式覆盖边带、`detuneHz` 带符号）、会话音频 `src/ui/session.tuning.test.ts` 9 例（用 `AudioPlayer` 记录**实际播出的音调**：USB 台在上方→音调升高、往上调拨轮→音调变低、LSB 反向、正对频→设定值、隔 1 kHz→夹到下/上限、跟随 `toneHz` 设置、**用户自己发报不受影响**、无通联对象时为 null）、`app.test.ts` 模式标签 1 例（40m `CW-L` / 20m、15m `CW-U`，v3.3 起改为点击切换并固定）、`cw.test.ts` 状态行音调读数 2 例
@@ -237,7 +253,7 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 2. ~~**浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。~~ **已解决（2026-10-14）**：音频后端改为**惰性共享单一 AudioContext**，首次 `pointerdown` / `keydown` / `touchstart` 即 `resume()`（侧音自身的 context 早已如此处理），不再每次播放新建并关闭 context；Node / jsdom 下仍无 context、播放立即 resolve 且不抛不挂。
 3. ~~**iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。~~ **已实现（2026-10-14）**：核心 `src/cw/keyer.ts`（Mode A/B、squeeze 点划记忆、自动 3d/7d 间隔），UI 侧设置页可切「直键 / iambic」并绑定点划键位，CW 页支持双桨输入与空格分词。**侧音已实现（2026-10-14）**：`src/audio/sidetone.ts`，直键跟随按键、iambic 跟随元素起止，可在设置页开关与调音量（默认开、40%）。
 4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。**2026-10-14 明确暂缓，不排期。**
-5. ~~**HAM 不会自主定时发 CQ**：频率页是「点按钮触发」。~~ **已实现（2026-10-14）**：核心 `src/ham/activity.ts` —— CQ 间隔 30–60 s 随机、无人应答时反复重呼、连续 3 分钟无应答下线、频段维持 1–3 个活跃；时钟与随机源全部注入、模块内无定时器，故 3 分钟的下线判定可在毫秒内测完。会话层 `QsoSession` 以 1 s 驱动循环推进它，应答延迟 1–5 s、回复延迟 1–3 s（取代原先硬编码的 1200 ms）。频率页显示各台状态（守听 / 呼叫 CQ 中 / 通联中）。**交互约束**：用户已在交换中时，频段上其他台的呼叫不会被接入，以免打断进行中的通联。
+5. ~~**HAM 不会自主定时发 CQ**：频率页是「点按钮触发」。~~ **已实现（2026-10-14）**：核心 `src/ham/activity.ts` —— CQ 间隔 30–60 s 随机、无人应答时反复重呼、连续 3 分钟无应答下线、频段维持 **5–9** 个活跃；时钟与随机源全部注入、模块内无定时器，故 3 分钟的下线判定可在毫秒内测完。会话层 `QsoSession` 以 1 s 驱动循环推进它，应答延迟 1–5 s、回复延迟 1–3 s（取代原先硬编码的 1200 ms）。频率页显示各台状态（守听 / 呼叫 CQ 中 / 通联中）。**交互约束**：用户已在交换中时，频段上其他台的呼叫不会被接入，以免打断进行中的通联。
 6. **信号强度条**取**当前通带内**最强那台的强度（通带内没有台时为 0），不是真实传播模型；瀑布图上带外信号亮着但不会让 S 表起跳。
 7. ~~**lookahead 流式播放调度**未实现（ROADMAP 已列为延后），当前是一次性灌 BufferSource。~~ **已实现（2026-10-14）**：新增 `src/audio/player.ts` 的 `LookaheadPlayer`——整段渲染一次（保持 QRN/QSB 连续）后按音频时钟分块前瞻调度，返回 `PlaybackHandle{done, stop}`，`stop()` 可随时在元素边界打断；`CwAudioEngine` 改用共享 context + 该调度器。HAM 连续发 CQ 时，用户可**半途插话应答**，会话层 `hamCallsCq` 不再占用 `sending`（HAM CQ 改为非阻塞、后台播放），`userSend` / `userCallsCq` 起始调用 `engine.stop()` 切断环境 HAM 音频；`reset` / `dispose` 亦停音频。
 8. **全局快捷键**做不到：Web 页面失焦无法捕获键盘，需迁 Tauri 才能解决（UI.md 已知限制）。
@@ -254,7 +270,7 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 
 ```bash
 npm run build      # 生产构建
-npm test           # 395 例测试（含 jsdom 下的 UI 交互，无需浏览器；canvas 画面本身测不到）
+npm test           # 398 例测试（含 jsdom 下的 UI 交互，无需浏览器；canvas 画面本身测不到）
 npm run typecheck  # 类型检查
 npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```
@@ -269,4 +285,4 @@ npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些�
 
 ## Git 状态
 
-v1 内容已作为 PR #7（squash）合入 `master`。v2 / v2.1 / v3 / v3.1 / v3.2 / v3.3 / v3.4 的改动只在本地 `feat/ui-v2` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。
+v1 内容已作为 PR #7（squash）合入 `master`。v2 / v2.1 / v3 / v3.1 / v3.2 / v3.3 / v3.4 / v3.5 的改动只在本地 `feat/ui-v2` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。

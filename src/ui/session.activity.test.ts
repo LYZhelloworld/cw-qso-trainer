@@ -201,6 +201,30 @@ describe("堆叠应答延迟区间", () => {
   });
 });
 
+describe("波段规模", () => {
+  it("默认每个波段有 5–9 个台，且各自占一个不同的频率", () => {
+    const h = makeSession();
+    const hams = h.session.seedHams();
+
+    expect(hams.length).toBeGreaterThanOrEqual(5);
+    expect(hams.length).toBeLessThanOrEqual(9);
+    const freqs = hams.map((x) => x.freqHz);
+    expect(new Set(freqs).size).toBe(freqs.length); // 没有两台挤在同一个槽上
+  });
+
+  it("显式设定的台数会成为补位目标（下线后仍回到这个数量）", async () => {
+    const h = makeSession();
+    h.session.seedHams(3);
+    tuneOntoFirstHam(h.session);
+    h.session.start();
+
+    await h.tickTo(5_000);
+    await h.tickTo(5_000 + 180_000); // 三分钟无人应答 -> 下线并补位
+
+    expect(h.session.listHams()).toHaveLength(3);
+  });
+});
+
 describe("生命周期", () => {
   it("start 才装驱动，dispose 会卸掉", () => {
     const h = makeSession();

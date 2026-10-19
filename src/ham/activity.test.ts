@@ -58,16 +58,16 @@ describe("延迟与数量区间（VIRTUAL-HAM.md）", () => {
     expect(replyDelayMs(high)).toBe(REPLY_DELAY_MAX_MS);
   });
 
-  it("频段活跃数量 1–3 个", () => {
-    expect(targetHamCount(low)).toBe(1);
-    expect(targetHamCount(high)).toBe(3);
+  it("频段活跃数量 5–9 个", () => {
+    expect(targetHamCount(low)).toBe(5);
+    expect(targetHamCount(high)).toBe(9);
   });
 
   it("越界的注入随机源也不会超出区间（钳制生效）", () => {
     expect(nextCqDelayMs(() => 1)).toBe(CQ_INTERVAL_MAX_MS);
     expect(nextCqDelayMs(() => -1)).toBe(CQ_INTERVAL_MIN_MS);
-    expect(targetHamCount(() => 1)).toBe(3);
-    expect(targetHamCount(() => -1)).toBe(1);
+    expect(targetHamCount(() => 1)).toBe(9);
+    expect(targetHamCount(() => -1)).toBe(5);
   });
 });
 
