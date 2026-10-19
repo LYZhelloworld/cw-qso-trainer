@@ -17,8 +17,20 @@
 /** Width of the waterfall window in Hz: ±10 kHz around the dial frequency. */
 export const SPECTRUM_SPAN_HZ = 20_000;
 
-/** Stations on a band are scattered within ±this of the band reference. */
-export const BAND_SIGNAL_SPREAD_HZ = 9_000;
+/**
+ * Stations on a band are scattered within ±this of the band reference.
+ *
+ * Deliberately WIDER than the waterfall window (`SPECTRUM_SPAN_HZ`): a band
+ * slice holds far more stations than one screen can show, so tuning across it
+ * keeps turning up stations that were not visible a moment ago. That is how a
+ * panadapter actually behaves — it shows a window, not the band — and it is
+ * what makes tuning a search instead of a list-reading exercise.
+ *
+ * 25 kHz is also exactly what every band in `ui/bands` has room for around its
+ * default reference (7.000–7.050 on 40 m, 14.000–14.050 on 20 m), so no
+ * station is ever placed outside its own band.
+ */
+export const BAND_SIGNAL_SPREAD_HZ = 25_000;
 
 /**
  * Every station on a band sits on this grid (1 kHz).
@@ -38,6 +50,22 @@ export function snapToGrid(hz: number): number {
 
 /** How many grid slots fit in ±`BAND_SIGNAL_SPREAD_HZ`. */
 export const SIGNAL_GRID_SLOTS = Math.floor(BAND_SIGNAL_SPREAD_HZ / SIGNAL_GRID_HZ);
+
+/**
+ * True when a signal at `hz` is inside the waterfall window centred on
+ * `centerHz` — i.e. when it can appear on the panadapter at all.
+ *
+ * The pages use this to keep what they list in step with what is on screen:
+ * a station outside the window is not something the operator can see, and
+ * naming it would take the search away.
+ */
+export function inSpectrumWindow(
+  hz: number,
+  centerHz: number,
+  spanHz: number = SPECTRUM_SPAN_HZ,
+): boolean {
+  return Math.abs(hz - centerHz) <= spanHz / 2;
+}
 
 export interface SpectrumSignal {
   /** Absolute frequency in Hz. */
@@ -70,15 +98,19 @@ export function mulberry32(seed: number): () => number {
 }
 
 /**
- * A handful of weak carriers scattered across the band, so the waterfall looks
- * like a live band rather than an empty grid. Decorative only.
+ * A handful of weak carriers scattered across the band slice, so the waterfall
+ * looks like a live band rather than an empty grid. Decorative only.
+ *
+ * The count scales with `BAND_SIGNAL_SPREAD_HZ`, not with the window: roughly a
+ * third of them are inside any one screen, which is what keeps the window as
+ * populated as it was when stations lived within ±9 kHz.
  */
 export function buildBackgroundSignals(
   referenceHz: number,
   rng: () => number,
   count?: number,
 ): SpectrumSignal[] {
-  const n = count ?? 3 + Math.floor(rng() * 4); // 3..6
+  const n = count ?? 8 + Math.floor(rng() * 8); // 8..15
   const base = snapToGrid(referenceHz);
   const out: SpectrumSignal[] = [];
   for (let i = 0; i < n; i += 1) {

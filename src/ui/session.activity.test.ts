@@ -202,12 +202,12 @@ describe("堆叠应答延迟区间", () => {
 });
 
 describe("波段规模", () => {
-  it("默认每个波段有 5–9 个台，且各自占一个不同的频率", () => {
+  it("默认每个波段有 12–18 个台，且各自占一个不同的频率", () => {
     const h = makeSession();
     const hams = h.session.seedHams();
 
-    expect(hams.length).toBeGreaterThanOrEqual(5);
-    expect(hams.length).toBeLessThanOrEqual(9);
+    expect(hams.length).toBeGreaterThanOrEqual(12);
+    expect(hams.length).toBeLessThanOrEqual(18);
     const freqs = hams.map((x) => x.freqHz);
     expect(new Set(freqs).size).toBe(freqs.length); // 没有两台挤在同一个槽上
   });

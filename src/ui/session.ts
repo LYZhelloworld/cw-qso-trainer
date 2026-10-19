@@ -68,19 +68,15 @@ export interface TranscriptLine {
   text: string;
 }
 
-/** What the operator can see of a HAM-to-HAM exchange on this band. */
-export interface HamQsoView {
-  a: VirtualHam;
-  b: VirtualHam;
-  /** The frequency both are on (the caller's slot). */
-  freqHz: number;
-  /** True when the dial is inside that frequency's passband (i.e. audible). */
-  audible: boolean;
-}
-
 /**
  * A background HAM-to-HAM exchange in progress (see `ham/hamQso`). Distinct
  * from `machine`, which represents *the operator's* QSO.
+ *
+ * Deliberately INTERNAL. On the air you cannot see that two stations are
+ * working each other: you either tune onto them and hear the exchange, or you
+ * know nothing about it. There is therefore no accessor for this — the only way
+ * to find out is to be listening on that frequency (`playHam` enforces that),
+ * and the roster does not label either station.
  */
 interface HamQsoExchange {
   a: VirtualHam;
@@ -165,7 +161,7 @@ export class QsoSession {
   private readonly startTicking: (cb: () => void) => () => void;
   private readonly wait: (ms: number) => Promise<void>;
   /**
-   * How many HAMs this band keeps active (5–9 by default, fixed for the
+   * How many HAMs this band keeps active (12–18 by default, fixed for the
    * session). An explicit `seedHams(n)` overrides it, and the band refills back
    * to that number after a HAM gives up — "keep n stations", not "spawn n once".
    */
@@ -428,36 +424,6 @@ export class QsoSession {
     return this.pileup?.some((c) => c.ham.call === call) ?? false;
   }
 
-  /**
-   * The HAM-to-HAM exchange running on this band, if any. The operator can tune
-   * onto it and listen, but it is not their QSO: neither station will answer
-   * them, and transmitting on that frequency is refused (it is occupied).
-   */
-  hamQsoInfo(): HamQsoView | null {
-    const q = this.hamQso;
-    if (!q) return null;
-    return {
-      a: q.a,
-      b: q.b,
-      freqHz: q.freqHz,
-      audible: inPassband(q.freqHz, this.dialHz, this.passbandHz),
-    };
-  }
-
-  /** True when this station is one of the two working each other. */
-  isHamQsoStation(call: string): boolean {
-    return this.hamQso !== null && (this.hamQso.a.call === call || this.hamQso.b.call === call);
-  }
-
-  /** The other half of a background exchange, for the activity list. */
-  hamQsoPartnerOf(call: string): string | null {
-    const q = this.hamQso;
-    if (!q) return null;
-    if (q.a.call === call) return q.b.call;
-    if (q.b.call === call) return q.a.call;
-    return null;
-  }
-
   get playbackAvailable(): boolean {
     return this.engine.playbackAvailable;
   }
@@ -509,7 +475,7 @@ export class QsoSession {
 
   /**
    * Populate the frequency with activity so the band is not empty. With no
-   * argument the band keeps 5–9 HAMs (VIRTUAL-HAM.md), decided once per session;
+   * argument the band keeps 12–18 HAMs (VIRTUAL-HAM.md), decided once per session;
    * an explicit count also becomes the level the band refills to.
    */
   seedHams(count?: number): VirtualHam[] {
@@ -568,14 +534,10 @@ export class QsoSession {
   async userCallsCq(): Promise<void> {
     if (this.sending) return;
     if (!this.receiving) return; // cannot transmit with the rig off
-    // The frequency is taken: two stations are working each other right here.
-    // Calling CQ on top of them is what a real operator would not do — tune
-    // away first (the radio page disables the button and says why).
-    const occupied = this.hamQsoInfo();
-    if (occupied?.audible) {
-      this.note(`${occupied.a.call} 与 ${occupied.b.call} 正在这个频率上通联，换开再呼叫`);
-      return;
-    }
+    // Two stations are working each other on this frequency. We cannot see that
+    // — nobody can — but we are about to key on top of them, so they stand by
+    // (one audio channel: see `yieldHamQso`). The operator is told nothing.
+    this.yieldHamQso();
     this.sending = true;
     try {
       this.stopAudio(); // cut any ambient HAM CQ before the user's own call
@@ -618,15 +580,10 @@ export class QsoSession {
     if (this.pileup !== null) return this.answerPileup(line);
 
     const machine = this.machine;
-    if (!machine) {
-      // Nothing of ours to send on. If a background exchange is holding this
-      // frequency, say why the key does nothing.
-      const busy = this.hamQsoInfo();
-      if (busy?.audible) {
-        this.note(`${busy.a.call} 与 ${busy.b.call} 正在这个频率上通联，无法插话`);
-      }
-      return;
-    }
+    // Nothing of ours to send on: the key does nothing. If a pair of stations is
+    // working each other here we still say nothing — hearing them is the only
+    // cue a real operator gets, and they simply do not answer us.
+    if (!machine) return;
     this.sending = true;
     try {
       this.stopAudio(); // break in: cut any HAM still calling CQ
@@ -918,8 +875,6 @@ export class QsoSession {
       index: 0,
       nextAt: now,
     };
-    // The activity list gains a "these two are working each other" line.
-    this.activityListener?.([]);
   }
 
   /** Both stations sign off: the answerer returns to its own frequency. */
@@ -944,7 +899,20 @@ export class QsoSession {
     for (const ham of [q.a, q.b]) {
       if (onBand.has(ham.call)) this.freq.markListening(ham.call);
     }
-    this.activityListener?.([]);
+  }
+
+  /**
+   * The operator is about to key on the frequency a background pair is using.
+   * They stand by and the exchange is dropped rather than resumed later: the
+   * operator now has the frequency, and with one audio channel two transmitters
+   * would only cut each other off. Nothing about this is reported — as far as
+   * the operator is concerned they simply called CQ and got their own answers.
+   */
+  private yieldHamQso(): void {
+    const q = this.hamQso;
+    if (!q) return;
+    if (!inPassband(q.freqHz, this.dialHz, this.passbandHz)) return;
+    this.endHamQso();
   }
 
   /**

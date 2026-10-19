@@ -7,15 +7,19 @@ import {
   roundFreq,
 } from "../bands.js";
 import { detuneHz, inPassband } from "../../ham/tuning.js";
+import { BAND_SIGNAL_SPREAD_HZ, SPECTRUM_SPAN_HZ, inSpectrumWindow } from "../../ham/spectrum.js";
 import { renderQsoPanel } from "./cw.js";
 import type { AppHost } from "../app.js";
 
-/** What each HAM on the band is doing right now. */
-const ACTIVITY_LABEL: Record<string, string> = {
-  listening: "守听",
-  cqing: "呼叫 CQ 中",
-  inQso: "通联中",
-};
+/**
+ * What the operator can tell about a station on the band: whether it is calling
+ * CQ, or not. A station working somebody else is deliberately indistinguishable
+ * from one that is just listening — nobody can see another pair's QSO, and
+ * there is no reason the display should know about it.
+ */
+function activityLabel(state: string): string {
+  return state === "cqing" ? "呼叫 CQ 中" : "守听";
+}
 
 /**
  * The main "radio" screen: band tuning and live activity, plus the QSO operating
@@ -96,6 +100,12 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
         class: "hint",
         text: `接收通带 ${halfHz * 2} Hz（±${halfHz} Hz），中心就是拨轮频率；电台间隔 1 kHz。`,
       }),
+      el("div", {
+        class: "hint",
+        text: `台站散布在中心 ±${BAND_SIGNAL_SPREAD_HZ / 1000} kHz 的波段切片上，瀑布一次只看得到 ±${
+          SPECTRUM_SPAN_HZ / 2000
+        } kHz —— 调过去才会遇到新的台。`,
+      }),
     ),
   );
 
@@ -106,7 +116,12 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   }
 
   // --- band activity -------------------------------------------------------
-  const roster = host.session.hamActivity();
+  // Only what the panadapter is showing: the band slice is wider than the
+  // waterfall window, so tuning on turns up stations that are not in this list
+  // yet. That is the point — you find stations by tuning, not by reading a list.
+  const roster = host.session
+    .hamActivity()
+    .filter((e) => inSpectrumWindow(e.ham.freqHz, host.session.dialHz));
   const dialHz = host.session.dialHz;
   const passbandHz = host.session.passbandHz;
   // S-meter reading follows the strongest station you can actually hear, so it
@@ -120,51 +135,15 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   signalRow.append(el("span", { class: "hint", text: "信号强度" }), signal);
 
   const activity = el("div", { class: "col" });
-  // Two stations working each other: worth a line of its own, because it is the
-  // one thing on the band the operator can listen to but never join.
-  const xq = host.session.hamQsoInfo();
-  if (xq) {
-    const row = el("div", { class: "row" });
-    row.append(el("span", { text: `${xq.a.call} ↔ ${xq.b.call}` }));
-    row.append(el("span", { class: "badge", text: "互相通联" }));
-    row.append(
-      el("span", {
-        class: "hint",
-        text: `${(xq.freqHz / 1e6).toFixed(4)} MHz${xq.audible ? " · 正在旁听（不可插话）" : ""}`,
-      }),
-    );
-    if (!xq.audible) {
-      row.append(
-        button(
-          "调过去旁听",
-          () =>
-            host.updateSettings({
-              freqMHz: roundFreq(clampToBand(xq.freqHz / 1e6, band)),
-            }),
-          "btn small",
-        ),
-      );
-    }
-    activity.append(row);
-  }
   if (roster.length === 0) {
-    activity.append(el("div", { class: "hint", text: "当前频率没有活动" }));
+    activity.append(el("div", { class: "hint", text: "这个窗口里没有信号 · 调谐换一段看看" }));
   } else {
     for (const entry of roster) {
       const detune = detuneHz(entry.ham.freqHz, dialHz);
       const heard = inPassband(entry.ham.freqHz, dialHz, passbandHz);
-      // A station in a background exchange is not "in a QSO" with the
-      // operator — say who it is actually working, or the badge reads as if
-      // the operator were the partner.
-      const partner = host.session.hamQsoPartnerOf(entry.ham.call);
       const line = el("div", { class: "row" });
       line.append(el("span", { text: entry.ham.call }));
-      line.append(
-        el("span", {
-          class: "badge",
-          text: partner ? `与 ${partner} 通联` : (ACTIVITY_LABEL[entry.state] ?? entry.state),
-        }),
-      );
+      line.append(el("span", { class: "badge", text: activityLabel(entry.state) }));
       line.append(
         el("span", {
           class: "hint",
@@ -184,7 +163,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     activity.append(
       el("div", {
         class: "hint",
-        text: `这 ${roster.length} 个电台当前都在通带之外（拨轮 ±${halfHz} Hz 内才听得到）。调谐或直接点频谱上的亮斑。`,
+        text: `窗口里这 ${roster.length} 个信号都在通带之外（拨轮 ±${halfHz} Hz 内才听得到）。调谐或直接点频谱上的亮斑。`,
       }),
     );
   }
@@ -205,13 +184,9 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   const actions = el("div", { class: "row" });
   const listenBtn = button("监听：等 HAM 发 CQ", listen, "btn primary");
   listenBtn.disabled = nearest === null;
-  // Calling CQ on top of two stations already working each other is refused —
-  // disable the button instead of letting the click do nothing.
-  const occupied = host.session.hamQsoInfo()?.audible ? host.session.hamQsoInfo() : null;
   const callBtn = button("我发 CQ", () => {
     void host.session.userCallsCq().then(() => host.refresh());
   });
-  if (occupied) callBtn.disabled = true;
   actions.append(listenBtn, callBtn);
 
   const start = el("div", { class: "col" });
@@ -221,13 +196,6 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     warn.append(document.createTextNode("请先填写本方呼号："));
     warn.append(button("打开设置", () => host.openSettings?.(), "btn small"));
     start.append(warn);
-  } else if (occupied) {
-    start.append(
-      el("div", {
-        class: "hint tone-off",
-        text: `${occupied.a.call} 与 ${occupied.b.call} 正在这个频率上通联，频率被占用——调开一些再呼叫（你也可以留着旁听）。`,
-      }),
-    );
   } else if (nearest === null) {
     start.append(el("div", { class: "hint", text: "这个波段上暂时没有电台，稍等一会儿再看看。" }));
   } else if (host.session.heardActiveHam() !== null) {

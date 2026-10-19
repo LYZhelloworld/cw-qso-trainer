@@ -95,7 +95,7 @@ export class Frequency {
     for (let attempt = 0; attempt < 16 && this.collides(ham, atHz); attempt += 1) {
       ham = this.generate(myCall, difficulty, rng, atHz);
     }
-    // A busy band (5–9 stations share 19 grid slots) can exhaust the redraws.
+    // A busy band (12–18 stations share 51 grid slots) can exhaust the redraws.
     // Rather than dropping the station on top of another, move it to a slot that
     // is still free. Only stations placed by the generator get moved — an `atHz`
     // station was put somewhere on purpose.

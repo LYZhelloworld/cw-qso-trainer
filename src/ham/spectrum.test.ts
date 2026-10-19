@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BAND_SIGNAL_SPREAD_HZ,
   buildBackgroundSignals,
+  inSpectrumWindow,
   mulberry32,
   SIGNAL_GRID_HZ,
   snapToGrid,
@@ -24,6 +25,20 @@ describe("spectrum constants", () => {
   });
 });
 
+describe("inSpectrumWindow", () => {
+  it("只把窗口（默认 ±10 kHz）之内的信号算进来", () => {
+    expect(inSpectrumWindow(14_035_000, 14_025_000)).toBe(true); // 正好在边缘
+    expect(inSpectrumWindow(14_035_001, 14_025_000)).toBe(false);
+    expect(inSpectrumWindow(14_015_000, 14_025_000)).toBe(true);
+    expect(inSpectrumWindow(14_050_000, 14_025_000)).toBe(false);
+  });
+
+  it("窗口宽度可指定", () => {
+    expect(inSpectrumWindow(14_030_000, 14_025_000, 20_000)).toBe(true);
+    expect(inSpectrumWindow(14_030_000, 14_025_000, 8_000)).toBe(false);
+  });
+});
+
 describe("mulberry32", () => {
   it("is deterministic for a seed and stays in [0,1)", () => {
     const a = mulberry32(42);
@@ -41,8 +56,8 @@ describe("buildBackgroundSignals", () => {
   it("scatters a few weak carriers inside the band's spread", () => {
     const signals = buildBackgroundSignals(REF, mulberry32(7));
 
-    expect(signals.length).toBeGreaterThanOrEqual(3);
-    expect(signals.length).toBeLessThanOrEqual(6);
+    expect(signals.length).toBeGreaterThanOrEqual(8);
+    expect(signals.length).toBeLessThanOrEqual(15);
     for (const s of signals) {
       expect(Math.abs(s.freqHz - REF)).toBeLessThanOrEqual(BAND_SIGNAL_SPREAD_HZ);
       expect(s.freqHz % SIGNAL_GRID_HZ).toBe(0); // 装饰载波也在 1 kHz 网格上

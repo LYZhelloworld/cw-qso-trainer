@@ -21,7 +21,7 @@ import {
   sidebandLabel,
   type Sideband,
 } from "../ham/tuning.js";
-import { SPECTRUM_SPAN_HZ } from "../ham/spectrum.js";
+import { SPECTRUM_SPAN_HZ, inSpectrumWindow } from "../ham/spectrum.js";
 import { Waterfall } from "./waterfall.js";
 
 export type PageId = "radio" | "log" | "about";
@@ -438,17 +438,17 @@ export class App implements AppHost {
     // Below the dial is the receiver's filter, so only stations inside it are
     // actually being heard — the rest are visible signals the operator has not
     // tuned to yet.
-    const roster = this.powerOn ? this.session.hamActivity() : [];
+    // What the scope itself is showing. The band slice is wider than this
+    // window, so the count is "signals in view", not "stations on the band".
+    const roster = this.powerOn
+      ? this.session.hamActivity().filter((e) => inSpectrumWindow(e.ham.freqHz, this.session.dialHz))
+      : [];
     const audible = roster.filter((e) =>
       inPassband(e.ham.freqHz, this.session.dialHz, this.session.passbandHz),
     );
     // A pile-up is the one moment the label has something more useful to say
     // than "tune around": the operator has to pick a station by name.
     const pileup = this.powerOn ? this.session.pileupCallers() : [];
-    // Two other stations working each other on this frequency: audible, but
-    // not joinable. Worth saying, or the operator waits for an answer that
-    // will never come.
-    const exchange = this.powerOn ? this.session.hamQsoInfo() : null;
 
     // Powered down the band does not go quiet — the other stations keep calling.
     // Say so, so "standby" is never mistaken for "empty".
@@ -456,12 +456,10 @@ export class App implements AppHost {
       this.scopeLabel.textContent = "设备已关机 · 本波段其他电台仍在活动";
     } else if (pileup.length > 0) {
       this.scopeLabel.textContent = `${pileup.length} 台同时应答 · 回复时请点名`;
-    } else if (exchange?.audible) {
-      this.scopeLabel.textContent = `${exchange.a.call} 与 ${exchange.b.call} 正在通联 · 只能旁听`;
     } else if (audible.length === 0) {
       this.scopeLabel.textContent =
         roster.length > 0
-          ? `通带内没有信号 · 本波段有 ${roster.length} 个电台（点击亮斑可调谐）`
+          ? `通带内没有信号 · 窗口里有 ${roster.length} 个信号（点击亮斑可调谐）`
           : "波段频谱 · 点击信号可调谐";
     } else {
       this.scopeLabel.textContent = "波段频谱 · 点击信号可调谐";
@@ -469,8 +467,6 @@ export class App implements AppHost {
 
     if (pileup.length > 0) {
       this.scopeCall.textContent = `堆叠 ×${pileup.length}`;
-    } else if (exchange?.audible) {
-      this.scopeCall.textContent = `${exchange.a.call} ↔ ${exchange.b.call}`;
     } else {
       const cq = audible.find((e) => e.state === "cqing");
       this.scopeCall.textContent = cq ? `CQ ${cq.ham.call}` : "";
