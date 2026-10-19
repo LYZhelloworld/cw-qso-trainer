@@ -7,7 +7,7 @@
 
 ## 平台与技术选型
 
-> **结论（2026-10-14）**：目标产物是 **exe**，路线为 **Web 原型 → Tauri 2 打包 exe**（不用 PWA）。当前 UI 用**原生 TypeScript + Vite、零 UI 框架**直接操作 DOM；这套代码可直接搬进 Tauri 的 WebView，迁移面最小。详见仓库根 `UI-TECH-REVIEW.md` 的「关于做成 exe 程序」一节。
+> **结论（2026-10-14）**：目标产物是 **exe**，路线为 **Web 原型 → Tauri 2 打包 exe**（不用 PWA）。当前 UI 用**原生 TypeScript + Vite、零 UI 框架**直接操作 DOM；这套代码可直接搬进 Tauri 的 WebView，迁移面最小。
 
 ### 候选平台
 
