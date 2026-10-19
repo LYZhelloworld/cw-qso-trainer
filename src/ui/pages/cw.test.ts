@@ -319,6 +319,49 @@ describe("CW 页 iambic 双桨输入", () => {
   });
 });
 
+describe("堆叠提示", () => {
+  it("多台应答时标出台数、给出点名提示与点名按钮", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    let t = 0;
+    const ticks: Array<() => void> = [];
+    const settings = normalizeSettings({ myCall: "BG7XXX", assistMode: true });
+    const session = new QsoSession(14.025, settings, {
+      now: () => t,
+      startTicking: (cb) => {
+        ticks.push(cb);
+        return () => {};
+      },
+      delay: async () => {},
+    });
+    const host = {
+      settings,
+      session,
+      updateSettings() {},
+      newSession() {},
+      go() {},
+      refresh() {},
+      onLeave() {},
+    } as unknown as AppHost;
+
+    await session.userCallsCq();
+    session.start();
+    // Drive the injected clock until at least one station has called.
+    for (t = 250; t <= 20_000 && session.heardPileupCallers().length === 0; t += 250) {
+      for (const cb of ticks) cb();
+    }
+
+    renderQsoPanel(host, root);
+    const caller = session.heardPileupCallers()[0];
+    expect(caller).toBeDefined();
+    expect(root.textContent).toContain("台同时应答");
+    expect(root.textContent).toContain("必须点名");
+
+    findButton(root, `点名 ${caller.call}`).click();
+    expect(root.querySelector("textarea")!.value).toBe(`${caller.call} DE BG7XXX K`);
+  });
+});
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

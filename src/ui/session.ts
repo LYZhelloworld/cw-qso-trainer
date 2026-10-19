@@ -17,6 +17,14 @@ import {
   type SpectrumSnapshot,
 } from "../ham/spectrum.js";
 import {
+  PILEUP_MAX_CALLS,
+  matchCaller,
+  pileupCallText,
+  pileupSilenceMs,
+  pileupSize,
+  type PileupCaller,
+} from "../ham/pileup.js";
+import {
   audibleToneHz,
   detuneHz,
   inPassband,
@@ -25,6 +33,7 @@ import {
   type Sideband,
 } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
+import { textToTiming } from "../cw/encode.js";
 import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
 
@@ -132,6 +141,18 @@ export class QsoSession {
   ham: VirtualHam | null = null;
   lines: TranscriptLine[] = [];
   /**
+   * Stations answering the operator's CQ right now (see `ham/pileup`). While
+   * this is set the QSO has not started yet: nobody has been named, so there is
+   * no `machine` and no partner — only a handful of stations calling back.
+   */
+  private pileup: PileupCaller[] | null = null;
+  /**
+   * Per-call "keying until" timestamps (ms) for the waterfall. A pile-up caller
+   * is a transmitter only while its call is actually being played; derived from
+   * the clock rather than stored as a boolean so it self-expires.
+   */
+  private readonly keyingUntil = new Map<string, number>();
+  /**
    * Unsent text sitting in the send box. It lives here rather than in the DOM
    * because any settings change re-renders the page, which would otherwise
    * throw away whatever the user was halfway through keying in.
@@ -196,6 +217,7 @@ export class QsoSession {
       this.stopTicking();
       this.stopTicking = null;
     }
+    this.clearPileup();
     this.engine.stop(); // cut any in-flight HAM audio when leaving the band
     this.activityListener = null;
   }
@@ -221,6 +243,7 @@ export class QsoSession {
    */
   spectrum(): SpectrumSnapshot {
     const states = new Map(this.freq.activityState().map((e) => [e.ham.call, e.state]));
+    const now = this.now();
     const signals: SpectrumSignal[] = [];
     for (const ham of this.freq.listHams()) {
       signals.push({
@@ -230,7 +253,10 @@ export class QsoSession {
         workable: true,
         // Only a station that is *calling* is keying. One already in a QSO with
         // us is mostly listening, so it renders as a steady carrier instead.
-        active: states.get(ham.call) === "cqing",
+        // A pile-up caller keys only while its own call is being played.
+        active:
+          states.get(ham.call) === "cqing" ||
+          (this.keyingUntil.get(ham.call) ?? 0) > now,
       });
     }
     for (const bg of this.backgroundSignals()) signals.push(bg);
@@ -315,11 +341,35 @@ export class QsoSession {
   }
 
   get state(): QsoState {
+    // Mid-pile-up there is no machine yet, but the operator has certainly
+    // called CQ — report that, or the panel would say "idle" while three
+    // stations are answering.
+    if (this.pileup !== null && this.machine === null) return "USER_CQ";
     return this.machine?.state ?? "IDLE";
   }
 
   get inQso(): boolean {
+    if (this.pileup !== null) return true;
     return this.machine !== null && this.machine.state !== "IDLE";
+  }
+
+  /** The stations answering the operator's CQ, in the order they arrived. */
+  pileupCallers(): VirtualHam[] {
+    return this.pileup?.map((c) => c.ham) ?? [];
+  }
+
+  /**
+   * Pile-up callers that have already transmitted at least once — the ones the
+   * operator can actually have copied. A station that has not called yet is not
+   * a name you could have written down, so the UI does not offer it.
+   */
+  heardPileupCallers(): VirtualHam[] {
+    return this.pileup?.filter((c) => c.calls > 0).map((c) => c.ham) ?? [];
+  }
+
+  /** True when this call is one of the stations currently answering our CQ. */
+  isPileupCaller(call: string): boolean {
+    return this.pileup?.some((c) => c.ham.call === call) ?? false;
   }
 
   get playbackAvailable(): boolean {
@@ -420,29 +470,40 @@ export class QsoSession {
     return true;
   }
 
-  /** The user calls CQ; a single HAM answers after a short delay. */
+  /**
+   * The operator calls CQ. Several stations answer (2–3, see `ham/pileup`),
+   * each with its own randomised silence, until one of them is named.
+   *
+   * Only the CQ itself blocks: the answers are scheduled, not awaited, so the
+   * operator can break in and name a station while the pile-up is still
+   * building. That is the whole skill being practised.
+   */
   async userCallsCq(): Promise<void> {
     if (this.sending) return;
     if (!this.receiving) return; // cannot transmit with the rig off
     this.sending = true;
     try {
       this.stopAudio(); // cut any ambient HAM CQ before the user's own call
-      // Whoever answers a CQ is answering *on the caller's frequency*, so a
-      // station is placed right on the dial when the passband holds nobody.
-      const machine = this.startMachine(this.pickHam("call")!);
+      // A fresh attempt starts a clean transcript; an earlier unanswered CQ
+      // left lines behind and no partner to explain them.
+      if (this.machine === null) {
+        this.clearPileup();
+        this.lines = [];
+        this.logWritten = false;
+        this.draft = "";
+      }
+      const callers = this.formPileup();
       const cq = `CQ CQ CQ DE ${this.myCall()} ${this.myCall()} PSE K`;
-      machine.userSend(cq); // -> USER_CQ
       this.push("me", cq);
       await this.playMine(cq);
-      // VIRTUAL-HAM.md: a HAM answers the user's CQ after 1–5 s.
-      await this.wait(answerCqDelayMs(this.rng));
-      const reply = machine.hamAnswerCq();
-      if (reply) {
-        if (this.ham) this.freq.markInQso(this.ham.call);
-        this.push("ham", reply);
-        await this.playHam(reply);
-      } else {
-        this.push("sys", "无人应答，CQ 超时");
+      // VIRTUAL-HAM.md: a HAM answers the user's CQ after 1–5 s. The others
+      // follow once the previous call has finished plus a short random gap, so
+      // the pile-up staggers instead of cutting itself off.
+      let at = this.now() + answerCqDelayMs(this.rng);
+      for (const c of callers) {
+        c.nextCallAt = at;
+        c.calls = 0;
+        at += this.callDurationMs(pileupCallText(c.ham.call)) + 500 + Math.floor(this.rng() * 1000);
       }
     } finally {
       this.sending = false;
@@ -451,14 +512,18 @@ export class QsoSession {
 
   /** The user transmits one line; HAM replies are appended and played. */
   async userSend(text: string): Promise<void> {
-    const machine = this.machine;
-    if (!machine) return;
     const line = text.trim().toUpperCase();
     if (!line) return;
     // Busy guard: a second send while the first is still being transmitted (or
     // the HAM is mid-reply) is dropped rather than interleaved with it.
     if (this.sending) return;
     if (!this.receiving) return; // cannot transmit with the rig off
+    // Answering a pile-up: there is no partner yet, so this line's only real
+    // job is to name one. See `answerPileup`.
+    if (this.pileup !== null) return this.answerPileup(line);
+
+    const machine = this.machine;
+    if (!machine) return;
     this.sending = true;
     try {
       this.stopAudio(); // break in: cut any HAM still calling CQ
@@ -492,6 +557,51 @@ export class QsoSession {
 
       // QSO complete: the HAM goes back to listening and will call CQ again.
       if (machine.state === "LOGGED" && this.ham) this.freq.markListening(this.ham.call);
+    } finally {
+      this.sending = false;
+    }
+  }
+
+  /**
+   * The operator replied to a pile-up. The only thing that matters is whether a
+   * station was named: a bare "R BK" addresses nobody, so every station stays
+   * silent and tries again later (see `drivePileup`). This is deliberately
+   * unforgiving — naming the station is the skill a pile-up teaches.
+   */
+  private async answerPileup(line: string): Promise<void> {
+    const callers = this.pileup;
+    if (!callers) return;
+    this.sending = true;
+    try {
+      this.stopAudio(); // the operator's key is on top of the pile-up
+      this.push("me", line);
+      await this.playMine(line);
+
+      const chosen = matchCaller(line, callers);
+      if (!chosen) {
+        // Nobody was addressed. Re-roll every silence so the repeats stay
+        // spread out; the operator gets another chance to name a station.
+        for (const c of callers) c.nextCallAt = this.now() + pileupSilenceMs(this.rng);
+        this.push("sys", "没有点名任何一台，各台继续等待");
+        return;
+      }
+
+      // The named station is the partner; the rest leave. A caller conjured for
+      // this pile-up goes off the band, a station that was already here just
+      // goes back to listening.
+      this.pileup = null;
+      for (const c of callers) {
+        if (c !== chosen) this.releaseCaller(c);
+      }
+      this.freq.markInQso(chosen.ham.call);
+      const machine = this.startMachine(chosen.ham);
+      // The CQ went out before the machine existed (a pile-up has no partner
+      // yet), so put it in the state it would have been in.
+      machine.beginUserCq();
+      await this.wait(replyDelayMs(this.rng));
+      const reply = machine.hamAcceptedSelection();
+      this.push("ham", reply);
+      await this.playHam(reply);
     } finally {
       this.sending = false;
     }
@@ -532,7 +642,9 @@ export class QsoSession {
 
   /** Abandon the current QSO and clear the transcript. */
   reset(): void {
-    // Free the HAM we were working so it resumes its own CQ rhythm.
+    // Free the HAM we were working so it resumes its own CQ rhythm. A pile-up
+    // that never got as far as naming anyone has no `ham`, only callers.
+    this.clearPileup();
     if (this.ham) this.freq.markListening(this.ham.call);
     this.engine.stop(); // cut any in-flight audio along with the QSO
     this.machine?.reset();
@@ -624,6 +736,105 @@ export class QsoSession {
   private tick(): void {
     const events = this.freq.advance();
     if (events.length > 0) this.handleActivity(events);
+    this.drivePileup();
+  }
+
+  /**
+   * Advance the pile-up: the earliest caller that is due transmits, unless the
+   * operator is transmitting right now — then every station listens and the
+   * repeats wait, which is the "in a call, see whether it was for me" half of
+   * the rule. Only one station is started per tick, so their silences stay
+   * staggered even if several became due at once.
+   */
+  private drivePileup(): void {
+    const callers = this.pileup;
+    if (!callers || !this.receiving || this.sending) return;
+    const now = this.now();
+    const due = callers
+      .filter((c) => now >= c.nextCallAt)
+      .sort((a, b) => a.nextCallAt - b.nextCallAt);
+    const caller = due[0];
+    if (!caller) return;
+
+    // Out of repeats: it gives up and leaves (a spawned one off the band, a
+    // station that was already here back to listening).
+    if (caller.calls >= PILEUP_MAX_CALLS) {
+      this.releaseCaller(caller);
+      this.pileup = callers.filter((c) => c !== caller);
+      if (this.pileup.length === 0) {
+        this.pileup = null;
+        this.note("没有人应答你的点名，各台已停止呼叫");
+      }
+      return;
+    }
+
+    caller.calls += 1;
+    const text = pileupCallText(caller.ham.call);
+    const duration = this.callDurationMs(text);
+    caller.nextCallAt = now + duration + pileupSilenceMs(this.rng);
+    this.push("ham", text);
+    // Key this station's waterfall column only while its call is on the air.
+    this.keyingUntil.set(caller.ham.call, now + duration);
+    void this.playHam(text, caller.ham).then(() => {
+      this.keyingUntil.delete(caller.ham.call);
+    });
+  }
+
+  /**
+   * Build the stations that answer this CQ. Stations already inside the
+   * passband heard it, so they are reused; the rest are conjured right on the
+   * dial — everyone answers on the caller's frequency, which is why a pile-up
+   * is co-channel and the 1 kHz band grid does not apply to it. Every caller is
+   * marked in-QSO so its own CQ rhythm stops for the duration.
+   */
+  private formPileup(): PileupCaller[] {
+    const size = pileupSize(this.rng);
+    const busy = new Set(
+      this.freq
+        .activityState()
+        .filter((e) => e.state === "inQso")
+        .map((e) => e.ham.call),
+    );
+    const callers: PileupCaller[] = [];
+    for (const ham of this.freq.listHams()) {
+      if (callers.length >= size) break;
+      if (busy.has(ham.call)) continue;
+      if (!this.canHear(ham)) continue;
+      callers.push({ ham, spawned: false, nextCallAt: 0, calls: 0 });
+      this.freq.markInQso(ham.call);
+    }
+    while (callers.length < size) {
+      const ham = this.spawnHam(this.dialHz);
+      callers.push({ ham, spawned: true, nextCallAt: 0, calls: 0 });
+      this.freq.markInQso(ham.call);
+    }
+    this.pileup = callers;
+    return callers;
+  }
+
+  /** Drop the pile-up and put every caller back where it belongs. */
+  private clearPileup(): void {
+    const callers = this.pileup;
+    if (!callers) return;
+    this.pileup = null;
+    for (const c of callers) this.releaseCaller(c);
+  }
+
+  private releaseCaller(caller: PileupCaller): void {
+    this.keyingUntil.delete(caller.ham.call);
+    if (caller.spawned) this.freq.removeHam(caller.ham.call);
+    else this.freq.markListening(caller.ham.call);
+  }
+
+  /** How long a message takes to key at the operator's current speed, in ms. */
+  private callDurationMs(text: string): number {
+    const elements = textToTiming(text, {
+      wpm: this.settings.wpm,
+      ...(this.settings.farnsworthEnabled
+        ? { farnsworthWpm: this.settings.farnsworthWpm }
+        : {}),
+    });
+    return elements.reduce((total, e) => total + e.on + e.off, 0);
   }
 
   private handleActivity(events: HamActivityEvent[]): void {
@@ -648,6 +859,9 @@ export class QsoSession {
       // Mid-exchange: ignore other stations calling on the band rather than
       // trampling over the QSO in progress.
       if (this.exchangeInProgress) continue;
+      // Mid-pile-up: the operator is answering *these* stations. Another CQ on
+      // the band must not hijack the selection.
+      if (this.pileup !== null) continue;
       // Already listening to one station's CQ: only its own repeats get through.
       if (this.machine?.state === "PEER_CQ" && this.ham?.call !== e.ham.call) continue;
       void this.hamCallsCq(e.ham);

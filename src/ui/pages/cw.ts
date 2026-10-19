@@ -80,6 +80,14 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   if (ctx?.rstRx) status.append(el("span", { class: "hint", text: `收 ${ctx.rstRx}` }));
   if (ctx?.rstTx) status.append(el("span", { class: "hint", text: `发 ${ctx.rstTx}` }));
 
+  // --- pile-up: several stations answered the CQ at once --------------------
+  const pileupCallers = session.pileupCallers();
+  if (pileupCallers.length > 0) {
+    status.append(
+      el("span", { class: "badge", text: `${pileupCallers.length} 台同时应答` }),
+    );
+  }
+
   // --- transcript ----------------------------------------------------------
   const pane = el("div", { class: "cw-pane" });
   /**
@@ -164,14 +172,32 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   const my = settings.myCall || "BG7XXX";
   const peer = session.ham?.call ?? "";
   const macros = el("div", { class: "row" });
-  const macroList: Array<[string, string]> = [
-    ["应答 CQ", peer ? `${peer} DE ${my} K` : `${my} DE ${my} K`],
-    ["RST 599", "R UR RST 599 BK"],
-    ["收到", "R BK"],
-    ["73 SK", "R TU 73 SK"],
-  ];
-  for (const [label, text] of macroList) {
-    macros.append(button(label, () => { setDraft(text); }, "btn small"));
+  // In a pile-up the only useful reply is naming a station, so the macros are
+  // one per station the operator has actually heard. A station that has not
+  // called yet is not a name you could have written down.
+  const heardCallers = session.heardPileupCallers();
+  if (heardCallers.length > 0) {
+    for (const ham of heardCallers) {
+      macros.append(
+        button(
+          `点名 ${ham.call}`,
+          () => {
+            setDraft(`${ham.call} DE ${my} K`);
+          },
+          "btn small",
+        ),
+      );
+    }
+  } else {
+    const macroList: Array<[string, string]> = [
+      ["应答 CQ", peer ? `${peer} DE ${my} K` : `${my} DE ${my} K`],
+      ["RST 599", "R UR RST 599 BK"],
+      ["收到", "R BK"],
+      ["73 SK", "R TU 73 SK"],
+    ];
+    for (const [label, text] of macroList) {
+      macros.append(button(label, () => { setDraft(text); }, "btn small"));
+    }
   }
 
   // --- key input: straight key or iambic paddles ---------------------------
@@ -320,6 +346,14 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     button("新通联（结束当前）", () => host.newSession()),
   );
 
+  const pileupHint =
+    pileupCallers.length > 0
+      ? el("div", {
+          class: "hint",
+          text: "多台同时在呼：回复里必须点名（如 JA1ABC DE BG7XXX），不点名谁也接不上。",
+        })
+      : null;
+
   root.append(
     panel("通联状态", banner, assistLabel, status),
     panel("收报 / 发报记录", pane),
@@ -327,6 +361,7 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
       "发送",
       input,
       macros,
+      ...(pileupHint ? [pileupHint] : []),
       el("div", { class: "row" }, [sendBtn]),
       el("div", { class: "hint", text: "Ctrl+Enter 也可发送。发送内容会按设定速度播出 CW 音调。" }),
     ),

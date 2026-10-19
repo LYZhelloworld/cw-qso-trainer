@@ -140,6 +140,34 @@ export class QsoMachine {
     return reply;
   }
 
+  /**
+   * The operator has called CQ. The text itself is sent by the session (there
+   * is no partner yet), so this only records the state the machine is in while
+   * a pile-up is being answered.
+   */
+  beginUserCq(): void {
+    if (this.state === "IDLE") this.state = "USER_CQ";
+  }
+
+  /**
+   * The operator picked this HAM out of a pile-up by name.
+   *
+   * Unlike `hamAnswerCq` there is no fresh "MYCALL DE HAM" line: the station
+   * already identified itself in the pile-up, so the next thing it sends is its
+   * report. Everything else matches a normal answered CQ.
+   */
+  hamAcceptedSelection(): string {
+    if (this.state !== "USER_CQ") return "";
+    this.ctx.peerCall = this.ham.call;
+    this.ctx.callsignsConfirmed = true;
+    this.ctx.rstRx = this.ham.report;
+    this.state = "EXCHANGE";
+    const reply = `R UR RST ${this.ham.report} BK`;
+    this.lastReply = reply;
+    this.lastRetryKey = null;
+    return reply;
+  }
+
   /** Virtual HAM initiates a CQ. Returns the HAM's CQ text. */
   hamCq(): string {
     this.ctx.peerCall = this.ham.call;

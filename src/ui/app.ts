@@ -442,11 +442,16 @@ export class App implements AppHost {
     const audible = roster.filter((e) =>
       inPassband(e.ham.freqHz, this.session.dialHz, this.session.passbandHz),
     );
+    // A pile-up is the one moment the label has something more useful to say
+    // than "tune around": the operator has to pick a station by name.
+    const pileup = this.powerOn ? this.session.pileupCallers() : [];
 
     // Powered down the band does not go quiet — the other stations keep calling.
     // Say so, so "standby" is never mistaken for "empty".
     if (!this.powerOn) {
       this.scopeLabel.textContent = "设备已关机 · 本波段其他电台仍在活动";
+    } else if (pileup.length > 0) {
+      this.scopeLabel.textContent = `${pileup.length} 台同时应答 · 回复时请点名`;
     } else if (audible.length === 0) {
       this.scopeLabel.textContent =
         roster.length > 0
@@ -456,8 +461,12 @@ export class App implements AppHost {
       this.scopeLabel.textContent = "波段频谱 · 点击信号可调谐";
     }
 
-    const cq = audible.find((e) => e.state === "cqing");
-    this.scopeCall.textContent = cq ? `CQ ${cq.ham.call}` : "";
+    if (pileup.length > 0) {
+      this.scopeCall.textContent = `堆叠 ×${pileup.length}`;
+    } else {
+      const cq = audible.find((e) => e.state === "cqing");
+      this.scopeCall.textContent = cq ? `CQ ${cq.ham.call}` : "";
+    }
   }
 
   private renderNav(): void {

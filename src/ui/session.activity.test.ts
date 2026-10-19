@@ -165,27 +165,39 @@ describe("用户应答后", () => {
   });
 });
 
-describe("应答延迟区间", () => {
-  it("用户发 CQ 后对方延迟 1–5 秒应答", async () => {
+describe("堆叠应答延迟区间", () => {
+  it("用户发 CQ 后第一台在 1–5 秒内应答", async () => {
     const h = makeSession(() => 0.5);
     h.session.seedHams(1);
+    h.session.start();
 
     await h.session.userCallsCq();
-    expect(h.waits).toHaveLength(1);
     // randInt(1000, 5000, 0.5) = 3000
-    expect(h.waits[0]).toBe(3_000);
+    await h.tickTo(2_999);
+    expect(h.session.lines.filter((l) => l.who === "ham")).toHaveLength(0);
+
+    await h.tickTo(3_000);
+    expect(h.session.lines.filter((l) => l.who === "ham")).toHaveLength(1);
   });
 
   it("延迟取自会话的随机源，注入后完全确定", async () => {
     const a = makeSession(() => 0);
     a.session.seedHams(1);
+    a.session.start();
     await a.session.userCallsCq();
-    expect(a.waits[0]).toBe(1_000); // 区间下界
+    await a.tickTo(999); // 区间下界 1000 ms
+    expect(a.session.lines.filter((l) => l.who === "ham")).toHaveLength(0);
+    await a.tickTo(1_000);
+    expect(a.session.lines.filter((l) => l.who === "ham")).toHaveLength(1);
 
     const b = makeSession(() => 0.999999);
     b.session.seedHams(1);
+    b.session.start();
     await b.session.userCallsCq();
-    expect(b.waits[0]).toBe(5_000); // 区间上界
+    await b.tickTo(4_999); // 区间上界 5000 ms
+    expect(b.session.lines.filter((l) => l.who === "ham")).toHaveLength(0);
+    await b.tickTo(5_000);
+    expect(b.session.lines.filter((l) => l.who === "ham")).toHaveLength(1);
   });
 });
 
