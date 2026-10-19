@@ -9,9 +9,12 @@ import {
   HamActivity,
   REPLY_DELAY_MAX_MS,
   REPLY_DELAY_MIN_MS,
+  RESUME_CQ_DELAY_MAX_MS,
+  RESUME_CQ_DELAY_MIN_MS,
   answerCqDelayMs,
   nextCqDelayMs,
   replyDelayMs,
+  resumeCqDelayMs,
   targetHamCount,
 } from "./activity.js";
 
@@ -61,6 +64,11 @@ describe("延迟与数量区间（VIRTUAL-HAM.md）", () => {
   it("频段活跃数量 12–18 个", () => {
     expect(targetHamCount(low)).toBe(12);
     expect(targetHamCount(high)).toBe(18);
+  });
+
+  it("通联结束后的重呼延迟 2–6 秒", () => {
+    expect(resumeCqDelayMs(low)).toBe(RESUME_CQ_DELAY_MIN_MS);
+    expect(resumeCqDelayMs(high)).toBe(RESUME_CQ_DELAY_MAX_MS);
   });
 
   it("越界的注入随机源也不会超出区间（钳制生效）", () => {
@@ -120,6 +128,27 @@ describe("自主发 CQ", () => {
     // 之后回到规格区间
     act.advance(5_000);
     expect(act.list()[0].nextCqAt).toBe(5_000 + CQ_INTERVAL_MIN_MS);
+  });
+
+  it("通联签完 73 后，原来那个呼叫方几秒内重新呼叫", () => {
+    const ham = hamOf("JA1ABC");
+    const { act, advanceTo } = manual();
+    act.add(ham, 30_000);
+    advanceTo(30_000); // 第一次 CQ
+    act.markInQso("JA1ABC"); // 有人应答，进入通联
+    expect(act.list()[0].state).toBe("inQso");
+
+    advanceTo(40_000);
+    act.resumeCq("JA1ABC");
+    expect(act.list()[0].state).toBe("listening");
+    expect(act.list()[0].nextCqAt).toBe(40_000 + RESUME_CQ_DELAY_MIN_MS);
+
+    expect(advanceTo(40_000 + RESUME_CQ_DELAY_MIN_MS - 1)).toEqual([]);
+    const resumedAt = 40_000 + RESUME_CQ_DELAY_MIN_MS;
+    expect(advanceTo(resumedAt)).toEqual([{ type: "cq", ham }]);
+    // 放弃计时从这一次重新起算，不继承通联之前的那一次
+    expect(act.list()[0].state).toBe("cqing");
+    expect(act.list()[0].cqSince).toBe(resumedAt);
   });
 
   it("时钟不回退：推进到过去不产生事件", () => {

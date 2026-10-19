@@ -23,6 +23,13 @@ export const CQ_INTERVAL_MAX_MS = 60_000;
 /** Continuous silence after a CQ before the HAM gives up (3 min). */
 export const GIVE_UP_MS = 180_000;
 /**
+ * How long a station waits before calling CQ again after signing off a QSO
+ * (2–6 s). It has just said 73; a real operator clears the key, listens for a
+ * moment, then starts calling again.
+ */
+export const RESUME_CQ_DELAY_MIN_MS = 2_000;
+export const RESUME_CQ_DELAY_MAX_MS = 6_000;
+/**
  * Number of HAMs kept active on one band.
  *
  * A real CW band segment is busy, and — this is the point — wider than any one
@@ -69,6 +76,11 @@ function randInt(min: number, max: number, rng: () => number): number {
 /** Interval until the next CQ (30–60 s). */
 export function nextCqDelayMs(rng: () => number = Math.random): number {
   return randInt(CQ_INTERVAL_MIN_MS, CQ_INTERVAL_MAX_MS, rng);
+}
+
+/** Pause before a station that just finished a QSO calls CQ again (2–6 s). */
+export function resumeCqDelayMs(rng: () => number = Math.random): number {
+  return randInt(RESUME_CQ_DELAY_MIN_MS, RESUME_CQ_DELAY_MAX_MS, rng);
 }
 
 /** How long a HAM takes to answer the user's CQ (1–5 s). */
@@ -193,6 +205,22 @@ export class HamActivity {
     r.inQso = false;
     r.cqSince = null;
     r.nextCqAt = this.now() + nextCqDelayMs(this.rng);
+  }
+
+  /**
+   * A station just finished a QSO and goes back to calling CQ — the way a real
+   * operator does after signing off: a short pause, then "CQ CQ CQ" again.
+   *
+   * Distinct from `markListening`, which leaves it quiet for the normal 30–60 s
+   * interval. The resumed CQ also restarts the 3-minute give-up window, so a
+   * station that has just been heard is not dropped right after.
+   */
+  resumeCq(call: string, delayMs?: number): void {
+    const r = this.records.get(call);
+    if (!r) return;
+    r.inQso = false;
+    r.cqSince = null;
+    r.nextCqAt = this.now() + (delayMs ?? resumeCqDelayMs(this.rng));
   }
 
   /**

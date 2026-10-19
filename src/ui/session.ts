@@ -534,10 +534,6 @@ export class QsoSession {
   async userCallsCq(): Promise<void> {
     if (this.sending) return;
     if (!this.receiving) return; // cannot transmit with the rig off
-    // Two stations are working each other on this frequency. We cannot see that
-    // — nobody can — but we are about to key on top of them, so they stand by
-    // (one audio channel: see `yieldHamQso`). The operator is told nothing.
-    this.yieldHamQso();
     this.sending = true;
     try {
       this.stopAudio(); // cut any ambient HAM CQ before the user's own call
@@ -877,7 +873,12 @@ export class QsoSession {
     };
   }
 
-  /** Both stations sign off: the answerer returns to its own frequency. */
+  /**
+   * Both stations sign off: the answerer returns to its own frequency, and the
+   * one that opened with CQ starts calling again a few seconds later — it has
+   * just said 73, so that is what the band does next, and it is the operator's
+   * chance to answer.
+   */
   private endHamQso(): void {
     const q = this.hamQso;
     if (!q) return;
@@ -895,24 +896,22 @@ export class QsoSession {
         .some((h) => h.call !== q.b.call && h.freqHz === q.bHomeHz);
       const back = homeTaken ? this.freq.freeSlotHz(this.rng) : q.bHomeHz;
       if (back !== null) this.freq.moveHam(q.b.call, back);
+      this.freq.markListening(q.b.call);
     }
-    for (const ham of [q.a, q.b]) {
-      if (onBand.has(ham.call)) this.freq.markListening(ham.call);
-    }
+    // The caller does not go quiet: it clears the key for a moment and calls CQ
+    // again. Resuming is what makes the frequency worth tuning to afterwards.
+    if (onBand.has(q.a.call)) this.freq.resumeCq(q.a.call);
   }
 
   /**
-   * The operator is about to key on the frequency a background pair is using.
-   * They stand by and the exchange is dropped rather than resumed later: the
-   * operator now has the frequency, and with one audio channel two transmitters
-   * would only cut each other off. Nothing about this is reported — as far as
-   * the operator is concerned they simply called CQ and got their own answers.
+   * True when a background pair is working each other on the dial frequency,
+   * i.e. the operator can hear the exchange. Whether they are actually there is
+   * never reported — this is only used to decide what *happens*, not what is
+   * shown: a CQ keyed on top of an exchange in progress is simply not answered.
    */
-  private yieldHamQso(): void {
+  private hamQsoAudible(): boolean {
     const q = this.hamQso;
-    if (!q) return;
-    if (!inPassband(q.freqHz, this.dialHz, this.passbandHz)) return;
-    this.endHamQso();
+    return q !== null && inPassband(q.freqHz, this.dialHz, this.passbandHz);
   }
 
   /**
@@ -964,6 +963,15 @@ export class QsoSession {
    * marked in-QSO so its own CQ rhythm stops for the duration.
    */
   private formPileup(): PileupCaller[] {
+    // Two stations are already working each other here. A CQ keyed on top of an
+    // exchange gets no reply — nobody walks out of a QSO to answer a stranger
+    // who starts calling on the same frequency — so no caller is conjured. The
+    // operator hears their own CQ and then silence, which is exactly what the
+    // frequency sounds like from the outside; nothing is explained.
+    if (this.hamQsoAudible()) {
+      this.pileup = null;
+      return [];
+    }
     const size = pileupSize(this.rng);
     const busy = new Set(
       this.freq
@@ -984,7 +992,7 @@ export class QsoSession {
       callers.push({ ham, spawned: true, nextCallAt: 0, calls: 0 });
       this.freq.markInQso(ham.call);
     }
-    this.pileup = callers;
+    this.pileup = callers.length > 0 ? callers : null;
     return callers;
   }
 

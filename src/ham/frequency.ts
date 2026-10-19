@@ -199,6 +199,11 @@ export class Frequency {
     this.activity.markListening(call);
   }
 
+  /** The QSO ended and this station was the one calling CQ: call again shortly. */
+  resumeCq(call: string, delayMs?: number): void {
+    this.activity.resumeCq(call, delayMs);
+  }
+
   /** Take a HAM off the frequency entirely. */
   removeHam(call: string): void {
     this.activity.remove(call);
