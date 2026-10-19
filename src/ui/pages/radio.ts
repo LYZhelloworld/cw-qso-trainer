@@ -120,15 +120,51 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   signalRow.append(el("span", { class: "hint", text: "信号强度" }), signal);
 
   const activity = el("div", { class: "col" });
+  // Two stations working each other: worth a line of its own, because it is the
+  // one thing on the band the operator can listen to but never join.
+  const xq = host.session.hamQsoInfo();
+  if (xq) {
+    const row = el("div", { class: "row" });
+    row.append(el("span", { text: `${xq.a.call} ↔ ${xq.b.call}` }));
+    row.append(el("span", { class: "badge", text: "互相通联" }));
+    row.append(
+      el("span", {
+        class: "hint",
+        text: `${(xq.freqHz / 1e6).toFixed(4)} MHz${xq.audible ? " · 正在旁听（不可插话）" : ""}`,
+      }),
+    );
+    if (!xq.audible) {
+      row.append(
+        button(
+          "调过去旁听",
+          () =>
+            host.updateSettings({
+              freqMHz: roundFreq(clampToBand(xq.freqHz / 1e6, band)),
+            }),
+          "btn small",
+        ),
+      );
+    }
+    activity.append(row);
+  }
   if (roster.length === 0) {
     activity.append(el("div", { class: "hint", text: "当前频率没有活动" }));
   } else {
     for (const entry of roster) {
       const detune = detuneHz(entry.ham.freqHz, dialHz);
       const heard = inPassband(entry.ham.freqHz, dialHz, passbandHz);
+      // A station in a background exchange is not "in a QSO" with the
+      // operator — say who it is actually working, or the badge reads as if
+      // the operator were the partner.
+      const partner = host.session.hamQsoPartnerOf(entry.ham.call);
       const line = el("div", { class: "row" });
       line.append(el("span", { text: entry.ham.call }));
-      line.append(el("span", { class: "badge", text: ACTIVITY_LABEL[entry.state] ?? entry.state }));
+      line.append(
+        el("span", {
+          class: "badge",
+          text: partner ? `与 ${partner} 通联` : (ACTIVITY_LABEL[entry.state] ?? entry.state),
+        }),
+      );
       line.append(
         el("span", {
           class: "hint",
@@ -169,12 +205,14 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   const actions = el("div", { class: "row" });
   const listenBtn = button("监听：等 HAM 发 CQ", listen, "btn primary");
   listenBtn.disabled = nearest === null;
-  actions.append(
-    listenBtn,
-    button("我发 CQ", () => {
-      void host.session.userCallsCq().then(() => host.refresh());
-    }),
-  );
+  // Calling CQ on top of two stations already working each other is refused —
+  // disable the button instead of letting the click do nothing.
+  const occupied = host.session.hamQsoInfo()?.audible ? host.session.hamQsoInfo() : null;
+  const callBtn = button("我发 CQ", () => {
+    void host.session.userCallsCq().then(() => host.refresh());
+  });
+  if (occupied) callBtn.disabled = true;
+  actions.append(listenBtn, callBtn);
 
   const start = el("div", { class: "col" });
   start.append(actions);
@@ -183,6 +221,13 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     warn.append(document.createTextNode("请先填写本方呼号："));
     warn.append(button("打开设置", () => host.openSettings?.(), "btn small"));
     start.append(warn);
+  } else if (occupied) {
+    start.append(
+      el("div", {
+        class: "hint tone-off",
+        text: `${occupied.a.call} 与 ${occupied.b.call} 正在这个频率上通联，频率被占用——调开一些再呼叫（你也可以留着旁听）。`,
+      }),
+    );
   } else if (nearest === null) {
     start.append(el("div", { class: "hint", text: "这个波段上暂时没有电台，稍等一会儿再看看。" }));
   } else if (host.session.heardActiveHam() !== null) {

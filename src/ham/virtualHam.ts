@@ -44,7 +44,12 @@ export class VirtualHam {
   readonly difficulty: Difficulty;
   readonly missProbability: number;
   readonly report: string;
-  readonly freqHz: number;
+  /**
+   * Mutable on purpose: a station retunes onto another's frequency to answer its
+   * CQ (see `Frequency.moveHam`), which is how a HAM-to-HAM exchange ends up
+   * co-channel.
+   */
+  freqHz: number;
   readonly strength: number;
 
   constructor(opts: VirtualHamOptions) {

@@ -25,6 +25,13 @@ import {
   type PileupCaller,
 } from "../ham/pileup.js";
 import {
+  hamQsoGapMs,
+  hamQsoIntervalMs,
+  hamQsoScript,
+  pickHamQsoPair,
+  type HamQsoLine,
+} from "../ham/hamQso.js";
+import {
   audibleToneHz,
   detuneHz,
   inPassband,
@@ -59,6 +66,33 @@ export type Speaker = "me" | "ham" | "sys";
 export interface TranscriptLine {
   who: Speaker;
   text: string;
+}
+
+/** What the operator can see of a HAM-to-HAM exchange on this band. */
+export interface HamQsoView {
+  a: VirtualHam;
+  b: VirtualHam;
+  /** The frequency both are on (the caller's slot). */
+  freqHz: number;
+  /** True when the dial is inside that frequency's passband (i.e. audible). */
+  audible: boolean;
+}
+
+/**
+ * A background HAM-to-HAM exchange in progress (see `ham/hamQso`). Distinct
+ * from `machine`, which represents *the operator's* QSO.
+ */
+interface HamQsoExchange {
+  a: VirtualHam;
+  b: VirtualHam;
+  freqHz: number;
+  /** Where B sat before it tuned onto A — restored when the exchange ends. */
+  bHomeHz: number;
+  script: HamQsoLine[];
+  /** Index of the next over to send. */
+  index: number;
+  /** When that over is due, in ms. */
+  nextAt: number;
 }
 
 /** Fallback callsign used for weighted HAM generation before the user sets one. */
@@ -150,6 +184,13 @@ export class QsoSession {
    * no `machine` and no partner — only a handful of stations calling back.
    */
   private pileup: PileupCaller[] | null = null;
+  /**
+   * Two stations working each other on this band (see `ham/hamQso`). Purely
+   * environmental: the operator can tune in and listen but never breaks in.
+   */
+  private hamQso: HamQsoExchange | null = null;
+  /** When to look for the next background exchange (0 = not scheduled yet). */
+  private nextHamQsoAt = 0;
   /**
    * Per-call "keying until" timestamps (ms) for the waterfall. A pile-up caller
    * is a transmitter only while its call is actually being played; derived from
@@ -248,8 +289,20 @@ export class QsoSession {
   spectrum(): SpectrumSnapshot {
     const states = new Map(this.freq.activityState().map((e) => [e.ham.call, e.state]));
     const now = this.now();
+    const pair = this.hamQso;
     const signals: SpectrumSignal[] = [];
     for (const ham of this.freq.listHams()) {
+      // A background exchange is co-channel: both stations share one frequency,
+      // so draw it once (as the caller) instead of stacking two blobs on one
+      // column. The column lights while either of them is keying.
+      if (pair && ham.call === pair.b.call) continue;
+      const keying =
+        pair && ham.call === pair.a.call
+          ? Math.max(
+              this.keyingUntil.get(pair.a.call) ?? 0,
+              this.keyingUntil.get(pair.b.call) ?? 0,
+            )
+          : (this.keyingUntil.get(ham.call) ?? 0);
       signals.push({
         freqHz: ham.freqHz,
         strength: ham.strength,
@@ -257,10 +310,9 @@ export class QsoSession {
         workable: true,
         // Only a station that is *calling* is keying. One already in a QSO with
         // us is mostly listening, so it renders as a steady carrier instead.
-        // A pile-up caller keys only while its own call is being played.
-        active:
-          states.get(ham.call) === "cqing" ||
-          (this.keyingUntil.get(ham.call) ?? 0) > now,
+        // A pile-up caller or a background exchange keys only while its own
+        // overs are actually being played.
+        active: states.get(ham.call) === "cqing" || keying > now,
       });
     }
     for (const bg of this.backgroundSignals()) signals.push(bg);
@@ -376,6 +428,36 @@ export class QsoSession {
     return this.pileup?.some((c) => c.ham.call === call) ?? false;
   }
 
+  /**
+   * The HAM-to-HAM exchange running on this band, if any. The operator can tune
+   * onto it and listen, but it is not their QSO: neither station will answer
+   * them, and transmitting on that frequency is refused (it is occupied).
+   */
+  hamQsoInfo(): HamQsoView | null {
+    const q = this.hamQso;
+    if (!q) return null;
+    return {
+      a: q.a,
+      b: q.b,
+      freqHz: q.freqHz,
+      audible: inPassband(q.freqHz, this.dialHz, this.passbandHz),
+    };
+  }
+
+  /** True when this station is one of the two working each other. */
+  isHamQsoStation(call: string): boolean {
+    return this.hamQso !== null && (this.hamQso.a.call === call || this.hamQso.b.call === call);
+  }
+
+  /** The other half of a background exchange, for the activity list. */
+  hamQsoPartnerOf(call: string): string | null {
+    const q = this.hamQso;
+    if (!q) return null;
+    if (q.a.call === call) return q.b.call;
+    if (q.b.call === call) return q.a.call;
+    return null;
+  }
+
   get playbackAvailable(): boolean {
     return this.engine.playbackAvailable;
   }
@@ -486,6 +568,14 @@ export class QsoSession {
   async userCallsCq(): Promise<void> {
     if (this.sending) return;
     if (!this.receiving) return; // cannot transmit with the rig off
+    // The frequency is taken: two stations are working each other right here.
+    // Calling CQ on top of them is what a real operator would not do — tune
+    // away first (the radio page disables the button and says why).
+    const occupied = this.hamQsoInfo();
+    if (occupied?.audible) {
+      this.note(`${occupied.a.call} 与 ${occupied.b.call} 正在这个频率上通联，换开再呼叫`);
+      return;
+    }
     this.sending = true;
     try {
       this.stopAudio(); // cut any ambient HAM CQ before the user's own call
@@ -528,7 +618,15 @@ export class QsoSession {
     if (this.pileup !== null) return this.answerPileup(line);
 
     const machine = this.machine;
-    if (!machine) return;
+    if (!machine) {
+      // Nothing of ours to send on. If a background exchange is holding this
+      // frequency, say why the key does nothing.
+      const busy = this.hamQsoInfo();
+      if (busy?.audible) {
+        this.note(`${busy.a.call} 与 ${busy.b.call} 正在这个频率上通联，无法插话`);
+      }
+      return;
+    }
     this.sending = true;
     try {
       this.stopAudio(); // break in: cut any HAM still calling CQ
@@ -742,6 +840,111 @@ export class QsoSession {
     const events = this.freq.advance();
     if (events.length > 0) this.handleActivity(events);
     this.drivePileup();
+    this.driveHamQso();
+  }
+
+  /**
+   * Advance (or occasionally start) a background HAM-to-HAM exchange.
+   *
+   * The pair runs its own script on the clock: one over at a time, at the
+   * operator's keying speed, with a short gap between overs. It keeps running
+   * whether or not the operator is listening — this is the band's own life, not
+   * part of their QSO. Audio is only rendered when the receiver is on *and* the
+   * dial is on that frequency, which `playHam` already enforces.
+   */
+  private driveHamQso(): void {
+    const now = this.now();
+    const q = this.hamQso;
+    if (!q) {
+      if (this.nextHamQsoAt === 0) this.nextHamQsoAt = now + hamQsoIntervalMs(this.rng);
+      if (now < this.nextHamQsoAt) return;
+      // Schedule the next attempt first, so a band with nobody free simply
+      // tries again later instead of re-rolling on every tick.
+      this.nextHamQsoAt = now + hamQsoIntervalMs(this.rng);
+      this.startHamQso(now);
+      return;
+    }
+    if (now < q.nextAt) return;
+    // The operator's key is on the air: both stations stand by rather than
+    // stepping on a transmission they can hear.
+    if (this.sending) return;
+
+    if (q.index >= q.script.length) {
+      this.endHamQso();
+      return;
+    }
+
+    const line = q.script[q.index];
+    const speaker = line.from === "a" ? q.a : q.b;
+    const duration = this.callDurationMs(line.text);
+    q.index += 1;
+    q.nextAt = now + duration + hamQsoGapMs(this.rng);
+    // Only the station that is actually sending is keying; the waterfall's
+    // column (they share one) lights while either of them is on the air.
+    this.keyingUntil.set(speaker.call, now + duration);
+    if (this.receiving) {
+      void this.playHam(line.text, speaker).then(() => {
+        this.keyingUntil.delete(speaker.call);
+      });
+    }
+  }
+
+  /**
+   * Two idle stations start working each other. One tunes onto the other's
+   * frequency, which is what makes the exchange co-channel — and therefore
+   * something the operator can listen to on a single dial setting.
+   *
+   * Skipped while the operator has a QSO or a pile-up of their own: their
+   * exchange takes precedence, and with one audio channel the two would only
+   * cut each other off.
+   */
+  private startHamQso(now: number): void {
+    if (this.inQso || this.sending) return;
+    const pair = pickHamQsoPair(this.freq.activityState(), this.rng);
+    if (!pair) return;
+    const [a, b] = pair;
+    const bHomeHz = b.freqHz;
+
+    this.freq.markInQso(a.call);
+    this.freq.markInQso(b.call);
+    this.freq.moveHam(b.call, a.freqHz);
+
+    this.hamQso = {
+      a,
+      b,
+      freqHz: a.freqHz,
+      bHomeHz,
+      script: hamQsoScript(a.call, b.call),
+      index: 0,
+      nextAt: now,
+    };
+    // The activity list gains a "these two are working each other" line.
+    this.activityListener?.([]);
+  }
+
+  /** Both stations sign off: the answerer returns to its own frequency. */
+  private endHamQso(): void {
+    const q = this.hamQso;
+    if (!q) return;
+    this.hamQso = null;
+    this.keyingUntil.delete(q.a.call);
+    this.keyingUntil.delete(q.b.call);
+
+    const onBand = new Set(this.freq.listHams().map((h) => h.call));
+    if (onBand.has(q.b.call)) {
+      // Put B back where it came from so the band does not end up with two
+      // stations sharing one passband. If its old slot was taken meanwhile,
+      // park it in any free slot.
+      const homeTaken = this.freq
+        .listHams()
+        .some((h) => h.call !== q.b.call && h.freqHz === q.bHomeHz);
+      const back = homeTaken ? this.freq.freeSlotHz(this.rng) : q.bHomeHz;
+      if (back !== null) this.freq.moveHam(q.b.call, back);
+    }
+    for (const ham of [q.a, q.b]) {
+      if (onBand.has(ham.call)) this.freq.markListening(ham.call);
+    }
+    this.activityListener?.([]);
   }
 
   /**

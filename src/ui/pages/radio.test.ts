@@ -26,6 +26,8 @@ function makeHost(overrides: Partial<AppSettings> = {}, powered = true) {
       userCallsCq: async () => {},
       heardActiveHam: () => null,
       nearestWorkableHam: () => null,
+      hamQsoInfo: () => null,
+      hamQsoPartnerOf: () => null,
     } as unknown as QsoSession,
     powered,
     setPower(on: boolean) {
@@ -217,6 +219,8 @@ describe("电台页 — 波段活动与通联", () => {
       userCallsCq: async () => {},
       heardActiveHam: () => null, // 还没对准
       nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
+      hamQsoInfo: () => null,
+      hamQsoPartnerOf: () => null,
     } as unknown as QsoSession;
     host.refresh();
 
@@ -238,10 +242,69 @@ describe("电台页 — 波段活动与通联", () => {
       userCallsCq: async () => {},
       heardActiveHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
       nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
+      hamQsoInfo: () => null,
+      hamQsoPartnerOf: () => null,
     } as unknown as QsoSession;
     host.refresh();
 
     expect(root.textContent).toContain("拨轮已经对准了一个信号");
+  });
+
+  it("有后台互连通联时列出这一对，并禁止在同一频率发 CQ", () => {
+    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    host.session = {
+      inQso: false,
+      dialHz: 14_031_000,
+      passbandHz: 500,
+      passbandHalfHz: 250,
+      listHams: () => [],
+      hamActivity: () => [],
+      hamCallsCq: async () => true,
+      userCallsCq: async () => {},
+      heardActiveHam: () => null,
+      nearestWorkableHam: () => null,
+      hamQsoInfo: () => ({
+        a: { call: "JA1ABC" },
+        b: { call: "BG7ZZZ" },
+        freqHz: 14_031_000,
+        audible: true,
+      }),
+      hamQsoPartnerOf: () => null,
+    } as unknown as QsoSession;
+    host.refresh();
+
+    expect(root.textContent).toContain("JA1ABC ↔ BG7ZZZ");
+    expect(root.textContent).toContain("正在旁听（不可插话）");
+    expect(root.textContent).toContain("频率被占用");
+    expect(findButton(root, "我发 CQ").disabled).toBe(true);
+  });
+
+  it("不在这个频率时提供「调过去旁听」，并说明那一对的频率", () => {
+    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    host.session = {
+      inQso: false,
+      dialHz: 14_031_000,
+      passbandHz: 500,
+      passbandHalfHz: 250,
+      listHams: () => [],
+      hamActivity: () => [],
+      hamCallsCq: async () => true,
+      userCallsCq: async () => {},
+      heardActiveHam: () => null,
+      nearestWorkableHam: () => null,
+      hamQsoInfo: () => ({
+        a: { call: "JA1ABC" },
+        b: { call: "BG7ZZZ" },
+        freqHz: 14_036_000,
+        audible: false,
+      }),
+      hamQsoPartnerOf: () => null,
+    } as unknown as QsoSession;
+    host.refresh();
+
+    expect(root.textContent).toContain("14.0360 MHz");
+    findButton(root, "调过去旁听").click();
+    expect(host.settings.freqMHz).toBe(14.036);
   });
 
   it("通联进行中时显示通联面板，而不是「开始通联」", async () => {

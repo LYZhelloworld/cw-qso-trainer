@@ -116,7 +116,7 @@ export class Frequency {
    * when the band is genuinely full. Picks among the free slots at random so a
    * crowded band still spreads its stations out.
    */
-  private freeSlotHz(rng: () => number): number | null {
+  freeSlotHz(rng: () => number = Math.random): number | null {
     const base = snapToGrid(this.referenceHz);
     const taken = new Set(this.activity.list().map((e) => e.ham.freqHz));
     const free: number[] = [];
@@ -202,6 +202,16 @@ export class Frequency {
   /** Take a HAM off the frequency entirely. */
   removeHam(call: string): void {
     this.activity.remove(call);
+  }
+
+  /**
+   * Retune a station that is already on the band. Used when one station answers
+   * another's CQ: it moves onto the caller's frequency, so the exchange is
+   * co-channel and the operator can hear both sides on one dial setting.
+   */
+  moveHam(call: string, hz: number): void {
+    const entry = this.activity.list().find((e) => e.ham.call === call);
+    if (entry) entry.ham.freqHz = snapToGrid(hz);
   }
 }
 

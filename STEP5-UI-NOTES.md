@@ -167,6 +167,23 @@ v2 首版把关台实现成了「停调度器 + 停音频 + 清空当前波段�
 
 ---
 
+## Prototype v3.6：HAM 互相通联（2026-10-19，分支 `feat/ui-v2`）
+
+四项功能队列的第 ② 项。口径此前已定：**随机发生、两台同频、用户不可插话**，且波段要 ≥3 台（两台互连 + 至少留一台给操作者）。
+
+- **纯逻辑（`src/ham/hamQso.ts`）**：`hamQsoScript(a, b)` 返回标准 6 行（CQ → 应答 → RST → RST → 73 → 73）；`hamQsoIntervalMs`（30–90 s）、`hamQsoGapMs`（0.6–1.6 s）；`pickHamQsoPair` 只从**非通联中**的台里挑，并且**优先挑正在呼叫 CQ 的那台**当呼叫方——这正是现实里「有人应了正在发的 CQ」。`HAM_QSO_MIN_STATIONS = 3`。
+- **为什么不用 `QsoMachine`**：状态机的价值在于解释**操作者输入**（抄错、省略呼号、重发），而两台虚拟台没有输入可解释。脚本更短、更可测，也不会污染操作者自己的 `machine`。
+- **会话（`src/ui/session.ts`）**：`hamQso` 状态 + `driveHamQso()`（每 tick 按 `now` 推进一行）、`startHamQso()` / `endHamQso()`。应答方通过新增的 `Frequency.moveHam()` **调到呼叫方频率**，结束后**回到原频点**（原位被占则落到空槽）。`VirtualHam.freqHz` 因此由 `readonly` 改为可变。
+- **不可插话**：两台标记 `inQso`，自然被排除在 `heardActiveHam` / `nearestWorkableHam` 之外；`userCallsCq` 在频率被占时直接拒绝并记一条说明；电台页的「我发 CQ」按钮**置灰**。
+- **可发现**：电台页活动列表单独一行 `A ↔ B · 频率 · 调过去旁听`，两台徽标写「与 X 通联」；瀑布图 `spectrum()` 对这对台**只画一根亮柱**（同频），键控窗口取两者较晚者；`app.ts` 的瀑布标签/右上角改为「A 与 B 正在通联 · 只能旁听」。
+- **不插入的场合**：操作者自己有通联或堆叠时不启动（单声道音频会互相切断）；关台/在别的波段时照常推进，只是听不到。
+
+涉及文件：新增 `src/ham/hamQso.ts`(+test)、`src/ui/session.hamQso.test.ts`；改 `src/ham/virtualHam.ts`、`src/ham/frequency.ts`、`src/ui/session.ts`、`src/ui/pages/radio.ts`(+test)、`src/ui/app.ts`；文档 `doc/VIRTUAL-HAM.md`、`doc/QSO-PROTOCOL.md`、`doc/UI.md`、`doc/ROADMAP.md`。
+
+验证：`tsc` 0 错；`vite build` 通过（42 模块，JS 109.79 kB / CSS 7.87 kB）；**全套 415 例通过**（38 文件，较 v3.5 的 398 例 +17）。
+
+---
+
 ## 技术选型
 
 **原生 TypeScript + Vite，零运行时依赖。**
@@ -228,7 +245,8 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 
 - `tsc --noEmit`：**0 错误**
 - `vite build`：**通过**（42 模块，JS 105.94 kB / CSS 7.87 kB；测试依赖 jsdom / fake-indexeddb 不进生产包）
-- 测试：**全套 398 例通过**（36 个文件）
+- 测试：**全套 415 例通过**（38 个文件）
+  - Prototype v3.6 HAM 互相通联 **17 例**：纯逻辑 `src/ham/hamQso.test.ts` 8 例（6 行脚本的内容与交替顺序、30–90 s / 0.6–1.6 s 区间与越界钳制、至少 3 台、优先挑正在呼叫的台、只从非通联台里挑、永远选中两个不同台）；会话 `src/ui/session.hamQso.test.ts` 6 例（自己出现且两台同频、**调过去能听到完整 6 行且顺序正确**、在占用频率发 CQ 被拒、两台不被当成可通联对象、结束后回到守听且应答方回到原频点、操作者已在通联时不插入）；电台页 `src/ui/pages/radio.test.ts` 2 例（列出 `A ↔ B` 并禁用「我发 CQ」、不在该频率时提供「调过去旁听」）
   - Prototype v3.5 波段密度 **3 例**：`src/ham/activity.test.ts` 区间改为 5–9（含越界钳制）、`src/ham/ham.test.ts` 1 例（连摆 12 台仍各自独占一个 1 kHz 槽位）、`src/ui/session.activity.test.ts` 2 例（默认播种得到 5–9 台且频率不重复；**显式设 3 台后补位仍回到 3 台**）
   - Prototype v3.3 边带切换 / 可调带宽 **15 例**：`src/ham/tuning.test.ts` 新增 5 例（`resolveSideband` 跟随波段或固定、模式标签 `CW-L` / `CW-U` 与 `otherSideband`、`PASSBAND_OPTIONS` 与 `normalisePassband` 回落、`inPassband` 自定义带宽边界 ±带宽/2、通带越窄越先静默）；`src/ui/settingsSchema.test.ts` 2 例（`cwSideband` 保留 LSB/USB 其余回落 auto、`passbandHz` 只接受 500/250/100）；`src/ui/session.tuning.test.ts` 4 例（20m 上固定 LSB → 音调方向反转、40m 上固定 USB → 反向、250 Hz 时偏 200 Hz 即听不到、100 Hz 时只有 ±50 Hz 内收得到）；`src/ui/app.test.ts` 新增/改写 3 例（模式标签随波段显示 CW-L / CW-U、**点击标签切换并固定**、**瀑布通带标记宽度跟随带宽** 2.5% → 0.5%）；`src/ui/pages/settingsPage.test.ts` 2 例（CW 边带与接收滤波带宽两个下拉的默认值、选项与提交）
   - Prototype v3.2 CW 通带 / 1 kHz 网格 **12 例**：`src/ham/tuning.test.ts` 新增 4 例（带宽 = 500 Hz / ±250 Hz 内外的 `inPassband` 分界 / `audibleToneHz` 通带内给音调、通带外给 null / **频率读数即载波频率**：PITCH 只决定侧音高低）、`src/ham/spectrum.test.ts` 1 例（`snapToGrid` 落到 1 kHz 格、装饰载波也在网格上）；`src/ui/session.tuning.test.ts` 重写为 12 例（通带内音调偏移 USB/LSB 方向、正对频回设定值、**通带边缘外 1 Hz 即静默**、**通联中调走 1 kHz 声音直接消失而不是变尖**、通带外的台不接入会话且一点声音都不播、空通带不会被自动选中、用户自己发报不受影响）；`src/ui/pages/radio.test.ts` 新增 5 例（**±100 Hz 微调**、通带与网格说明文案、活动列表标出通带内外、空波段「监听」置灰、有台时「监听」**自动把拨轮扫过去**、已对准时不扫描）；`src/ui/pages/cw.test.ts` 1 例（调出通带后状态行明说"已在通带之外"）
@@ -252,7 +270,7 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 1. ~~**刷新页面等于进行中的通联全部作废。**~~ **已解决（2026-10-14）**：`QsoMachine` 新增 `snapshot()` / `applySnapshot()` / `fromSnapshot()`；新增 `src/ui/storage/qsoStaging.ts` 把进行中的 QSO（状态机 + 对方 HAM + 收发记录 + 草稿）暂存到 localStorage，`App` 构造时 `restoreStaging()` 恢复，通联完成（`LOGGED`/`FAILED`）、`reset`、换频时清理，避免已完成的 QSO 被复活；有 jsdom 单测覆盖「写入—刷新—恢复—继续到完成」。
 2. ~~**浏览器自动播放限制**：首次发声可能被浏览器拦截，需先有一次用户点击。~~ **已解决（2026-10-14）**：音频后端改为**惰性共享单一 AudioContext**，首次 `pointerdown` / `keydown` / `touchstart` 即 `resume()`（侧音自身的 context 早已如此处理），不再每次播放新建并关闭 context；Node / jsdom 下仍无 context、播放立即 resolve 且不抛不挂。
 3. ~~**iambic 键控未实现**，设置里的 A/B 模式是预留项，当前只有直键。~~ **已实现（2026-10-14）**：核心 `src/cw/keyer.ts`（Mode A/B、squeeze 点划记忆、自动 3d/7d 间隔），UI 侧设置页可切「直键 / iambic」并绑定点划键位，CW 页支持双桨输入与空格分词。**侧音已实现（2026-10-14）**：`src/audio/sidetone.ts`，直键跟随按键、iambic 跟随元素起止，可在设置页开关与调音量（默认开、40%）。
-4. **HAM 之间互相通联仍是占位**（`planHamToHam`），未实现。**2026-10-14 明确暂缓，不排期。**
+4. ~~**HAM 之间互相通联仍是占位**（`planHamToHam`）。~~ **已实现（2026-10-19）**：`src/ham/hamQso.ts` + `QsoSession` 调度。波段 ≥3 台时随机发生、两台同频、按操作者速度播标准 6 行；用户只能旁听，不能插话（活动列表列出这一对并提供「调过去旁听」）。`planHamToHam` 作为类型占位保留，不再代表「未实现」。
 5. ~~**HAM 不会自主定时发 CQ**：频率页是「点按钮触发」。~~ **已实现（2026-10-14）**：核心 `src/ham/activity.ts` —— CQ 间隔 30–60 s 随机、无人应答时反复重呼、连续 3 分钟无应答下线、频段维持 **5–9** 个活跃；时钟与随机源全部注入、模块内无定时器，故 3 分钟的下线判定可在毫秒内测完。会话层 `QsoSession` 以 1 s 驱动循环推进它，应答延迟 1–5 s、回复延迟 1–3 s（取代原先硬编码的 1200 ms）。频率页显示各台状态（守听 / 呼叫 CQ 中 / 通联中）。**交互约束**：用户已在交换中时，频段上其他台的呼叫不会被接入，以免打断进行中的通联。
 6. **信号强度条**取**当前通带内**最强那台的强度（通带内没有台时为 0），不是真实传播模型；瀑布图上带外信号亮着但不会让 S 表起跳。
 7. ~~**lookahead 流式播放调度**未实现（ROADMAP 已列为延后），当前是一次性灌 BufferSource。~~ **已实现（2026-10-14）**：新增 `src/audio/player.ts` 的 `LookaheadPlayer`——整段渲染一次（保持 QRN/QSB 连续）后按音频时钟分块前瞻调度，返回 `PlaybackHandle{done, stop}`，`stop()` 可随时在元素边界打断；`CwAudioEngine` 改用共享 context + 该调度器。HAM 连续发 CQ 时，用户可**半途插话应答**，会话层 `hamCallsCq` 不再占用 `sending`（HAM CQ 改为非阻塞、后台播放），`userSend` / `userCallsCq` 起始调用 `engine.stop()` 切断环境 HAM 音频；`reset` / `dispose` 亦停音频。
@@ -270,7 +288,7 @@ src/ui/pages/{radio,cw,logPage,settingsPage,about}.ts
 
 ```bash
 npm run build      # 生产构建
-npm test           # 398 例测试（含 jsdom 下的 UI 交互，无需浏览器；canvas 画面本身测不到）
+npm test           # 415 例测试（含 jsdom 下的 UI 交互，无需浏览器；canvas 画面本身测不到）
 npm run typecheck  # 类型检查
 npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些只能人过一遍）
 ```
@@ -281,8 +299,10 @@ npm run dev        # 手动验收：发声 / 听感 / 视觉 / 手感（这些�
 **边带与带宽验收**（v3.3 新增）：① 点电台面板上的 `CW-U` / `CW-L` 标签，标签文本应当立刻翻转，**音调方向也随之翻转**（同一台、同一拨轮位置，L 与 U 下的音调一个变高一个变低）；切到别的波段后标签保持你选的那一侧。② 设置 → CW 接收 → 「CW 边带」选「自动」，标签应当重新跟随波段（20m → `CW-U`，40m → `CW-L`）。③ 把带宽依次调到 **250 / 100 Hz**：瀑布正中那层标记应当**明显变窄**，电台页的"接收通带 N Hz"与通联面板里的"±N Hz"数字同步变化；100 Hz 时只有用 ±1 kHz 精确压在某台上才听得到，稍微用 ±100 Hz 走开一格就静默。④ 无论如何切边带/带宽，**日志里那条记录的 MODE 都应当是 `CW`**。
 **堆叠验收**（v3.4 新增，人耳才能判断）：开台 → 点「我发 CQ」→ 应当**陆续**听到 2–3 个不同的呼号各报两遍（不是齐射，也不会互相切断），状态行出现「N 台同时应答」、发送区出现对应的「点名 XXX」按钮。① **不点名**，直接发 `R BK`：没有人回你，各台在 3–7 秒后继续重呼——这是对的；② **点名**其中一台（点按钮再发送）：被点的那台回 `R UR RST 599 BK`，其余台消失，状态变为「交换信息中」，随后按正常流程走到 73 SK 并存日志；③ 一直不点名：约半分钟后各台依次停止呼叫，界面回到「开始通联」。真实听感（尤其三台的声音是否容易分辨）只能人耳判断。
 
+**后台互连验收**（v3.6 新增）：开台后在电台页停一会儿，**「波段活动」里会出现一行 `A ↔ B · x.xxxx MHz`** 与「调过去旁听」按钮。点它把拨轮调过去：应当听到两台**交替**发报（先是 CQ，然后 `A DE B K`，再 `R UR RST 599 599 BK`……直到两声 `R TU 73 SK`），中间有半秒多的空档。此时：① 瀑布标签显示「A 与 B 正在通联 · 只能旁听」，右上角是 `A ↔ B`；② 活动列表里这两台的徽标是「与 X 通联」；③ **「我发 CQ」是灰的**，下方提示「频率被占用」——这就是不可插话。等它们 73 完，那一行消失，两台回到各自的频点与守听状态。
+
 同一流程已有一条自动化用例覆盖（`src/ui/pages/logPage.test.ts` 的「完整跑通一次 QSO」），所以手动验收应把注意力集中在**自动化测不到的部分**：CW 音调是否真的响、音色是否舒服、浏览器首次是否拦自动播放。
 
 ## Git 状态
 
-v1 内容已作为 PR #7（squash）合入 `master`。v2 / v2.1 / v3 / v3.1 / v3.2 / v3.3 / v3.4 / v3.5 的改动只在本地 `feat/ui-v2` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。
+v1 内容已作为 PR #7（squash）合入 `master`。v2 / v2.1 / v3 / v3.1 / v3.2 / v3.3 / v3.4 / v3.5 / v3.6 的改动只在本地 `feat/ui-v2` 分支，**未推送**（按约定推送在你本机/远程桌面用 GitHub Desktop 完成）。

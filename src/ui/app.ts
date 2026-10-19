@@ -445,6 +445,10 @@ export class App implements AppHost {
     // A pile-up is the one moment the label has something more useful to say
     // than "tune around": the operator has to pick a station by name.
     const pileup = this.powerOn ? this.session.pileupCallers() : [];
+    // Two other stations working each other on this frequency: audible, but
+    // not joinable. Worth saying, or the operator waits for an answer that
+    // will never come.
+    const exchange = this.powerOn ? this.session.hamQsoInfo() : null;
 
     // Powered down the band does not go quiet — the other stations keep calling.
     // Say so, so "standby" is never mistaken for "empty".
@@ -452,6 +456,8 @@ export class App implements AppHost {
       this.scopeLabel.textContent = "设备已关机 · 本波段其他电台仍在活动";
     } else if (pileup.length > 0) {
       this.scopeLabel.textContent = `${pileup.length} 台同时应答 · 回复时请点名`;
+    } else if (exchange?.audible) {
+      this.scopeLabel.textContent = `${exchange.a.call} 与 ${exchange.b.call} 正在通联 · 只能旁听`;
     } else if (audible.length === 0) {
       this.scopeLabel.textContent =
         roster.length > 0
@@ -463,6 +469,8 @@ export class App implements AppHost {
 
     if (pileup.length > 0) {
       this.scopeCall.textContent = `堆叠 ×${pileup.length}`;
+    } else if (exchange?.audible) {
+      this.scopeCall.textContent = `${exchange.a.call} ↔ ${exchange.b.call}`;
     } else {
       const cq = audible.find((e) => e.state === "cqing");
       this.scopeCall.textContent = cq ? `CQ ${cq.ham.call}` : "";
