@@ -3,6 +3,8 @@ import { Frequency } from "../ham/frequency.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
 import { CwAudioEngine, type AudioPlayer } from "../audio/engine.js";
+import { textToTiming } from "../cw/encode.js";
+import type { KeyElement } from "../cw/decoder.js";
 import {
   answerCqDelayMs,
   nextCqGapMs,
@@ -68,14 +70,21 @@ const FALLBACK_MY_CALL = "BG7XXX";
 
 /**
  * First CQ of a freshly spawned HAM. Deliberately shorter than the steady
- * 30–60 s rhythm of VIRTUAL-HAM.md so that a band the user just tuned to, or
- * one whose HAMs all gave up, does not sit silent for a minute.
+ * listening gap of VIRTUAL-HAM.md so that a band the user just tuned to does not
+ * sit silent for long.
  */
 const FIRST_CQ_MIN_MS = 5_000;
 const FIRST_CQ_MAX_MS = 20_000;
 
 /** How often the activity scheduler is driven. */
 const TICK_MS = 1_000;
+
+/**
+ * How long the receiver stays deaf after the operator's key goes up. Real
+ * half-duplex CW sends have a short tail: the operator's own changeover relay
+ * and their ears both need a moment before the band comes back.
+ */
+const TX_TAIL_MS = 1_500;
 
 export interface QsoSessionOptions {
   /** Injected RNG (tests): drives CQ intervals, answer delays and band size. */
@@ -158,6 +167,13 @@ export class QsoSession implements SessionContext {
     string,
     { text: string; startedAt: number; durationMs: number }
   >();
+  /**
+   * When each station's current transmission runs out (ms). Unlike `onAir`,
+   * which only tracks CQ bursts so the dial can join one mid-message, this
+   * records *any* transmission being played — replies included. The S-meter
+   * reads it: a station with nothing on the air produces no reading.
+   */
+  private readonly playingUntil = new Map<string, number>();
 
   private readonly clock: () => number;
   private readonly startTicking: (cb: () => void) => () => void;
@@ -176,6 +192,16 @@ export class QsoSession implements SessionContext {
 
   /** True while a transmission is in flight; guards against interleaved sends. */
   private sending = false;
+  /**
+   * True from the moment the operator's carrier goes on the air until the
+   * receiver opens again: a station cannot transmit and listen at once
+   * (half-duplex). While it is set, nothing is received, the spectrum shows
+   * only the operator's own signal, and the S-meter follows the key.
+   */
+  private transmitting = false;
+  /** Keying envelope of the current transmission, for the S-meter. */
+  private txTiming: KeyElement[] | null = null;
+  private txStartedAt = 0;
   /**
    * Whether the operator's receiver is open. Off = the rig is powered down.
    * Defaults to on so a session used on its own (tests, embedding) behaves like
@@ -326,8 +352,16 @@ export class QsoSession implements SessionContext {
     return this.sending;
   }
 
+  /**
+   * True while the operator's own carrier is (or was until a moment ago) on the
+   * air. Nothing can be received then: half-duplex means transmit **or** listen.
+   */
+  get isTransmitting(): boolean {
+    return this.transmitting;
+  }
+
   get isReceiving(): boolean {
-    return this.receiving;
+    return this.receiving && !this.transmitting;
   }
 
   get playbackAvailable(): boolean {
@@ -412,6 +446,23 @@ export class QsoSession implements SessionContext {
    * makes it drift across the display instead of moving with the dial.
    */
   spectrum(): SpectrumSnapshot {
+    // Half-duplex: while the operator's carrier is on, the only signal on the
+    // display is his own, at full strength. Everything being received is gone —
+    // a transmitter is not listening, so there is nothing else to show.
+    if (this.transmitting) {
+      return {
+        centerHz: this.dialHz,
+        signals: [
+          {
+            freqHz: this.dialHz,
+            strength: 1,
+            call: this.myCall(),
+            workable: false,
+            active: true,
+          },
+        ],
+      };
+    }
     const states = new Map(this.band.activityState().map((e) => [e.ham.call, e.state]));
     const now = this.clock();
     const signals: SpectrumSignal[] = [];
@@ -450,19 +501,29 @@ export class QsoSession implements SessionContext {
   }
 
   /**
-   * What the S-meter reads: the strongest signal the receiver is passing right
-   * now. Only stations on the slice the panadapter is showing can register, and
-   * only as far as the filter lets them through — one out on the skirt reads
-   * lower, one beyond it reads nothing at all. Each station carries its own
-   * slow QSB (see `ham/smeter`), so the needle keeps moving between CQ events
-   * rather than only when the band does something.
+   * What the S-meter reads: the strongest signal the receiver is hearing *right
+   * now*. Two things make that agree with the operator's ears:
    *
-   * `null` when nothing is coming through: there is no signal to point at.
+   *  - **Half-duplex.** While our own carrier is on, the meter reads our keying
+   *    instead of the band: full scale on a dot or dash, nothing in the gap
+   *    between them. Nothing is being received, so nothing else can register.
+   *  - **Silence is silence.** A received station only registers while one of
+   *    its transmissions is actually on the air (between CQ bursts it is
+   *    listening, not transmitting), so the needle drops when the sound stops.
+   *
+   * The filter and QSB apply as before: a station off the passband reads lower,
+   * and every signal breathes slowly on its own.
+   *
+   * `null` when there is nothing to hear: no sound, no reading.
    */
   sMeter(): SMeterReading | null {
     const at = this.clock();
+    if (this.transmitting) return this.txKeyedAt(at) ? smeterReading(1) : null;
+
     let best: SMeterReading | null = null;
-    for (const ham of this.band.listHams()) {
+    for (const ham of this.audibleStations()) {
+      // Nothing on the air from this one at this instant.
+      if ((this.playingUntil.get(ham.call) ?? 0) <= at) continue;
       if (!inSpectrumWindow(ham.freqHz, this.dialHz)) continue;
       const rx = this.audio.reception(ham);
       if (rx === null) continue;
@@ -475,6 +536,38 @@ export class QsoSession implements SessionContext {
       if (reading !== null && (best === null || reading.dbm > best.dbm)) best = reading;
     }
     return best;
+  }
+
+  /**
+   * Every station the receiver could be hearing: the band's callers, plus the
+   * answerers that only exist while they transmit (a pile-up, or the partner we
+   * drew out of the listening pool).
+   */
+  private audibleStations(): VirtualHam[] {
+    const all = [...this.band.listHams(), ...this.pileup.list()];
+    if (this.ham?.role === "answerer") all.push(this.ham);
+    const seen = new Set<string>();
+    return all.filter((h) => (seen.has(h.call) ? false : (seen.add(h.call), true)));
+  }
+
+  /** Is the operator's own key down at `at`? */
+  private txKeyedAt(at: number): boolean {
+    if (!this.txTiming) return false;
+    let t = at - this.txStartedAt;
+    if (t < 0) return false;
+    for (const e of this.txTiming) {
+      if (t < e.on) return true;
+      t -= e.on;
+      if (t < e.off) return false;
+      t -= e.off;
+    }
+    return false;
+  }
+
+  /** Remember how long this station's transmission will be on the air. */
+  private notePlaying(ham: VirtualHam | null | undefined, text: string): void {
+    if (!ham) return;
+    this.playingUntil.set(ham.call, this.clock() + this.audio.callDurationMs(text));
   }
 
   /** The band's decorative carriers (see `spectrum`); built once per session. */
@@ -532,17 +625,46 @@ export class QsoSession implements SessionContext {
   // --- operator actions ----------------------------------------------------
 
   /**
+   * Put the operator's own message on the air.
+   *
+   * Half-duplex: from the first dit the receiver is deaf, and it stays deaf for
+   * a moment after the key goes up (`TX_TAIL_MS`). Everything that was being
+   * received is cut, and the waterfall shows this signal instead (see
+   * `spectrum`). The S-meter follows the key while it lasts.
+   */
+  private async transmit(text: string): Promise<void> {
+    this.audio.stop(); // our key comes down on top of whatever was playing
+    this.push("me", text);
+    this.transmitting = true;
+    this.txStartedAt = this.clock();
+    this.txTiming = textToTiming(text, {
+      wpm: this.settings.wpm,
+      ...(this.settings.farnsworthEnabled
+        ? { farnsworthWpm: this.settings.farnsworthWpm }
+        : {}),
+    });
+    try {
+      await this.audio.playMine(text);
+    } finally {
+      await this.wait(TX_TAIL_MS);
+      this.transmitting = false;
+      this.txTiming = null;
+    }
+  }
+
+  /**
    * A virtual HAM calls CQ on this frequency. Fire-and-forget: the audio plays
    * in the background and is *not* guarded by `sending`, so the operator can
    * break in and answer mid-CQ. A user transmission in progress still suppresses
    * a new CQ (no point starting one nobody can hear over the user's own keying).
    *
    * Returns false when nothing was heard: the rig is off, we are mid-exchange,
-   * or there is simply no station inside the passband. The caller (a page) uses
-   * that to tell the operator to tune around instead of waiting.
+   * or there is simply no station inside the passband.
    */
   async hamCallsCq(ham?: VirtualHam): Promise<boolean> {
     if (this.sending) return false;
+    // Half-duplex: nobody is heard while our own key is down.
+    if (this.transmitting) return false;
     // A powered-down rig hears nothing, so a CQ is never picked up.
     if (!this.receiving) return false;
     // You cannot work what you cannot hear, so the passband has the first say.
@@ -562,6 +684,7 @@ export class QsoSession implements SessionContext {
         : this.startMachine(target);
     const text = machine.hamCq();
     this.push("ham", text);
+    this.notePlaying(target, text);
     // Non-blocking: do not await the full CQ, otherwise the user could not
     // answer until it finished. The audio is cut by the next user transmission.
     void this.audio.playHam(text, target);
@@ -577,59 +700,55 @@ export class QsoSession implements SessionContext {
    * building. That is the whole skill being practised.
    */
   async userCallsCq(): Promise<void> {
-    if (this.sending) return;
-    if (!this.receiving) return; // cannot transmit with the rig off
-    this.sending = true;
-    try {
-      this.audio.stop(); // cut any ambient HAM CQ before the user's own call
-      // A fresh attempt starts a clean transcript; an earlier unanswered CQ
-      // left lines behind and no partner to explain them.
-      if (this.machine === null) {
-        this.pileup.clear();
-        this.lines = [];
-        this.logWritten = false;
-        this.draft = "";
-      }
-      this.pileup.begin(this.hamQso.isAudible());
-      const call = this.myCall();
-      const cq = `CQ CQ CQ DE ${call} ${call} PSE K`;
-      this.push("me", cq);
-      await this.audio.playMine(cq);
-      // VIRTUAL-HAM.md: a HAM answers the user's CQ after 1–5 s; the others
-      // follow once the previous call has finished plus a short random gap.
-      this.pileup.schedule(this.clock() + answerCqDelayMs(this.rng));
-    } finally {
-      this.sending = false;
-    }
+    const call = this.myCall();
+    await this.userSend(`CQ CQ CQ DE ${call} ${call} PSE K`);
   }
 
-  /** The user transmits one line; HAM replies are appended and played. */
+  /**
+   * The operator transmits one line — at any time, to nobody in particular.
+   *
+   * This is the whole operating model. What goes on the air is a message; the
+   * stations on the band decide for themselves whether it was meant for them:
+   *
+   *  - a **CQ** invites whoever is listening to answer, and a handful do;
+   *  - a line sent **while a station's CQ is still ringing** is an answer to it;
+   *  - a line sent **mid-exchange** continues that exchange;
+   *  - anything else goes out and nothing comes back — which is what a real
+   *    operator experiences, and gets no explanation for.
+   *
+   * There is no "start a QSO" step: keying is the start.
+   */
   async userSend(text: string): Promise<void> {
     const line = text.trim().toUpperCase();
     if (!line) return;
-    // Busy guard: a second send while the first is still being transmitted (or
-    // the HAM is mid-reply) is dropped rather than interleaved with it.
+    // Busy guard: a second send while the first is still going out (or the HAM
+    // is mid-reply) is dropped rather than interleaved with it.
     if (this.sending) return;
     if (!this.receiving) return; // cannot transmit with the rig off
-    // Answering a pile-up: there is no partner yet, so this line's only real
-    // job is to name one. See `answerPileup`.
-    if (this.pileup.active) return this.answerPileup(line);
 
-    const machine = this.machine;
-    // Nothing of ours to send on: the key does nothing. If a pair of stations is
-    // working each other here we still say nothing — hearing them is the only
-    // cue a real operator gets, and they simply do not answer us.
-    if (!machine) return;
     this.sending = true;
     try {
-      this.audio.stop(); // break in: cut any HAM still calling CQ
+      // A CQ is not addressed to anybody — it invites the band to answer, and
+      // it is a fresh call whatever was going on before.
+      if (/\bCQ\b/.test(line)) {
+        if (this.machine) this.endExchange();
+        await this.transmit(line);
+        this.beginPileup();
+        return;
+      }
 
-      // Answering a HAM's CQ: the user has spoken up, so that HAM drops its own
-      // CQ rhythm — no more repeats, and the 3-minute give-up timer stops.
-      if (machine.state === "PEER_CQ" && this.ham) this.band.markInQso(this.ham.call);
+      // A pile-up: the line's job is to name one of the stations answering.
+      if (this.pileup.active) {
+        await this.transmit(line);
+        await this.answerPileup(line);
+        return;
+      }
 
-      this.push("me", line);
-      await this.audio.playMine(line);
+      // Everything else is addressed to whoever is inside the passband now.
+      const machine = this.machineForAudible();
+      await this.transmit(line);
+      // Nobody out there: the message went out and nothing came back.
+      if (!machine) return;
 
       // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
       if (this.ham && this.rng() < this.ham.missProbability) {
@@ -637,25 +756,67 @@ export class QsoSession implements SessionContext {
         if (agn) {
           await this.wait(replyDelayMs(this.rng));
           this.push("ham", agn);
+          this.notePlaying(this.ham, agn);
           await this.audio.playHam(agn);
           return;
         }
       }
 
       const replies = machine.userSend(line);
-      if (replies.length === 0) this.push("sys", "（无应答）");
       for (const reply of replies) {
         // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
         await this.wait(replyDelayMs(this.rng));
         this.push("ham", reply);
+        this.notePlaying(this.ham, reply);
         await this.audio.playHam(reply);
       }
 
-      // QSO complete: the HAM goes back to listening and will call CQ again.
+      // QSO complete: the HAM goes back to its own CQ rhythm.
       if (machine.state === "LOGGED" && this.ham) this.endStation(this.ham);
     } finally {
       this.sending = false;
+      // The receiver opens again: whatever is on the air now starts playing.
+      this.rejoinOnAir();
     }
+  }
+
+  /** Draw the stations that will answer this CQ and start their schedule. */
+  private beginPileup(): void {
+    this.pileup.clear(); // release anyone still calling from an earlier CQ
+    this.logWritten = false;
+    this.pileup.begin(this.hamQso.isAudible());
+    // VIRTUAL-HAM.md: a HAM answers the user's CQ after 1–5 s; the others
+    // follow once the previous call has finished plus a short random gap.
+    this.pileup.schedule(this.clock() + answerCqDelayMs(this.rng));
+  }
+
+  /**
+   * The station this line is going to, if any.
+   *
+   * An exchange already under way keeps it — tuning to the edge of the filter
+   * makes the partner hard to hear, not gone, and the station you are working
+   * stays yours until one of you signs off (or you call CQ and start over).
+   * Otherwise the target is whichever station is calling inside the passband:
+   * the one the operator is listening to. Null when nobody is calling there, in
+   * which case the line goes out and nobody answers.
+   */
+  private machineForAudible(): QsoMachine | null {
+    if (this.machine) {
+      // Speaking up starts the QSO as far as the band is concerned: the station
+      // stops its own CQ rhythm while we are working it.
+      if (this.ham && this.machine.state === "PEER_CQ") {
+        this.band.markInQso(this.ham.call);
+      }
+      return this.machine;
+    }
+    const target = this.band
+      .activityState()
+      .find((e) => e.state === "cqing" && this.canHear(e.ham))?.ham;
+    if (!target) return null;
+    const machine = this.startMachine(target);
+    machine.hamCq(); // the exchange begins with the CQ we just heard
+    this.band.markInQso(target.call);
+    return machine;
   }
 
   /**
@@ -665,33 +826,25 @@ export class QsoSession implements SessionContext {
    * deliberately unforgiving — naming the station is the skill it teaches.
    */
   private async answerPileup(line: string): Promise<void> {
-    this.sending = true;
-    try {
-      this.audio.stop(); // the operator's key is on top of the pile-up
-      this.push("me", line);
-      await this.audio.playMine(line);
-
-      const chosen = this.pileup.match(line);
-      if (!chosen) {
-        this.pileup.reschedule();
-        this.push("sys", "没有点名任何一台，各台继续等待");
-        return;
-      }
-
-      // The named station is the partner; the rest go back to listening. An
-      // answerer was never on the band, so nothing is removed from it.
-      this.pileup.take(chosen);
-      const machine = this.startMachine(chosen.ham);
-      // The CQ went out before the machine existed (a pile-up has no partner
-      // yet), so put it in the state it would have been in.
-      machine.beginUserCq();
-      await this.wait(replyDelayMs(this.rng));
-      const reply = machine.hamAcceptedSelection();
-      this.push("ham", reply);
-      await this.audio.playHam(reply);
-    } finally {
-      this.sending = false;
+    const chosen = this.pileup.match(line);
+    if (!chosen) {
+      this.pileup.reschedule();
+      this.push("sys", "没有点名任何一台，各台继续等待");
+      return;
     }
+
+    // The named station is the partner; the rest go back to listening. An
+    // answerer was never on the band, so nothing is removed from it.
+    this.pileup.take(chosen);
+    const machine = this.startMachine(chosen.ham);
+    // The CQ went out before the machine existed (a pile-up has no partner
+    // yet), so put it in the state it would have been in.
+    machine.beginUserCq();
+    await this.wait(replyDelayMs(this.rng));
+    const reply = machine.hamAcceptedSelection();
+    this.push("ham", reply);
+    this.notePlaying(this.ham ?? chosen.ham, reply);
+    await this.audio.playHam(reply);
   }
 
   // --- log & lifecycle of a QSO --------------------------------------------
@@ -724,20 +877,28 @@ export class QsoSession implements SessionContext {
     this.logWritten = true;
   }
 
-  /** Abandon the current QSO and clear the transcript. */
-  reset(): void {
-    // Free the HAM we were working so it resumes its own CQ rhythm. A pile-up
-    // that never got as far as naming anyone has no `ham`, only callers.
+  /**
+   * End the exchange without touching what the operator has typed. The partner
+   * goes back to calling CQ, a pile-up is released, and the band carries on.
+   */
+  private endExchange(): void {
     this.pileup.clear();
     if (this.ham) this.endStation(this.ham);
-    this.audio.stop(); // cut any in-flight audio along with the QSO
     this.machine?.reset();
     this.machine = null;
     this.ham = null;
-    this.lines = [];
-    this.draft = "";
     this.logWritten = false;
     clearStaging();
+  }
+
+  /** Abandon the current QSO and clear the transcript. */
+  reset(): void {
+    this.audio.stop(); // cut any in-flight audio along with the QSO
+    this.transmitting = false;
+    this.txTiming = null;
+    this.endExchange();
+    this.lines = [];
+    this.draft = "";
   }
 
   /**
@@ -785,6 +946,8 @@ export class QsoSession implements SessionContext {
       // band must still be advanced (which it is — that happened in frequency),
       // so the station keeps its own rhythm.
       if (!this.receiving) continue;
+      // Half-duplex: a transmitting station is deaf, so this CQ is not heard.
+      if (this.transmitting) continue;
       // Outside the passband: the filter cuts the station off, so its CQ is
       // never picked up. It stays on the waterfall for the operator to tune to.
       if (!this.canHear(e.ham)) continue;
@@ -826,7 +989,7 @@ export class QsoSession implements SessionContext {
    * note shifts with the dial the way a real receiver's does.
    */
   private rejoinOnAir(): void {
-    if (!this.receiving || this.sending) return;
+    if (!this.receiving || this.sending || this.transmitting) return;
     if (this.exchangeInProgress || this.pileup.active) return;
     const now = this.clock();
     let target: { ham: VirtualHam; text: string; offsetSec: number } | null = null;
@@ -916,6 +1079,7 @@ export class QsoSession implements SessionContext {
 
   /** Play a station's transmission (the driver side of `audio.playHam`). */
   playHam(text: string, ham?: VirtualHam): Promise<void> {
+    this.notePlaying(ham, text);
     return this.audio.playHam(text, ham);
   }
 

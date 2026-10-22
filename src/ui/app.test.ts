@@ -230,7 +230,7 @@ describe("频谱瀑布图", () => {
     expect(root.querySelector(".rig-scope canvas")).toBe(canvas);
   });
 
-  it("关台时说明本波段仍在活动；开台后提示可以用滚轮调谐", () => {
+  it("关台时标签只说设备已关机；开台后提示可以用滚轮调谐", () => {
     const { root, app } = mountApp();
     expect(root.querySelector(".rig-scope")?.textContent).toContain("设备已关机");
 

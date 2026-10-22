@@ -35,11 +35,12 @@ function makeSession(rng: () => number = mulberry32(7)) {
   };
 }
 
-/** Pick the only station on the band and put the dial on it. */
-function tuneToOne(session: QsoSession) {
+/** Pick the only station on the band, put the dial on it, and let it call. */
+async function tuneToOneCalling(session: QsoSession) {
   session.seedHams(1);
   const ham = session.listHams()[0];
   session.retune(ham.freqHz / 1e6);
+  await session.hamCallsCq();
   return ham;
 }
 
@@ -49,9 +50,9 @@ describe("会话 — S 表读数", () => {
     expect(session.sMeter()).toBeNull();
   });
 
-  it("对准信号时给出读数，且与 RST 的 S 位一致", () => {
+  it("收到报文时给出读数，且与 RST 的 S 位一致", async () => {
     const { session } = makeSession();
-    const ham = tuneToOne(session);
+    const ham = await tuneToOneCalling(session);
 
     const reading = session.sMeter();
     expect(reading).not.toBeNull();
@@ -61,9 +62,18 @@ describe("会话 — S 表读数", () => {
     expect(reading!.label).toMatch(/^S\d(\+\d+)?$/);
   });
 
-  it("调离通带表针下落，出了裙边就没有信号", () => {
+  it("报文发完、台上守听时表针归零（没声音就没有读数）", async () => {
+    const { session, setTime } = makeSession();
+    await tuneToOneCalling(session);
+    expect(session.sMeter()).not.toBeNull();
+
+    setTime(10 * 60_000); // 早就发完了，台在守听
+    expect(session.sMeter()).toBeNull();
+  });
+
+  it("调离通带表针下落，出了裙边就没有信号", async () => {
     const { session } = makeSession();
-    const ham = tuneToOne(session);
+    const ham = await tuneToOneCalling(session);
     const aligned = session.sMeter();
     expect(aligned).not.toBeNull();
 
@@ -78,12 +88,12 @@ describe("会话 — S 表读数", () => {
     expect(session.sMeter()).toBeNull();
   });
 
-  it("表针随 QSB 起伏：同一台、不同时刻读数不同", () => {
+  it("表针随 QSB 起伏：同一台、不同时刻读数不同", async () => {
     const { session, setTime } = makeSession();
-    tuneToOne(session);
+    await tuneToOneCalling(session);
 
     const first = session.sMeter()!.dbm;
-    setTime(3_000);
+    setTime(3_000); // 同一条报文还在发，只是衰落变了
     const later = session.sMeter()!.dbm;
     expect(later).not.toBe(first);
   });

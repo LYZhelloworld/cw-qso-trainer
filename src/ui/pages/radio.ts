@@ -11,10 +11,11 @@ import { renderQsoPanel } from "./cw.js";
 import type { AppHost } from "../app.js";
 
 /**
- * How often the S-meter redraws. Fast enough to follow a signal's fade, slow
- * enough not to matter: a real needle does not jump, it drifts.
+ * How often the S-meter redraws. Fast enough to follow the key — the needle is
+ * supposed to agree with what is coming out of the speaker, including the gaps
+ * between dits — and slow enough not to burn a frame on it.
  */
-const SMETER_TICK_MS = 150;
+const SMETER_TICK_MS = 60;
 
 /**
  * The receiver's S-meter: nine units plus a dB-over-S9 readout, following the
@@ -136,12 +137,6 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     ),
   );
 
-  // --- already in a QSO: show the operating panel --------------------------
-  if (host.session.inQso) {
-    renderQsoPanel(host, root);
-    return;
-  }
-
   // --- receiver ------------------------------------------------------------
   // The roster is deliberately not shown. Which station sits where, and what it
   // is called, is exactly what the operator has to find by tuning and copy by
@@ -149,46 +144,9 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   // what the receiver itself reports, not a directory of the band.
   root.append(panel("接收机", renderSMeter(host)));
 
-  // --- start a QSO ---------------------------------------------------------
-  const nearest = host.session.nearestWorkableHam();
-  const listen = (): void => {
-    // Inside the passband: just let it call. Otherwise sweep to it first, the
-    // way a search would — the operator hears the dial move and then the CQ.
-    const heard = host.session.heardActiveHam();
-    const target = heard ?? nearest;
-    if (!target) return;
-    if (!heard) host.updateSettings({ freqMHz: target.freqHz / 1e6 });
-    void host.session.hamCallsCq(target).then(() => host.refresh());
-  };
-
-  const actions = el("div", { class: "row" });
-  const listenBtn = button("监听：等 HAM 发 CQ", listen, "btn primary");
-  listenBtn.disabled = nearest === null;
-  const callBtn = button("我发 CQ", () => {
-    void host.session.userCallsCq().then(() => host.refresh());
-  });
-  actions.append(listenBtn, callBtn);
-
-  const start = el("div", { class: "col" });
-  start.append(actions);
-  if (!host.settings.myCall) {
-    const warn = el("div", { class: "hint" });
-    warn.append(document.createTextNode("请先填写本方呼号："));
-    warn.append(button("打开设置", () => host.openSettings?.(), "btn small"));
-    start.append(warn);
-  } else if (nearest === null) {
-    start.append(el("div", { class: "hint", text: "这个波段上暂时没有电台，稍等一会儿再看看。" }));
-  } else if (host.session.heardActiveHam() !== null) {
-    start.append(
-      el("div", { class: "hint", text: "拨轮已经对准了一个信号，可以直接监听或应答。" }),
-    );
-  } else {
-    start.append(
-      el("div", {
-        class: "hint",
-        text: "监听会自动扫描到最近的电台；也可以自己用 ± 按钮或滚动频谱调谐。",
-      }),
-    );
-  }
-  root.append(panel("开始通联", start));
+  // --- operating panel ------------------------------------------------------
+  // Always there, from the moment the rig is on: an operator transmits whenever
+  // they want to, not after clicking "start a QSO". Whether anybody answers is
+  // up to what the message says and who is listening (see `userSend`).
+  renderQsoPanel(host, root);
 }

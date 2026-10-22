@@ -25,7 +25,7 @@ class FakeAudio implements AudioPlayer {
   }
 }
 
-function makeSession(audio: FakeAudio) {
+function makeSession(audio: AudioPlayer) {
   const settings = normalizeSettings({ freqMHz: 14.05, myCall: "BG7XXX" });
   const session = new QsoSession(14.05, settings, {
     rng: () => 0,
@@ -38,7 +38,7 @@ function makeSession(audio: FakeAudio) {
 }
 
 /** A session whose clock can be wound forward by hand, one scheduler tick at a time. */
-function makeClockSession(audio: FakeAudio) {
+function makeClockSession(audio: AudioPlayer) {
   let t = 0;
   const ticks: Array<() => void> = [];
   const settings = normalizeSettings({ freqMHz: 14.05, myCall: "BG7XXX" });
@@ -146,5 +146,115 @@ describe("调准一个正在发报的台", () => {
     session.retune(ham.freqHz / 1e6);
 
     expect(audio.plays).toHaveLength(0);
+  });
+});
+
+/** Audio whose `done` only resolves when the test says so — lets a transmission be observed mid-flight. */
+class DeferredAudio implements AudioPlayer {
+  plays: string[] = [];
+  readonly playbackAvailable = true;
+  private pending: Array<() => void> = [];
+
+  play(text: string, _opts?: EngineRenderOptions): PlaybackHandle {
+    this.plays.push(text);
+    const done = new Promise<void>((resolve) => {
+      this.pending.push(resolve);
+    });
+    return { done, stop: () => this.flushOne() };
+  }
+
+  stop(): void {
+    /* handled by the session */
+  }
+
+  /** Let the oldest in-flight playback finish. */
+  flushOne(): void {
+    this.pending.shift()?.();
+  }
+
+  flushAll(): void {
+    while (this.pending.length > 0) this.flushOne();
+  }
+}
+
+describe("半双工：发报时不接收", () => {
+  it("自己的载波在空中的时候，频谱只剩自己那一个信号", async () => {
+    const audio = new DeferredAudio();
+    const { session } = makeClockSession(audio);
+    session.seedHams(2);
+    session.retune(session.listHams()[0].freqHz / 1e6);
+
+    // Not awaited: the transmission is held open by DeferredAudio.
+    const sending = session.userSend("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    expect(session.isTransmitting).toBe(true);
+
+    const snapshot = session.spectrum();
+    expect(snapshot.signals).toHaveLength(1);
+    expect(snapshot.signals[0].freqHz).toBe(session.dialHz);
+    expect(snapshot.signals[0].strength).toBe(1);
+
+    // Half-duplex: the receiver is deaf, so a CQ on the band is not heard.
+    expect(await session.hamCallsCq()).toBe(false);
+
+    audio.flushAll();
+    await sending;
+    expect(session.isTransmitting).toBe(false);
+  });
+
+  it("电键按下时 S 表满格，松开就没有读数", async () => {
+    const audio = new DeferredAudio();
+    const { session } = makeClockSession(audio);
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6);
+
+    const sending = session.userSend("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    // 时间 0 是第一个点/划的开头：按着键。
+    expect(session.isTransmitting).toBe(true);
+    expect(session.sMeter()).not.toBeNull();
+
+    audio.flushAll();
+    await sending;
+    expect(session.isTransmitting).toBe(false);
+    // 台在守听（这一瞬没有报文在发），表针归零。
+    expect(session.sMeter()).toBeNull();
+  });
+
+  it("发报结束后接收恢复：回到守听就能再听到台上的 CQ", async () => {
+    const audio = new DeferredAudio();
+    const { session, tickTo } = makeClockSession(audio);
+    session.seedHams(1);
+    const ham = session.listHams()[0];
+    session.retune(ham.freqHz / 1e6);
+
+    const sending = session.userSend(`${ham.call} DE BG7XXX K`);
+    audio.flushAll();
+    await sending;
+
+    // The exchange has started, so the station answers instead of calling; the
+    // point here is only that the receiver is open again.
+    expect(session.isReceiving).toBe(true);
+    const before = audio.plays.length;
+    tickTo(60_000);
+    expect(audio.plays.length).toBeGreaterThanOrEqual(before);
+  });
+});
+
+describe("随时发报", () => {
+  it("不用先点「开始通联」：调准一个正在呼叫的台，直接发就能接上", async () => {
+    const audio = new FakeAudio();
+    const { session, tickTo } = makeClockSession(audio);
+    session.seedHams(1);
+    const ham = session.listHams()[0];
+    session.start();
+
+    tickTo(5_000); // 它在呼叫，但我们还没调过去
+    expect(session.state).toBe("IDLE");
+    session.retune(ham.freqHz / 1e6); // 调准，听到它
+    expect(session.state).toBe("IDLE"); // 只是听到，不算开始通联
+
+    await session.userSend(`${ham.call} DE BG7XXX K`); // 直接应答
+
+    expect(session.state).toBe("EXCHANGE");
+    expect(audio.plays.some((t) => t.includes("599") || t.includes("R UR"))).toBe(true);
   });
 });

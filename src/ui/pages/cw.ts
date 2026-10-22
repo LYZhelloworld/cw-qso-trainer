@@ -4,26 +4,16 @@ import type { AppHost } from "../app.js";
 import { renderKeyPanel } from "./keyPanel.js";
 
 /**
- * The QSO operating panel: send / keying / controls.
+ * The operating panel: a send box and a key. Nothing else.
  *
- * There is deliberately **no transcript**, no station named, and no status
- * readout. The conversation is on the air: the operator copies what the other
- * station sends, writes back what they heard, and judges both by ear. Echoing
- * messages on screen would turn the exercise into reading; labelling the other
- * station would hand over the callsign copying is supposed to produce; and a
- * running commentary ("exchange in progress", "you are 180 Hz off") does the
- * same for the operator's own ears.
- *
- * What is left is what an operator physically does: type or key, and send.
+ * There is deliberately no transcript, no station named, no status readout, no
+ * "start a QSO" button and no list of who is answering. The operator transmits
+ * whenever they want to; what the band does about it is up to the band. A real
+ * station shows none of that either — you find out by listening.
  */
 export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   const session = host.session;
   const settings = host.settings;
-
-  // --- pile-up: several stations answered the CQ at once --------------------
-  // Only the fact that a pile-up is running is said, and only where it changes
-  // what to type. Which stations they are is on the air.
-  const pileupCallers = session.pileupCallers();
 
   // --- send box ------------------------------------------------------------
   const input = el("textarea", {
@@ -71,21 +61,6 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     }
   });
 
-  // Canned lines are protocol, not content: they say *what* to send, never who
-  // to send it to or what was received. The callsign in an answer is the
-  // operator's to copy.
-  const my = settings.myCall || "BG7XXX";
-  const macros = el("div", { class: "row" });
-  const macroList: Array<[string, string]> = [
-    ["我发 CQ", `CQ CQ CQ DE ${my} ${my} PSE K`],
-    ["RST 599", "R UR RST 599 BK"],
-    ["收到", "R BK"],
-    ["73 SK", "R TU 73 SK"],
-  ];
-  for (const [label, text] of macroList) {
-    macros.append(button(label, () => setDraft(text), "btn small"));
-  }
-
   // --- key input: straight key or iambic paddles ---------------------------
   // The key itself (listeners, keyer, sidetone) is a device of its own — see
   // `keyPanel`. All it gives back is text.
@@ -96,27 +71,22 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     onPhrase: (text) => setDraft(input.value ? `${input.value} ${text}` : text),
   });
 
-  const controls = el("div", { class: "row" });
-  controls.append(button("新通联（结束当前）", () => host.newSession()));
-
-  const pileupHint =
-    pileupCallers.length > 0
-      ? el("div", {
-          class: "hint",
-          text: "多台同时在呼：回复里必须点名，把你抄到的呼号写进报文，不点名谁也接不上。",
-        })
-      : null;
-
-  root.append(
-    panel(
-      "发送",
-      input,
-      macros,
-      ...(pileupHint ? [pileupHint] : []),
-      el("div", { class: "row" }, [sendBtn]),
-      el("div", { class: "hint", text: "Ctrl+Enter 也可发送。发送内容会按设定速度播出 CW 音调。" }),
-    ),
-    panel(keyPanel.title, keyPanel.node),
-    panel("操作", controls),
+  const body: HTMLElement[] = [];
+  // Without a callsign your own CQ is not your callsign, and the log would lie.
+  if (!settings.myCall) {
+    const warn = el("div", { class: "hint" });
+    warn.append(document.createTextNode("请先填写本方呼号："));
+    warn.append(button("打开设置", () => host.openSettings?.(), "btn small"));
+    body.push(warn);
+  }
+  body.push(
+    input,
+    el("div", { class: "row" }, [sendBtn]),
+    el("div", {
+      class: "hint",
+      text: "Ctrl+Enter 也可发送。发送时接收中断；发完稍等片刻恢复收听。",
+    }),
   );
+
+  root.append(panel("发送", ...body), panel(keyPanel.title, keyPanel.node));
 }

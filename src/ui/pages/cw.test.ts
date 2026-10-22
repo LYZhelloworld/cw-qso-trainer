@@ -64,12 +64,11 @@ afterEach(() => {
 });
 
 describe("通联面板", () => {
-  it("只有发送、电键与操作，没有状态行与收发记录", () => {
+  it("只有发送与电键，没有状态行、记录面板与操作按钮", () => {
     const { root } = makeHarness();
     expect(root.textContent).toContain("发送");
     expect(root.textContent).toContain("电键输入");
-    expect(root.textContent).toContain("操作");
-    // 状态行、记录面板都不在了。
+    expect(root.textContent).not.toContain("操作");
     expect(root.textContent).not.toContain("通联状态");
     expect(root.textContent).not.toContain("收报 / 发报记录");
     expect(root.textContent).not.toContain("尚无通联内容");
@@ -88,20 +87,12 @@ describe("通联面板", () => {
     expect(root.textContent).not.toContain("对方 ");
   });
 
-  it("短语宏会把预设报文填入输入框", () => {
+  it("没有短语宏：报文自己打", () => {
     const { root } = makeHarness();
-    const input = root.querySelector("textarea");
-    expect(input).not.toBeNull();
-
-    findButton(root, "RST 599").click();
-    expect(input!.value).toBe("R UR RST 599 BK");
-
-    findButton(root, "73 SK").click();
-    expect(input!.value).toBe("R TU 73 SK");
-
-    // 宏里只有协议，没有对方呼号——那个得自己抄。
-    findButton(root, "我发 CQ").click();
-    expect(input!.value).toBe("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    const labels = Array.from(root.querySelectorAll("button")).map((b) => b.textContent);
+    expect(labels).not.toContain("RST 599");
+    expect(labels).not.toContain("我发 CQ");
+    expect(labels).not.toContain("73 SK");
   });
 
   it("发送后会清空输入框，但不会在页面上留下记录", async () => {
@@ -218,8 +209,8 @@ describe("CW 页 iambic 双桨输入", () => {
   });
 });
 
-describe("堆叠提示", () => {
-  it("多台应答时标出台数并提示必须点名，但不给出呼号", async () => {
+describe("堆叠", () => {
+  it("多台应答时页面上什么都不说：谁在应你、有几台，全靠耳朵", async () => {
     const root = document.createElement("div");
     document.body.append(root);
     let t = 0;
@@ -251,15 +242,14 @@ describe("堆叠提示", () => {
     }
 
     renderQsoPanel(host, root);
-    const caller = session.heardPileupCallers()[0];
-    expect(caller).toBeDefined();
-    expect(root.textContent).toContain("必须点名");
-    // 谁在应你、有几台，都得自己听；页面上不列、也没有「点名 XXX」按钮。
-    expect(root.textContent).not.toContain(caller.call);
+    const callers = session.pileupCallers();
+    expect(callers.length).toBeGreaterThan(0);
+    for (const caller of callers) {
+      expect(root.textContent).not.toContain(caller.call);
+    }
     expect(root.textContent).not.toContain("台同时应答");
-    expect(
-      Array.from(root.querySelectorAll("button")).some((b) => (b.textContent ?? "").includes("点名")),
-    ).toBe(false);
+    expect(root.textContent).not.toContain("点名");
+    expect(root.textContent).not.toContain("堆叠");
   });
 });
 

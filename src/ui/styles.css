@@ -531,24 +531,14 @@ table.log input {
   cursor: default;
 }
 
-.scope-label,
-.scope-call {
+.scope-label {
   position: absolute;
   top: 5px;
+  left: 9px;
   font-size: 11px;
   pointer-events: none;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-}
-
-.scope-label {
-  left: 9px;
   color: var(--muted);
-}
-
-.scope-call {
-  right: 9px;
-  font-family: var(--mono);
-  color: var(--accent);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
 }
 
 /* The receiver's passband, drawn down the middle of the waterfall: the 500 Hz

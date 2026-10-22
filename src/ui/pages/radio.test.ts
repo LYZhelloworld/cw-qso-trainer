@@ -242,61 +242,19 @@ describe("电台页 — 信号与通联", () => {
 
     const filled = makeHost({ myCall: "BG7XXX" });
     expect(filled.root.textContent).not.toContain("请先填写本方呼号");
-    expect(filled.root.textContent).toContain("暂时没有电台"); // 空波段
   });
 
-  it("提供两种发起通联的方式", () => {
+  it("发送面板一直可用，不需要先「开始通联」", () => {
     const { root } = makeHost({ myCall: "BG7XXX" });
-    expect(findButton(root, "监听：等 HAM 发 CQ")).toBeDefined();
-    expect(findButton(root, "我发 CQ")).toBeDefined();
+    // 还没进任何通联：发送框与发送按钮就已经在了。
+    expect(root.querySelector("textarea")).not.toBeNull();
+    expect(findButton(root, "发送")).toBeDefined();
+    expect(root.textContent).not.toContain("开始通联");
+    expect(root.textContent).not.toContain("监听");
+    expect(root.textContent).not.toContain("我发 CQ");
   });
 
-  it("空波段上「监听」不可用", () => {
-    const { root } = makeHost({ myCall: "BG7XXX" });
-    expect(findButton(root, "监听：等 HAM 发 CQ").disabled).toBe(true);
-  });
-
-  it("有电台时「监听」会把拨轮扫过去，并说明会自动扫描", () => {
-    const { root, host } = makeHost({ myCall: "BG7XXX" });
-    host.session = {
-      inQso: false,
-      dialHz: 14_025_000,
-      listHams: () => [],
-      hamActivity: () => [],
-      hamCallsCq: async () => true,
-      userCallsCq: async () => {},
-      heardActiveHam: () => null, // 还没对准
-      nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
-      sMeter: () => null,
-    } as unknown as QsoSession;
-    host.refresh();
-
-    expect(findButton(root, "监听：等 HAM 发 CQ").disabled).toBe(false);
-    expect(root.textContent).toContain("监听会自动扫描到最近的电台");
-
-    findButton(root, "监听：等 HAM 发 CQ").click();
-    expect(host.settings.freqMHz).toBe(14.031); // 自动调谐到该台
-  });
-
-  it("拨轮已经对准信号时不用扫描", () => {
-    const { root, host } = makeHost({ myCall: "BG7XXX" });
-    host.session = {
-      inQso: false,
-      dialHz: 14_031_000,
-      listHams: () => [],
-      hamActivity: () => [],
-      hamCallsCq: async () => true,
-      userCallsCq: async () => {},
-      heardActiveHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
-      nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
-      sMeter: () => null,
-    } as unknown as QsoSession;
-    host.refresh();
-
-    expect(root.textContent).toContain("拨轮已经对准了一个信号");
-  });
-
-  it("通联进行中时显示通联面板，而不是「开始通联」", async () => {
+  it("通联开始后也不会换成另一套面板", async () => {
     const session = new QsoSession(14.025, normalizeSettings({ myCall: "BG7XXX" }));
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
@@ -306,7 +264,7 @@ describe("电台页 — 信号与通联", () => {
     host.refresh();
 
     expect(root.textContent).toContain("电键输入");
-    expect(root.textContent).not.toContain("开始通联");
+    expect(root.querySelector("textarea")).not.toBeNull();
     // 状态行与收发记录都不显示：报文只在空中，屏幕上没有回放。
     expect(root.textContent).not.toContain("通联状态");
     expect(root.textContent).not.toContain("收报 / 发报记录");

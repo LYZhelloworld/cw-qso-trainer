@@ -30,17 +30,17 @@ export interface RigView {
   powered: boolean;
 }
 
-/** What the panadapter's overlay says, gathered by the App from the session. */
+/**
+ * What the panadapter's overlay says, gathered by the App from the session.
+ *
+ * Deliberately almost nothing: the display is a receiver, not a status board.
+ * How many signals are in view, whether the filter is passing one, who is
+ * calling — all of that is what the operator's ears are for.
+ */
 export interface ScopeView {
   powered: boolean;
   /** Receiver filter width, for the passband marking. */
   passbandHz: number;
-  /** Signals inside the waterfall window (not the whole band slice). */
-  signalsInWindow: number;
-  /** Of those, how many the filter is actually passing. */
-  audibleInPassband: number;
-  /** Stations answering our CQ right now; 0 = not in a pile-up. */
-  pileupCount: number;
 }
 
 export class RigFace {
@@ -57,12 +57,10 @@ export class RigFace {
    */
   private readonly passband = el("div", { class: "scope-passband" });
   private readonly label = el("span", { class: "scope-label" });
-  private readonly call = el("span", { class: "scope-call" });
   private readonly scope = el("div", { class: "rig-scope" }, [
     this.canvas,
     this.passband,
     this.label,
-    this.call,
   ]);
   private mounted = false;
 
@@ -117,29 +115,12 @@ export class RigFace {
     this.scope.classList.toggle("off", !view.powered);
     this.updateScopePassband(view.passbandHz);
 
-    // Powered down the band does not go quiet — the other stations keep calling.
-    // Say so, so "standby" is never mistaken for "empty".
-    if (!view.powered) {
-      this.label.textContent = "设备已关机 · 本波段其他电台仍在活动";
-    } else if (view.pileupCount > 0) {
-      // A pile-up is the one moment the label has something more useful to say
-      // than "tune around": the operator has to pick a station by name.
-      this.label.textContent = `${view.pileupCount} 台同时应答 · 回复时请点名`;
-    } else if (view.audibleInPassband === 0) {
-      // The band slice is wider than this window, so the count is "signals in
-      // view", not "stations on the band".
-      this.label.textContent =
-        view.signalsInWindow > 0
-          ? `通带内没有信号 · 窗口里有 ${view.signalsInWindow} 个信号（滚轮调谐）`
-          : "波段频谱 · 滚轮调谐";
-    } else {
-      this.label.textContent = "波段频谱 · 滚轮调谐 100 Hz（Shift = 1 kHz）";
-    }
-
-    // Who is calling is deliberately not shown: copying the callsign off the
-    // air is the exercise. Only the pile-up count is a fact the operator could
-    // not miss with their own ears.
-    this.call.textContent = view.pileupCount > 0 ? `堆叠 ×${view.pileupCount}` : "";
+    // The display is a receiver, not a status board: no signal counts, no
+    // "nobody is calling" hints, no station names. The label only says how the
+    // dial moves, because nothing on screen would otherwise reveal the wheel.
+    this.label.textContent = view.powered
+      ? "波段频谱 · 滚轮调谐 100 Hz（Shift = 1 kHz）"
+      : "设备已关机";
   }
 
   /**

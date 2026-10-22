@@ -13,8 +13,7 @@ import { renderRadio } from "./pages/radio.js";
 import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { BANDS, clampToBand, roundFreq } from "./bands.js";
-import { otherSideband, inPassband, type Sideband } from "../ham/tuning.js";
-import { inSpectrumWindow } from "../ham/spectrum.js";
+import { otherSideband, type Sideband } from "../ham/tuning.js";
 import { Waterfall } from "./waterfall.js";
 import { RigFace, type ScopeView } from "./rigFace.js";
 
@@ -347,28 +346,12 @@ export class App implements AppHost {
   }
 
   /**
-   * Gather what the panadapter's overlay says. The facts come from the session
-   * (which signals are in view, which of them the filter passes, whether a
-   * pile-up is building); `RigFace` only turns them into text.
+   * What the panadapter's overlay says. Almost nothing on purpose: the display
+   * is a receiver, and what is on the band is for the operator's ears (see
+   * `ScopeView`).
    */
   private scopeView(): ScopeView {
-    const session = this.session;
-    const roster = this.powerOn
-      ? session.hamActivity().filter((e) => inSpectrumWindow(e.ham.freqHz, session.dialHz))
-      : [];
-    const audible = roster.filter((e) =>
-      inPassband(e.ham.freqHz, session.dialHz, session.passbandHz),
-    );
-    const pileup = this.powerOn ? session.pileupCallers() : [];
-    // Below the dial is the receiver's filter, so only stations inside it are
-    // actually being heard — the rest are visible signals not yet tuned in.
-    return {
-      powered: this.powerOn,
-      passbandHz: session.passbandHz,
-      signalsInWindow: roster.length,
-      audibleInPassband: audible.length,
-      pileupCount: pileup.length,
-    };
+    return { powered: this.powerOn, passbandHz: this.session.passbandHz };
   }
 
   private renderNav(): void {
