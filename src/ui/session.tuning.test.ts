@@ -20,10 +20,10 @@ import { PASSBAND_HALF_HZ } from "../ham/tuning.js";
  * operator does with the tuning knob.
  */
 class FakeAudio implements AudioPlayer {
-  calls: Array<{ text: string; toneHz: number | undefined }> = [];
+  calls: Array<{ text: string; toneHz: number | undefined; gain: number | undefined }> = [];
   readonly playbackAvailable = true;
   play(text: string, opts?: EngineRenderOptions): PlaybackHandle {
-    this.calls.push({ text, toneHz: opts?.toneHz });
+    this.calls.push({ text, toneHz: opts?.toneHz, gain: opts?.gain });
     return { done: Promise.resolve(), stop() {} };
   }
   stop(): void {}
@@ -122,8 +122,8 @@ describe("CW 偏频：通带内的音调随失谐变化", () => {
   });
 });
 
-describe("CW 通带：超出 ±250 Hz 就收不到", () => {
-  it("边缘内听得到，边缘外完全听不到", async () => {
+describe("CW 通带与裙边：出了通带先变弱，再消失", () => {
+  it("边缘内满音量可通联，出界 1 Hz 还听得到但已经不是通联对象，再往外就没声了", async () => {
     const audio = new FakeAudio();
     const s = makeSession(audio);
     const ham = s.seedHams(1)[0];
@@ -132,10 +132,38 @@ describe("CW 通带：超出 ±250 Hz 就收不到", () => {
     await s.hamCallsCq(ham);
     expect(s.partnerInPassband()).toBe(true);
     expect(s.partnerToneHz()).toBe(700 + PASSBAND_HALF_HZ);
+    expect(s.partnerGain()).toBe(1); // 通带内是平的
 
     tuneBelow(s, ham, -PASSBAND_HALF_HZ - 1); // 偏出 1 Hz
     expect(s.partnerInPassband()).toBe(false);
+    // 裙边上：音调还在、音量已经掉下来，但掉得很轻（不是一刀切）。
+    expect(s.partnerToneHz()).toBe(700 - PASSBAND_HALF_HZ - 1);
+    expect(s.partnerGain()).toBeGreaterThan(0.99);
+
+    tuneBelow(s, ham, -400); // 越过 1.5×半宽（375 Hz）
+    expect(s.partnerGain()).toBeNull();
     expect(s.partnerToneHz()).toBeNull();
+  });
+
+  it("裙边上的对方报文按衰减后的音量播出（音调照旧按偏频走）", async () => {
+    const audio = new FakeAudio();
+    const s = makeSession(audio);
+    const ham = s.seedHams(1)[0];
+
+    tuneBelow(s, ham, 0); // 先对准，把 CQ 收下来
+    await s.hamCallsCq(ham);
+    expect(s.partnerGain()).toBe(1);
+
+    tuneBelow(s, ham, 320); // 通联中慢慢调走：越过 ±250，落在裙边中段
+    await s.userSend(`${ham.call} DE BG7XXX K`);
+
+    expect(s.partnerInPassband()).toBe(false);
+    const gain = s.partnerGain()!;
+    expect(gain).toBeGreaterThan(0);
+    expect(gain).toBeLessThan(0.5); // 已经明显弱下去，但还没到静音
+    const reply = audio.calls[audio.calls.length - 1];
+    expect(reply.toneHz).toBe(700 + 320);
+    expect(reply.gain).toBeCloseTo(gain, 6);
   });
 
   it("通联中调走超过通带：对方的声音直接消失，而不是变尖", async () => {
@@ -233,9 +261,14 @@ describe("CW 边带偏好与可调滤波带宽", () => {
     expect(s.partnerInPassband()).toBe(true);
     expect(s.partnerToneHz()).toBe(700);
 
-    tuneBelow(s, ham, 60); // 越过 ±50 Hz 的界
+    tuneBelow(s, ham, 60); // 越过 ±50 Hz 的界：到了裙边上
     expect(s.partnerInPassband()).toBe(false);
+    expect(s.partnerToneHz()).toBe(700 + 60);
+    expect(s.partnerGain()).toBeGreaterThan(0);
+
+    tuneBelow(s, ham, 80); // 1.5×50 = 75 Hz：裙边尽头
     expect(s.partnerToneHz()).toBeNull();
+    expect(s.partnerGain()).toBeNull();
   });
 });
 

@@ -228,16 +228,21 @@ describe("CW 翻译页", () => {
     expect(root.textContent).toContain("偏频 +200 Hz");
   });
 
-  it("调出通带后状态行明说对方已经听不到", async () => {
+  it("调出通带后状态行先说信号变弱，再说没有声音", async () => {
     const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6);
     await session.hamCallsCq();
+
+    session.retune((session.ham!.freqHz - 320) / 1e6); // 通带外，但还在裙边上
+    render();
+    expect(root.textContent).toContain("信号很弱");
+    expect(root.textContent).not.toContain("音调 700 Hz");
+
     session.retune((session.ham!.freqHz - 1000) / 1e6); // 挪开 1 kHz，早已出了滤波器
     render();
-
-    expect(root.textContent).toContain("通带之外");
-    expect(root.textContent).not.toContain("音调 700 Hz");
+    expect(root.textContent).toContain("没有声音了");
+    expect(root.textContent).not.toContain("信号很弱");
   });
 });
 

@@ -6,7 +6,7 @@ import {
   clampToBand,
   roundFreq,
 } from "../bands.js";
-import { detuneHz, inPassband } from "../../ham/tuning.js";
+import { detuneHz, inPassband, passbandGain } from "../../ham/tuning.js";
 import { BAND_SIGNAL_SPREAD_HZ, SPECTRUM_SPAN_HZ, inSpectrumWindow } from "../../ham/spectrum.js";
 import { renderQsoPanel } from "./cw.js";
 import type { AppHost } from "../app.js";
@@ -141,6 +141,9 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     for (const entry of roster) {
       const detune = detuneHz(entry.ham.freqHz, dialHz);
       const heard = inPassband(entry.ham.freqHz, dialHz, passbandHz);
+      // Three states, not two: inside the passband, on the filter's skirt
+      // (audible but too weak to work — see `ham/tuning`), and gone.
+      const gain = passbandGain(entry.ham.freqHz, dialHz, passbandHz);
       const line = el("div", { class: "row" });
       line.append(el("span", { text: entry.ham.call }));
       line.append(el("span", { class: "badge", text: activityLabel(entry.state) }));
@@ -153,7 +156,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
       line.append(
         el("span", {
           class: heard ? "badge heard" : "hint tone-off",
-          text: heard ? "通带内" : "通带外",
+          text: heard ? "通带内" : gain > 0 ? "裙边 · 很弱" : "听不到",
         }),
       );
       activity.append(line);
@@ -163,7 +166,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     activity.append(
       el("div", {
         class: "hint",
-        text: `窗口里这 ${roster.length} 个信号都在通带之外（拨轮 ±${halfHz} Hz 内才听得到）。调谐或直接点频谱上的亮斑。`,
+        text: `窗口里这 ${roster.length} 个信号都不在通带内（拨轮 ±${halfHz} Hz 内才能通联）。调谐或直接点频谱上的亮斑。`,
       }),
     );
   }

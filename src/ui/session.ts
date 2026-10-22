@@ -32,11 +32,12 @@ import {
   type HamQsoLine,
 } from "../ham/hamQso.js";
 import {
-  audibleToneHz,
   detuneHz,
   inPassband,
   normalisePassband,
+  receiveStation,
   resolveSideband,
+  type Reception,
   type Sideband,
 } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
@@ -329,13 +330,24 @@ export class QsoSession {
    * The tone the operator currently hears from the station being worked: the
    * rig's CW pitch shifted by however far that station sits from the dial (see
    * `ham/tuning`). Null when there is no partner, when it has no frequency (a
-   * HAM generated without a band reference), or when it has been tuned outside
-   * the receiver's passband — an off-frequency station is not a wrong note, it
-   * is silence.
+   * HAM generated without a band reference), or when it has been tuned far
+   * enough outside the passband that the filter's skirt has run out — an
+   * off-frequency station fades, and then it is silence.
    */
   partnerToneHz(): number | null {
     if (!this.ham || this.ham.freqHz <= 0) return null;
-    return this.hamToneHz(this.ham);
+    return this.hamReception(this.ham)?.toneHz ?? null;
+  }
+
+  /**
+   * How loud the partner is coming through right now: `1` inside the passband,
+   * fading toward `0` on the filter's skirt (see `passbandGain`), `null` when
+   * it is gone. The UI uses this to say "audible but weak" rather than either
+   * "fine" or "silent".
+   */
+  partnerGain(): number | null {
+    if (!this.ham || this.ham.freqHz <= 0) return null;
+    return this.hamReception(this.ham)?.gain ?? null;
   }
 
   /** How far the partner sits from the dial, in Hz (positive = above). */
@@ -1125,15 +1137,17 @@ export class QsoSession {
   }
 
   /**
-   * The CW pitch a station is heard at, given where the dial sits: exactly the
-   * configured tone when it is zero-beaten, shifted by the detuning while it is
-   * inside the passband (see `ham/tuning`), and `null` once the filter has cut
-   * it off. Falls back to the plain pitch for an unplaced station.
+   * What the receiver does to a station at the current dial setting: its note,
+   * how loud it comes through, and whether it is inside the workable window
+   * (see `ham/tuning`). `null` once the filter's skirt has run out. Falls back
+   * to a clean, full-strength reception for an unplaced station.
    */
-  private hamToneHz(ham?: VirtualHam | null): number | null {
+  private hamReception(ham?: VirtualHam | null): Reception | null {
     const station = ham ?? this.ham;
-    if (!station || station.freqHz <= 0) return this.settings.toneHz;
-    return audibleToneHz({
+    if (!station || station.freqHz <= 0) {
+      return { toneHz: this.settings.toneHz, gain: 1, inPassband: true };
+    }
+    return receiveStation({
       toneHz: this.settings.toneHz,
       stationHz: station.freqHz,
       dialHz: this.dialHz,
@@ -1144,18 +1158,20 @@ export class QsoSession {
 
   private async playHam(text: string, ham?: VirtualHam): Promise<void> {
     const speaker = ham ?? this.ham;
-    const toneHz = this.hamToneHz(speaker);
-    // Outside the passband we render nothing: the station is filtered out, so
-    // there is no note to play — not even a wrong one.
-    if (toneHz === null) return;
+    const rx = this.hamReception(speaker);
+    // Past the skirt we render nothing: the station is filtered out, so there
+    // is no note to play — not even a wrong one.
+    if (rx === null) return;
     const env = difficultyToEnvironment(speaker?.difficulty ?? this.settings.difficulty);
     // `...extra` wins over the default pitch in `play`, so the station is heard
-    // off-key whenever the operator has not tuned it in.
+    // off-key whenever the operator has not tuned it in — and quieter the
+    // further out it sits, down to the point where it is gone.
     await this.play(text, {
       qsb: env.qsb,
       qrm: env.qrm,
       qrn: env.qrn,
-      toneHz,
+      toneHz: rx.toneHz,
+      gain: rx.gain,
     });
   }
 

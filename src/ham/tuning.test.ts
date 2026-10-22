@@ -12,7 +12,12 @@ import {
   inPassband,
   normalisePassband,
   otherSideband,
+  passbandGain,
+  receiveStation,
   resolveSideband,
+  SKIRT_FACTOR,
+  SKIRT_FLOOR_DB,
+  SKIRT_FLOOR_GAIN,
   sidebandFor,
   sidebandLabel,
 } from "./tuning.js";
@@ -161,5 +166,56 @@ describe("CW 接收滤波带宽（可调 500 / 250 / 100 Hz）", () => {
     expect(at(500)).toBe(900);
     expect(at(250)).toBeNull();
     expect(at(100)).toBeNull();
+  });
+});
+
+describe("滤波器裙边：出了通带先变弱，再消失", () => {
+  const D = HIGH;
+
+  it("通带内是平的（满音量），音量不随偏频变化", () => {
+    for (const detune of [0, 60, 150, PASSBAND_HALF_HZ]) {
+      expect(passbandGain(D + detune, D)).toBe(1);
+      expect(passbandGain(D - detune, D)).toBe(1);
+    }
+  });
+
+  it("刚出界时只掉一点点，越往外掉得越快", () => {
+    const just = passbandGain(D + PASSBAND_HALF_HZ + 1, D);
+    const mid = passbandGain(D + PASSBAND_HALF_HZ + PASSBAND_HALF_HZ * 0.25, D);
+    const far = passbandGain(D + PASSBAND_HALF_HZ * 1.4, D);
+
+    expect(just).toBeLessThan(1);
+    expect(just).toBeGreaterThan(0.99); // 边缘上一刀切会听出「开关」，这里不会
+    expect(mid).toBeLessThan(just);
+    expect(far).toBeLessThan(mid);
+  });
+
+  it("裙边尽头正好是约定的 −26 dB，再往外是静音", () => {
+    const edge = PASSBAND_HALF_HZ * SKIRT_FACTOR;
+    expect(passbandGain(D + edge, D)).toBeCloseTo(0, 12); // 到点即归零
+    expect(passbandGain(D + edge - 0.01, D)).toBeCloseTo(SKIRT_FLOOR_GAIN, 3);
+    // 约定值便于核对：10^(−26/20) ≈ 0.0501
+    expect(20 * Math.log10(SKIRT_FLOOR_GAIN)).toBeCloseTo(SKIRT_FLOOR_DB, 9);
+    expect(passbandGain(D + 1000, D)).toBe(0);
+  });
+
+  it("裙边的宽度跟着带宽走（100 Hz 时 ±75 Hz 之外就没了）", () => {
+    expect(passbandGain(D + 60, D, 100)).toBeGreaterThan(0);
+    expect(passbandGain(D + 75, D, 100)).toBe(0);
+    expect(passbandGain(D + 74, D, 100)).toBeGreaterThan(0);
+  });
+
+  it("receiveStation：音调、音量与「能不能通联」是两件事", () => {
+    const onSkirt = receiveStation({ toneHz: 700, stationHz: D + 320, dialHz: D });
+    expect(onSkirt).not.toBeNull();
+    expect(onSkirt!.toneHz).toBe(1020); // 音调照旧按偏频走
+    expect(onSkirt!.gain).toBeGreaterThan(0);
+    expect(onSkirt!.gain).toBeLessThan(1);
+    expect(onSkirt!.inPassband).toBe(false); // 听得到 ≠ 通得了
+
+    const onNose = receiveStation({ toneHz: 700, stationHz: D, dialHz: D });
+    expect(onNose).toEqual({ toneHz: 700, gain: 1, inPassband: true });
+
+    expect(receiveStation({ toneHz: 700, stationHz: D + 1000, dialHz: D })).toBeNull();
   });
 });

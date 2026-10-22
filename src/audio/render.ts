@@ -48,6 +48,14 @@ export interface CwRenderOptions {
   unit?: number;
   sampleRate?: number;
   toneHz?: number;
+  /**
+   * Amplitude for the signal itself, in [0, 1] — the receiver's filter response
+   * at this station's offset (see `ham/tuning`'s `passbandGain`). It scales the
+   * tone only: the band's noise and interference keep their own level, which is
+   * what makes a signal on the filter skirt drop *into* the noise rather than
+   * take the noise down with it.
+   */
+  gain?: number;
   qsb?: Partial<QsbOptions>;
   qrm?: Partial<QrmOptions>;
   qrn?: Partial<QrnOptions>;
@@ -85,8 +93,13 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function mergeDefined<T extends object>(defaults: T, override?: Partial<T>): T {
-  const out: T = { ...defaults };
+/** Coerce an arbitrary gain into [0, 1]; NaN and negatives fall back to 1 / 0. */
+function clamp01(v: number): number {
+  if (!Number.isFinite(v)) return 1;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+function mergeDefined<T extends object>(defaults: T, override?: Partial<T>): T {  const out: T = { ...defaults };
   if (override) {
     for (const k of Object.keys(override) as (keyof T)[]) {
       const v = override[k];
@@ -105,6 +118,7 @@ const QRM_OFFSETS = [250, -600, 900, -1200, 1800, -2000];
 export function renderCwAudio(opts: CwRenderOptions): RenderResult {
   const sampleRate = opts.sampleRate ?? 44100;
   const toneHz = opts.toneHz ?? 700;
+  const signalGain = clamp01(opts.gain ?? 1);
   const qsb = mergeDefined(DEFAULT_QSB, opts.qsb);
   const qrm = mergeDefined(DEFAULT_QRM, opts.qrm);
   const qrn = mergeDefined(DEFAULT_QRN, opts.qrn);
@@ -136,7 +150,9 @@ export function renderCwAudio(opts: CwRenderOptions): RenderResult {
   let idx = 0;
 
   const writeEnv = (t: number, gate: number): number => {
-    let v = gate * Math.sin(twoPiTone * t);
+    // The filter only attenuates the signal — QRM/QRN below are added at full
+    // level, so a station on the skirt sinks into the noise floor.
+    let v = signalGain * gate * Math.sin(twoPiTone * t);
     if (qsb.enabled && qsb.depth > 0) {
       const f = 1 - qsb.depth * (0.5 - 0.5 * Math.cos((2 * Math.PI * t) / qsb.periodSec));
       v *= f;

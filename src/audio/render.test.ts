@@ -71,6 +71,56 @@ describe("renderCwAudio — basics", () => {
   });
 });
 
+describe("renderCwAudio — receiver filter gain（滤波器裙边）", () => {
+  const text = "E E E";
+
+  it("gain 线性缩放信号本身", () => {
+    const full = renderCwAudio({ text, sampleRate: SR, toneHz: 700, wpm: 20 });
+    const weak = renderCwAudio({ text, sampleRate: SR, toneHz: 700, wpm: 20, gain: 0.1 });
+    const ratio =
+      rms(collectOnSamples(weak.samples, weak.segments, SR)) /
+      rms(collectOnSamples(full.samples, full.segments, SR));
+    expect(ratio).toBeCloseTo(0.1, 2);
+  });
+
+  it("gain 为 0 时一点信号都不剩", () => {
+    const r = renderCwAudio({ text, sampleRate: SR, toneHz: 700, wpm: 20, gain: 0 });
+    expect(rms(collectOnSamples(r.samples, r.segments, SR))).toBeLessThan(1e-6);
+  });
+
+  it("不压底噪与干扰：QRM / QRN 的电平与 gain 无关", () => {
+    const base = {
+      text,
+      sampleRate: SR,
+      wpm: 20,
+      noiseSeed: 7,
+      qrm: { enabled: true, interferers: 3, level: 0.2 },
+      qrn: { enabled: true, level: 0.1 },
+    };
+    const full = renderCwAudio({ ...base, gain: 1 });
+    const weak = renderCwAudio({ ...base, gain: 0.05 });
+    // 间隙里只有环境声，两边的底噪必须一模一样。
+    expect(rms(collectOffSamples(weak.samples, weak.segments, SR))).toBeCloseTo(
+      rms(collectOffSamples(full.samples, full.segments, SR)),
+      6,
+    );
+  });
+
+  it("信号压到底噪以下时，听到的几乎只剩噪声", () => {
+    const r = renderCwAudio({
+      text,
+      sampleRate: SR,
+      wpm: 20,
+      gain: 0.02,
+      qrn: { enabled: true, level: 0.2 },
+      noiseSeed: 3,
+    });
+    const on = rms(collectOnSamples(r.samples, r.segments, SR));
+    const off = rms(collectOffSamples(r.samples, r.segments, SR));
+    expect(on / off).toBeLessThan(1.2); // 叠上去的那点信号几乎听不出来
+  });
+});
+
 describe("renderCwAudio — electromagnetic environment", () => {
   it("QSB reduces the median tone magnitude", () => {
     const base = { text: "CQ CQ CQ DE BG7XXX", sampleRate: SR, wpm: 18, toneHz: 700 };

@@ -50,18 +50,21 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   // The note the partner is actually heard at. Zero-beaten it is the rig's pitch;
   // off-frequency it is shifted by the detuning (see ham/tuning), signed by the
   // receiving sideband (CW-L / CW-U), which is what the operator's ear is
-  // supposed to notice. Beyond the passband edge the filter cuts the station off
-  // entirely — that is worth saying out loud, because the transcript keeps
-  // running while the audio goes silent.
+  // supposed to notice. Outside the passband the filter's skirt keeps it audible
+  // for a while — quieter and quieter — and then it is gone. Worth saying out
+  // loud in both cases, because the transcript keeps running either way.
   const halfHz = session.passbandHalfHz;
   const detune = session.partnerDetuneHz();
   if (detune !== null) {
     const off = detune > 0 ? `+${detune}` : `${detune}`;
     if (!session.partnerInPassband()) {
+      const weak = session.partnerGain() !== null;
       status.append(
         el("span", {
           class: "hint tone-off",
-          text: `对方已在通带之外（偏 ${off} Hz）· 调回 ±${halfHz} Hz 才听得到`,
+          text: weak
+            ? `对方在通带外（偏 ${off} Hz）· 信号很弱，调回 ±${halfHz} Hz`
+            : `对方已在滤波器之外（偏 ${off} Hz）· 没有声音了`,
         }),
       );
     } else {
