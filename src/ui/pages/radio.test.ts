@@ -95,7 +95,7 @@ describe("电台页 — 电源", () => {
     expect(root.textContent).toContain("波段与调谐");
   });
 
-  it("关台时说明本频段其他电台仍在活动（关机 ≠ 环境下线）", () => {
+  it("关台时不再赘述本频段有多少台在活动", () => {
     const { root, host } = makeHost({}, false);
     host.session = {
       hamActivity: () => [
@@ -105,13 +105,8 @@ describe("电台页 — 电源", () => {
     } as unknown as QsoSession;
     host.refresh();
 
-    expect(root.textContent).toContain("本频段仍有 2 个电台在活动");
-  });
-
-  it("关台且本频段确实空着时不显示那句提示", () => {
-    const { root } = makeHost({}, false);
     expect(root.textContent).toContain("设备已关机");
-    expect(root.textContent).not.toContain("在活动");
+    expect(root.textContent).not.toContain("个电台在活动");
   });
 });
 

@@ -606,14 +606,6 @@ table.log input {
   color: var(--muted);
 }
 
-/* Powered down, the band keeps going: a quiet note that "off" is not "empty". */
-.standby-alive {
-  color: var(--accent-2);
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-
 /* --- settings sheet ------------------------------------------------------ */
 
 .settings-modal {

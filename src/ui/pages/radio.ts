@@ -73,17 +73,6 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     standby.append(
       el("div", { class: "hint", text: "开着电台就会开始接收这个频段上的信号。" }),
     );
-    // The band did not go quiet just because we did: the other stations keep
-    // calling CQ. Say so, so the environment model is visible and not a surprise.
-    const active = host.session.hamActivity().length;
-    if (active > 0) {
-      standby.append(
-        el("div", {
-          class: "hint standby-alive",
-          text: `本频段仍有 ${active} 个电台在活动（只是我们没在接收）。`,
-        }),
-      );
-    }
     standby.append(
       button("开台", () => host.setPower?.(true), "btn primary"),
     );
