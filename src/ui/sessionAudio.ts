@@ -63,6 +63,23 @@ export class SessionAudio {
 
   /** Play a station's transmission, off-key and quieter if it is detuned. */
   async playHam(text: string, ham?: VirtualHam): Promise<void> {
+    await this.playStation(text, ham, 0);
+  }
+
+  /**
+   * Join a station that is already transmitting: play the rest of the message
+   * from `offsetSec`. Used when the operator tunes onto a CQ that has already
+   * started — the receiver should hear the tail of it, not wait for the next one.
+   */
+  async playHamFrom(text: string, ham: VirtualHam | undefined, offsetSec: number): Promise<void> {
+    await this.playStation(text, ham, Math.max(0, offsetSec));
+  }
+
+  private async playStation(
+    text: string,
+    ham: VirtualHam | undefined,
+    offsetSec: number,
+  ): Promise<void> {
     const { settings } = this.view();
     const rx = this.reception(ham);
     // Past the skirt we render nothing: the station is filtered out, so there
@@ -78,6 +95,7 @@ export class SessionAudio {
       qrn: env.qrn,
       toneHz: rx.toneHz,
       gain: rx.gain,
+      offsetSec,
     });
   }
 
@@ -112,7 +130,7 @@ export class SessionAudio {
     try {
       await this.engine.play(text, opts).done;
     } catch {
-      // No AudioContext or blocked autoplay: the text transcript still works.
+      // No AudioContext or blocked autoplay: the QSO flow still works silently.
     }
   }
 }

@@ -278,46 +278,6 @@ textarea:focus {
   background: var(--accent);
 }
 
-.cw-pane {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-  font-family: var(--mono);
-  min-height: 120px;
-  max-height: 260px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.cw-line {
-  margin-bottom: 6px;
-}
-
-.cw-line .who {
-  color: var(--muted);
-  margin-right: 6px;
-}
-
-.cw-line.rx .txt {
-  color: var(--accent-2);
-}
-
-.cw-line.tx .txt {
-  color: var(--text);
-}
-
-.cw-line.sys .txt {
-  color: var(--muted);
-  font-style: italic;
-}
-
-.masked {
-  color: var(--muted);
-  letter-spacing: 2px;
-}
-
 .badge {
   display: inline-block;
   padding: 1px 7px;
@@ -432,16 +392,6 @@ table.log input {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.assist-banner {
-  background: #1a2a24;
-  border: 1px solid #2a4a3a;
-  color: var(--accent-2);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-  margin-bottom: 10px;
 }
 
 .error-panel {
@@ -573,8 +523,11 @@ table.log input {
 .scope-canvas {
   display: block;
   width: 100%;
-  height: 72px;
-  cursor: crosshair;
+  /* Tall enough to read a couple of minutes of band history: the waterfall is
+     the main instrument on the page, not a decoration under the header. */
+  height: 240px;
+  /* The dial is turned with the wheel; ← → says so. */
+  cursor: col-resize;
 }
 
 /* Powered down the picture freezes; dim it so "frozen" reads as "not receiving". */

@@ -64,7 +64,7 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
     expect(h.audio.plays).toHaveLength(0);
   });
 
-  it("关台后频段照常运转：到点仍会呼叫，超时仍会换台", async () => {
+  it("关台后频段照常运转：到点仍会呼叫，台也不会消失", async () => {
     const h = makeSession();
     h.session.seedHams(1);
     h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它
@@ -76,10 +76,10 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
     // 我们没听到，但对方确实把 CQ 发了出去
     expect(h.session.hamActivity()[0].state).toBe("cqing");
 
-    await h.tickTo(5_000 + 180_000); // 三分钟无人应答 -> 下线并补位
+    await h.tickTo(5_000 + 180_000); // 三分钟没人应，台仍在原地继续呼叫
     const now = h.session.listHams();
     expect(now).toHaveLength(1);
-    expect(now[0].call).not.toBe(first);
+    expect(now[0].call).toBe(first);
   });
 
   it("关台不清空已建立的通联：报文与对手都留着", async () => {

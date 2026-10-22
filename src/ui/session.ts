@@ -5,6 +5,7 @@ import { dxccDatabase } from "../data/dxcc.js";
 import { CwAudioEngine, type AudioPlayer } from "../audio/engine.js";
 import {
   answerCqDelayMs,
+  nextCqGapMs,
   replyDelayMs,
   targetHamCount,
   type HamActivityEvent,
@@ -39,14 +40,16 @@ export type { Speaker, TranscriptLine };
 
 /**
  * Presentation-layer session: one band's virtual HAMs plus the operator's QSO
- * with one of them, including the CW audio and the on-screen transcript.
+ * with one of them, including the CW audio.
  *
  * A session owns TWO things that deliberately have different lifetimes:
  *  - the **band** (its virtual HAMs and their CQ rhythm, via `Frequency`) — the
  *    environment. It keeps running whether or not the operator is listening.
- *  - the **station** (audio, transcript, the QSO in progress) — that is what
- *    the rig's power switch controls (`receiving`).
+ *  - the **station** (audio, the QSO in progress) — that is what the rig's
+ *    power switch controls (`receiving`).
  *
+ * The exchange is kept internally (staging, logging, the state machine) but is
+ * never rendered: the conversation is on the air, not on the screen.
  * Powering down therefore never touches the band: the other stations do not go
  * off the air just because we did. See `setReceiving`.
  *
@@ -145,6 +148,16 @@ export class QsoSession implements SessionContext {
    * the clock rather than stored as a boolean so it self-expires.
    */
   readonly keyingUntil = new Map<string, number>();
+  /**
+   * What each calling station is transmitting right now, and when it started.
+   * This is what makes "tune in and you hear it" work: when the operator turns
+   * the dial onto a station that is mid-CQ, the message is played from where it
+   * has already got to instead of waiting for the next one.
+   */
+  private readonly onAir = new Map<
+    string,
+    { text: string; startedAt: number; durationMs: number }
+  >();
 
   private readonly clock: () => number;
   private readonly startTicking: (cb: () => void) => () => void;
@@ -154,14 +167,12 @@ export class QsoSession implements SessionContext {
   private readonly hamQso: HamQsoDriver;
   /**
    * How many HAMs this band keeps active (12–18 by default, fixed for the
-   * session). An explicit `seedHams(n)` overrides it, and the band refills back
-   * to that number after a HAM gives up — "keep n stations", not "spawn n once".
+   * session). An explicit `seedHams(n)` overrides it.
    */
   private targetHams: number;
   private settings: AppSettings;
   private stopTicking: (() => void) | null = null;
   private activityListener: ((events: HamActivityEvent[]) => void) | null = null;
-  private transcriptListener: (() => void) | null = null;
 
   /** True while a transmission is in flight; guards against interleaved sends. */
   private sending = false;
@@ -229,21 +240,11 @@ export class QsoSession implements SessionContext {
   }
 
   /**
-   * Register a listener notified when a HAM calls CQ on its own or gives up.
+   * Register a listener notified when a HAM calls CQ on its own.
    * Pages use it to refresh without a full re-render; pass null to unregister.
    */
   setActivityListener(fn: ((events: HamActivityEvent[]) => void) | null): void {
     this.activityListener = fn;
-  }
-
-  /**
-   * Register a listener notified whenever a transcript line is appended, so a
-   * page can redraw just its transcript. Without this the page would only
-   * update after the whole exchange round-trip — meaning the user's own line
-   * would not appear until the HAM had finished replying seconds later.
-   */
-  setTranscriptListener(fn: (() => void) | null): void {
-    this.transcriptListener = fn;
   }
 
   updateSettings(settings: AppSettings): void {
@@ -262,7 +263,13 @@ export class QsoSession implements SessionContext {
   setReceiving(on: boolean): void {
     if (on === this.receiving) return;
     this.receiving = on;
-    if (!on) this.audio.stop(); // powering down cuts whatever was being heard
+    if (!on) {
+      this.audio.stop(); // powering down cuts whatever was being heard
+      return;
+    }
+    // Powering up onto a station that is mid-CQ should put us in the middle of
+    // it, exactly like switching a real receiver on.
+    this.rejoinOnAir();
   }
 
   /**
@@ -274,6 +281,9 @@ export class QsoSession implements SessionContext {
     if (freqMHz === this.freqMHz) return;
     this.freqMHz = freqMHz;
     if (this.machine) this.persistStaging();
+    // Tuning is also listening: whatever is on the air at the new spot starts
+    // playing straight away, from wherever it has got to.
+    this.rejoinOnAir();
   }
 
   /**
@@ -496,16 +506,21 @@ export class QsoSession implements SessionContext {
 
   // --- transcript ----------------------------------------------------------
 
+  /**
+   * The transcript is internal only: it keeps the exchange for staging, logging
+   * and the state machine's own bookkeeping. Nothing renders it — the
+   * conversation is on the air, not on the screen.
+   */
+
   /** Update the unsent draft and persist it so a refresh keeps what was typed. */
   setDraft(value: string): void {
     this.draft = value;
     this.persistStaging();
   }
 
-  /** Append a line to the transcript and let the page redraw just that pane. */
+  /** Append a line to the (internal) transcript. */
   push(who: Speaker, text: string): void {
     this.lines.push({ who, text });
-    this.transcriptListener?.();
     this.persistStaging();
   }
 
@@ -763,19 +778,12 @@ export class QsoSession implements SessionContext {
 
   private handleActivity(events: HamActivityEvent[]): void {
     for (const e of events) {
-      if (e.type === "offline") {
-        // The band keeps replacing stations that give up whether or not we are
-        // listening; only the *report* of it is withheld while powered down.
-        if (this.receiving) this.note(`${e.ham.call} 停止呼叫，已下线`);
-        this.refillHams();
-      }
-    }
-
-    for (const e of events) {
-      if (e.type !== "cq") continue;
+      // The burst goes on the air whether or not we are listening: that record
+      // is what lets the operator tune in halfway through it.
+      this.noteCq(e.ham);
       // Powered down: the CQ goes out on the air, we just do not hear it. The
       // band must still be advanced (which it is — that happened in frequency),
-      // so the station keeps its own rhythm and may still give up.
+      // so the station keeps its own rhythm.
       if (!this.receiving) continue;
       // Outside the passband: the filter cuts the station off, so its CQ is
       // never picked up. It stays on the waterfall for the operator to tune to.
@@ -794,15 +802,52 @@ export class QsoSession implements SessionContext {
     this.activityListener?.(events);
   }
 
+  /**
+   * Record one burst as being on the air, and re-time the station's next one:
+   * the next CQ starts after this message has finished keying plus a listening
+   * gap. Only the session knows how long a message takes, so the band's
+   * scheduler cannot work this out on its own.
+   */
+  private noteCq(ham: VirtualHam): void {
+    const text = `CQ CQ CQ DE ${ham.call} ${ham.call} PSE K`;
+    const durationMs = this.audio.callDurationMs(text);
+    this.onAir.set(ham.call, { text, startedAt: this.clock(), durationMs });
+    this.band.scheduleNextCq(ham.call, durationMs + nextCqGapMs(this.rng));
+  }
+
+  /**
+   * Join whatever is being transmitted inside the passband, from wherever that
+   * message has already got to. This is the reason tuning feels live: turn the
+   * dial onto a station and you are hearing it within a fraction of a second,
+   * not waiting for its next CQ.
+   *
+   * It also cuts the station we were hearing: tuning away really does mean
+   * silence, and moving inside the passband re-renders at the new offset so the
+   * note shifts with the dial the way a real receiver's does.
+   */
+  private rejoinOnAir(): void {
+    if (!this.receiving || this.sending) return;
+    if (this.exchangeInProgress || this.pileup.active) return;
+    const now = this.clock();
+    let target: { ham: VirtualHam; text: string; offsetSec: number } | null = null;
+    for (const entry of this.band.activityState()) {
+      if (entry.state === "inQso") continue;
+      if (!this.canHear(entry.ham)) continue;
+      const tx = this.onAir.get(entry.ham.call);
+      if (!tx) continue;
+      const elapsed = now - tx.startedAt;
+      if (elapsed < 0 || elapsed >= tx.durationMs) continue;
+      target = { ham: entry.ham, text: tx.text, offsetSec: elapsed / 1000 };
+      break;
+    }
+    this.audio.stop();
+    if (target) void this.audio.playHamFrom(target.text, target.ham, target.offsetSec);
+  }
+
   /** True once the user is actually exchanging with a HAM (not just listening). */
   private get exchangeInProgress(): boolean {
     const s = this.machine?.state;
     return s === "USER_CQ" || s === "EXCHANGE" || s === "SIGNOFF";
-  }
-
-  /** Top the band back up to its target size after a HAM gave up. */
-  private refillHams(): void {
-    while (this.band.hamCount < this.targetHams) this.spawnHam();
   }
 
   /**

@@ -9,7 +9,7 @@ import type { AppHost, PageId } from "../app.js";
 function makeHarness(overrides: Partial<AppSettings> = {}) {
   const root = document.createElement("div");
   document.body.append(root);
-  const settings = normalizeSettings({ myCall: "BG7XXX", assistMode: false, ...overrides });
+  const settings = normalizeSettings({ myCall: "BG7XXX", ...overrides });
   const session = new QsoSession(14.025, settings);
   let cleanups: Array<() => void> = [];
 
@@ -55,10 +55,6 @@ function findButton(root: HTMLElement, text: string): HTMLButtonElement {
   return found;
 }
 
-function hamRows(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(".cw-pane .cw-line.ham"));
-}
-
 beforeEach(() => {
   document.body.innerHTML = "";
 });
@@ -67,75 +63,28 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("CW 翻译页", () => {
-  it("没有通联内容时给出引导提示", () => {
+describe("通联面板", () => {
+  it("只有状态、发送、电键与操作，没有收发记录", () => {
     const { root } = makeHarness();
-    expect(root.textContent).toContain("尚无通联内容");
+    expect(root.textContent).toContain("通联状态");
+    expect(root.textContent).toContain("发送");
+    expect(root.textContent).toContain("操作");
+    // 记录面板整个不在了，也不再提示「尚无通联内容」。
+    expect(root.textContent).not.toContain("收报 / 发报记录");
+    expect(root.textContent).not.toContain("尚无通联内容");
+    expect(root.querySelector(".cw-pane")).toBeNull();
   });
 
-  it("对方发来 CQ 后显示一行对方报文", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true });
+  it("不显示对方是谁：呼号要靠抄收", async () => {
+    const { root, session, render } = makeHarness();
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
-    const rows = hamRows(root);
-    expect(rows.length).toBe(1);
-    expect(rows[0].querySelector(".who")?.textContent).toBe("对方");
-    expect(rows[0].textContent).toContain(session.lines[0].text);
-    expect(root.textContent).toContain(`对方 ${session.ham?.call}`);
-  });
-
-  it("辅助模式关闭时对方内容被遮蔽并提供单条「显示」", async () => {
-    const { root, session, render } = makeHarness({ assistMode: false });
-    session.seedHams(1);
-    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
-    await session.hamCallsCq();
-    render();
-
-    const row = hamRows(root)[0];
-    expect(row.querySelector(".masked")).not.toBeNull();
-    expect(row.textContent).not.toContain(session.lines[0].text);
-    expect(row.querySelector("button")?.textContent).toBe("显示");
-  });
-
-  it("点击「显示」只揭示该条报文且原文可读", async () => {
-    const { root, session, render } = makeHarness({ assistMode: false });
-    session.seedHams(1);
-    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
-    await session.hamCallsCq();
-    render();
-
-    findButton(hamRows(root)[0], "显示").click();
-
-    const row = hamRows(root)[0];
-    expect(row.querySelector(".masked")).toBeNull();
-    expect(row.textContent).toContain(session.lines[0].text);
-    expect(row.querySelector("button")).toBeNull();
-  });
-
-  it("辅助模式开启时直接显示原文并给出提示横幅", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true });
-    session.seedHams(1);
-    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
-    await session.hamCallsCq();
-    render();
-
-    expect(root.querySelector(".assist-banner")?.textContent).toContain("辅助模式开启");
-    expect(root.querySelector(".masked")).toBeNull();
-  });
-
-  it("勾选辅助模式复选框会更新设置并重绘", () => {
-    const { root, host } = makeHarness({ assistMode: false });
-
-    const box = root.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(box).not.toBeNull();
-    box!.checked = true;
-    box!.dispatchEvent(new Event("change"));
-
-    expect(host.settings.assistMode).toBe(true);
-    expect(root.querySelector(".assist-banner")).not.toBeNull();
+    const call = session.ham!.call;
+    expect(root.textContent).not.toContain(call);
+    expect(root.textContent).not.toContain("对方 ");
   });
 
   it("短语宏会把预设报文填入输入框", () => {
@@ -148,41 +97,29 @@ describe("CW 翻译页", () => {
 
     findButton(root, "73 SK").click();
     expect(input!.value).toBe("R TU 73 SK");
+
+    // 宏里只有协议，没有对方呼号——那个得自己抄。
+    findButton(root, "我发 CQ").click();
+    expect(input!.value).toBe("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
   });
 
-  it("发送报文后会把「我」这一行追加到记录里", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true });
+  it("发送后会清空输入框，但不会在页面上留下记录", async () => {
+    const { root, session, render } = makeHarness();
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
-    const peer = session.ham!.call;
     const input = root.querySelector("textarea")!;
-    input.value = `${peer} DE BG7XXX K`;
+    input.value = "R UR RST 599 BK";
     findButton(root, "发送").click();
 
+    expect(input.value).toBe("");
     await vi.waitFor(() => {
-      expect(session.lines.some((l) => l.who === "me" && l.text.includes("DE BG7XXX"))).toBe(true);
+      expect(session.lines.some((l) => l.who === "me")).toBe(true);
     });
-    await vi.waitFor(() => {
-      expect(root.querySelectorAll(".cw-pane .cw-line.me").length).toBe(1);
-    });
-    expect(root.querySelector(".cw-pane .cw-line.me .who")?.textContent).toBe("我");
-  });
-
-  it("「新通联」会清空记录并回到初始提示", async () => {
-    const { root, session, host } = makeHarness({ assistMode: true });
-    session.seedHams(1);
-    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
-    await session.hamCallsCq();
-    host.refresh();
-    expect(root.querySelector(".cw-pane")?.textContent).not.toContain("尚无通联内容");
-
-    host.newSession();
-
-    expect(session.lines.length).toBe(0);
-    expect(root.querySelector(".cw-pane")?.textContent).toContain("尚无通联内容");
+    // 报文进了空中，没有进屏幕。
+    expect(root.querySelector(".cw-pane")).toBeNull();
   });
 
   it("离开页面时注销键盘监听（清理钩子已注册）", () => {
@@ -190,22 +127,19 @@ describe("CW 翻译页", () => {
     expect(harness.cleanups()).toBeGreaterThan(0);
   });
 
-  it("重绘（切换辅助模式）不会弄丢输入框里还没发送的报文", () => {
-    const { root, host } = makeHarness({ assistMode: true });
+  it("重绘不会弄丢输入框里还没发送的报文", () => {
+    const { root, host } = makeHarness();
     const first = root.querySelector("textarea")!;
     first.value = "R UR RST 5"; // 输入一半，尚未发送
     first.dispatchEvent(new Event("input"));
 
-    const assist = root.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    assist.checked = false;
-    assist.dispatchEvent(new Event("change"));
+    host.refresh();
 
-    expect(host.settings.assistMode).toBe(false);
     expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
   });
 
   it("状态行显示对方实际被听到的音调（拨轮对准后回到设定值）", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    const { root, session, render } = makeHarness({ toneHz: 700 });
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
@@ -217,7 +151,7 @@ describe("CW 翻译页", () => {
   });
 
   it("没有对准频率时状态行标出偏频量", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    const { root, session, render } = makeHarness({ toneHz: 700 });
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
@@ -229,7 +163,7 @@ describe("CW 翻译页", () => {
   });
 
   it("调出通带后状态行先说信号变弱，再说没有声音", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true, toneHz: 700 });
+    const { root, session, render } = makeHarness({ toneHz: 700 });
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6);
     await session.hamCallsCq();
@@ -325,12 +259,12 @@ describe("CW 页 iambic 双桨输入", () => {
 });
 
 describe("堆叠提示", () => {
-  it("多台应答时标出台数、给出点名提示与点名按钮", async () => {
+  it("多台应答时标出台数并提示必须点名，但不给出呼号", async () => {
     const root = document.createElement("div");
     document.body.append(root);
     let t = 0;
     const ticks: Array<() => void> = [];
-    const settings = normalizeSettings({ myCall: "BG7XXX", assistMode: true });
+    const settings = normalizeSettings({ myCall: "BG7XXX" });
     const session = new QsoSession(14.025, settings, {
       now: () => t,
       startTicking: (cb) => {
@@ -361,13 +295,14 @@ describe("堆叠提示", () => {
     expect(caller).toBeDefined();
     expect(root.textContent).toContain("台同时应答");
     expect(root.textContent).toContain("必须点名");
-
-    findButton(root, `点名 ${caller.call}`).click();
-    expect(root.querySelector("textarea")!.value).toBe(`${caller.call} DE BG7XXX K`);
+    // 谁在应你，得自己抄；页面上不列、也没有「点名 XXX」按钮。
+    expect(root.textContent).not.toContain(caller.call);
+    expect(
+      Array.from(root.querySelectorAll("button")).some((b) => (b.textContent ?? "").includes("点名")),
+    ).toBe(false);
   });
 });
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-

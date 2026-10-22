@@ -74,7 +74,14 @@ function wireGestureResume(ctx: AudioContextLike): void {
   }
 }
 
-export interface EngineRenderOptions extends Omit<CwRenderOptions, "text"> {}
+export interface EngineRenderOptions extends Omit<CwRenderOptions, "text"> {
+  /**
+   * Start this many seconds into the message. Used to join a transmission that
+   * is already under way (the operator just tuned onto it) — a real receiver
+   * hears the tail of a CQ, it does not wait for the next one.
+   */
+  offsetSec?: number;
+}
 
 /**
  * CW audio engine. The browser path renders to PCM and plays it through the
@@ -125,8 +132,13 @@ export class CwAudioEngine implements AudioPlayer {
   /** Play a message (browser only). Returns a handle; `done` resolves on end/stop. */
   play(text: string, opts?: EngineRenderOptions): PlaybackHandle {
     try {
-      const r = renderCwAudio({ text, ...opts });
-      return this.player.play(r.samples, r.sampleRate);
+      const { offsetSec = 0, ...renderOpts } = opts ?? {};
+      const r = renderCwAudio({ text, ...renderOpts });
+      const offset = Math.max(0, Math.floor(offsetSec * r.sampleRate));
+      // Nothing left of the message: it has already finished keying.
+      if (offset >= r.samples.length) return { done: Promise.resolve(), stop() {} };
+      const samples = offset > 0 ? r.samples.subarray(offset) : r.samples;
+      return this.player.play(samples, r.sampleRate);
     } catch {
       // Rendering should never fail, but never let audio block the QSO flow.
       return { done: Promise.resolve(), stop() {} };

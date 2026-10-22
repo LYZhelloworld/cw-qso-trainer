@@ -86,20 +86,20 @@ describe("HAM 自主发 CQ", () => {
     expect(h.session.lines.filter((l) => l.who === "ham").length).toBe(2);
   });
 
-  it("连续 3 分钟无应答则下线，并补上新台", async () => {
+  it("台不会因为无人应答而下线：三分钟后还是同一台在呼叫", async () => {
     const h = makeSession();
     h.session.seedHams(1);
     tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000);
 
-    const gone = h.session.listHams()[0].call;
+    const call = h.session.listHams()[0].call;
     await h.tickTo(5_000 + 180_000);
 
-    expect(h.session.lines.some((l) => l.text.includes("下线"))).toBe(true);
-    const now = h.session.listHams();
-    expect(now).toHaveLength(1); // 补位后仍是 1 个（目标数量由 rng 决定）
-    expect(now[0].call).not.toBe(gone);
+    expect(h.session.listHams()).toHaveLength(1);
+    expect(h.session.listHams()[0].call).toBe(call);
+    expect(h.session.lines.some((l) => l.text.includes("下线"))).toBe(false);
+    expect(h.session.hamActivity()[0].state).toBe("cqing");
   });
 
   it("通联中不会被频段上其他台的呼叫打断", async () => {
@@ -212,14 +212,12 @@ describe("波段规模", () => {
     expect(new Set(freqs).size).toBe(freqs.length); // 没有两台挤在同一个槽上
   });
 
-  it("显式设定的台数会成为补位目标（下线后仍回到这个数量）", async () => {
+  it("显式设定的台数就是这个波段的台数（不会有人下线被补位）", async () => {
     const h = makeSession();
     h.session.seedHams(3);
-    tuneOntoFirstHam(h.session);
     h.session.start();
 
-    await h.tickTo(5_000);
-    await h.tickTo(5_000 + 180_000); // 三分钟无人应答 -> 下线并补位
+    await h.tickTo(5_000 + 180_000);
 
     expect(h.session.listHams()).toHaveLength(3);
   });

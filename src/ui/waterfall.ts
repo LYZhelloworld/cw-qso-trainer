@@ -9,6 +9,13 @@
  *    keyed, so it shows dots and dashes instead of a steady bar.
  *  - Time runs downwards: each line is one instant, older lines slide down.
  *
+ * Tuning is a wheel, not a click
+ *  - A real rig is tuned with a knob, and a panadapter is a display: clicking a
+ *    signal to jump onto it is a mouse idiom that belongs to SDR software, not
+ *    to an operating position. The wheel over the display moves the dial one
+ *    1 kHz step per notch (Shift = 100 Hz), which is the same grid the stations
+ *    sit on. See `handleWheel`.
+ *
  * Why tuning traces a curve
  *  - Each line is computed from the dial *at the moment that line is drawn*.
  *    Turning the dial therefore moves only the new line at the top; the history
@@ -67,6 +74,13 @@ const NOISE_RANGE = 0.05;
 const IDLE_FACTOR = 0.2;
 /** Stop catching up after this many lines in one frame (tab was backgrounded). */
 const MAX_ROWS_PER_FRAME = 6;
+
+/** Wheel travel (deltaY units) that counts as one notch — a mouse wheel click. */
+const WHEEL_NOTCH = 100;
+/** Fine tuning step in Hz, while Shift is held. */
+const WHEEL_FINE_HZ = 100;
+/** Coarse tuning step in Hz — the grid the band's stations sit on. */
+const WHEEL_COARSE_HZ = 1_000;
 
 // --- colour map ------------------------------------------------------------
 
@@ -263,7 +277,7 @@ function safeContext2d(canvas: HTMLCanvasElement): CanvasRenderingContext2D | nu
 
 export class Waterfall {
   readonly canvas: HTMLCanvasElement;
-  /** Fired when the operator clicks a signal; the app tunes the dial there. */
+  /** Fired when the wheel turns the dial; the app tunes to that absolute Hz. */
   onTune: ((freqHz: number) => void) | null = null;
 
   private readonly ctxFactory: () => CanvasRenderingContext2D | null;
@@ -286,6 +300,9 @@ export class Waterfall {
   private nextRowAt = 0;
   private centerHz: number | null = null;
   private targetHz = 0;
+  /** Unspent wheel travel, so a trackpad's many small deltas still notch once. */
+  private wheelAccum = 0;
+  private wheelFine = false;
   private wpm: number;
 
   private w = 0;
@@ -305,7 +322,9 @@ export class Waterfall {
     this.schedule = opts.schedule ?? defaultSchedule;
     this.wpm = opts.wpm ?? DEFAULT_WPM;
     this.noise = mulberry32(0x5eed);
-    canvas.addEventListener("click", this.handleClick);
+    // `passive: false` so the wheel can be claimed for tuning instead of
+    // scrolling the page underneath the display.
+    canvas.addEventListener("wheel", this.handleWheel, { passive: false });
   }
 
   /** The centre the display is currently drawn around (lags the dial). */
@@ -353,7 +372,7 @@ export class Waterfall {
 
   dispose(): void {
     this.stop();
-    this.removeClickListener();
+    this.removeWheelListener();
     this.source = null;
     this.onTune = null;
   }
@@ -482,32 +501,49 @@ export class Waterfall {
     return true;
   }
 
-  private readonly handleClick = (e: MouseEvent): void => {
-    if (!this.onTune) return;
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0) return;
-    const hz = freqAtX(e.clientX - rect.left, rect.width, this.displayCenterHz, this.spanHz);
-    this.onTune(this.nearestWorkable(hz) ?? hz);
+  /**
+   * The knob. Scrolling up tunes up, one 1 kHz notch at a time (Shift = 100 Hz),
+   * which lands exactly on the grid the band's stations sit on. Trackpads send a
+   * stream of small deltas, so travel accumulates until it is worth a notch.
+   *
+   * The step is applied to the *dial* (`targetHz`), not to the eased display
+   * centre: the operator turns a knob, and the picture catches up afterwards.
+   */
+  private readonly handleWheel = (e: WheelEvent): void => {
+    if (!this.onTune || e.deltaY === 0) return;
+    // Never let the page scroll underneath the display.
+    e.preventDefault();
+
+    const fine = e.shiftKey;
+    const notch = fine ? WHEEL_NOTCH / 2 : WHEEL_NOTCH;
+    if (fine !== this.wheelFine) {
+      // Switching step size: a leftover half-notch must not fire immediately.
+      this.wheelFine = fine;
+      this.wheelAccum = 0;
+    }
+
+    let travel = this.wheelAccum + e.deltaY;
+    let steps = 0;
+    while (Math.abs(travel) >= notch) {
+      // Wheel down (positive deltaY) lowers the frequency, like turning a knob
+      // anticlockwise.
+      steps += travel > 0 ? -1 : 1;
+      travel -= travel > 0 ? notch : -notch;
+    }
+    this.wheelAccum = travel;
+    if (steps === 0) return;
+
+    const base = this.targetHz > 0 ? this.targetHz : this.displayCenterHz;
+    const stepHz = fine ? WHEEL_FINE_HZ : WHEEL_COARSE_HZ;
+    const next = base + steps * stepHz;
+    // Anticipate the tune: several notches can land within one frame, and each
+    // must build on the previous one rather than on the dial as it was. The
+    // next `advance()` re-reads the real dial anyway.
+    this.targetHz = next;
+    this.onTune(next);
   };
 
-  /** Snap a click onto a workable station when it lands close enough. */
-  private nearestWorkable(hz: number): number | null {
-    const signals = this.latest?.signals;
-    if (!signals) return null;
-    let best: number | null = null;
-    let bestDistance = Infinity;
-    for (const s of signals) {
-      if (!s.workable) continue;
-      const d = Math.abs(s.freqHz - hz);
-      if (d < bestDistance) {
-        bestDistance = d;
-        best = s.freqHz;
-      }
-    }
-    return best !== null && bestDistance <= 300 ? best : null;
-  }
-
-  private removeClickListener(): void {
-    this.canvas.removeEventListener("click", this.handleClick);
+  private removeWheelListener(): void {
+    this.canvas.removeEventListener("wheel", this.handleWheel);
   }
 }

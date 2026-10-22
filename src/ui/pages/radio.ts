@@ -6,20 +6,9 @@ import {
   clampToBand,
   roundFreq,
 } from "../bands.js";
-import { detuneHz, inPassband, passbandGain } from "../../ham/tuning.js";
-import { BAND_SIGNAL_SPREAD_HZ, SPECTRUM_SPAN_HZ, inSpectrumWindow } from "../../ham/spectrum.js";
+import { BAND_SIGNAL_SPREAD_HZ, SPECTRUM_SPAN_HZ } from "../../ham/spectrum.js";
 import { renderQsoPanel } from "./cw.js";
 import type { AppHost } from "../app.js";
-
-/**
- * What the operator can tell about a station on the band: whether it is calling
- * CQ, or not. A station working somebody else is deliberately indistinguishable
- * from one that is just listening — nobody can see another pair's QSO, and
- * there is no reason the display should know about it.
- */
-function activityLabel(state: string): string {
-  return state === "cqing" ? "呼叫 CQ 中" : "守听";
-}
 
 /**
  * How often the S-meter redraws. Fast enough to follow a signal's fade, slow
@@ -70,9 +59,10 @@ function renderSMeter(host: AppHost): HTMLElement {
 }
 
 /**
- * The main "radio" screen: band tuning and live activity, plus the QSO operating
- * panel (transcript / send / keying) once the user has a partner. The frequency
- * readout itself lives in the persistent rig header, so it is not repeated here.
+ * The main "radio" screen: band tuning and the receiver's own readouts, plus the
+ * QSO operating panel (status / send / keying) once the user has a partner. The
+ * frequency readout itself lives in the persistent rig header, so it is not
+ * repeated here.
  */
 export function renderRadio(host: AppHost, root: HTMLElement): void {
   // Powered off: nothing to hear. Offer the power switch (also in the rig).
@@ -163,59 +153,12 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     return;
   }
 
-  // --- band activity -------------------------------------------------------
-  // Only what the panadapter is showing: the band slice is wider than the
-  // waterfall window, so tuning on turns up stations that are not in this list
-  // yet. That is the point — you find stations by tuning, not by reading a list.
-  const roster = host.session
-    .hamActivity()
-    .filter((e) => inSpectrumWindow(e.ham.freqHz, host.session.dialHz));
-  const dialHz = host.session.dialHz;
-  const passbandHz = host.session.passbandHz;
-  // The meter sits above the list because it is what the receiver is doing,
-  // not something you read off the list: it follows the strongest signal the
-  // filter passes, so it agrees with what the operator is hearing.
-  const meter = renderSMeter(host);
-
-  const audible = roster.filter((e) => inPassband(e.ham.freqHz, dialHz, passbandHz));
-
-  const activity = el("div", { class: "col" });
-  if (roster.length === 0) {
-    activity.append(el("div", { class: "hint", text: "这个窗口里没有信号 · 调谐换一段看看" }));
-  } else {
-    for (const entry of roster) {
-      const detune = detuneHz(entry.ham.freqHz, dialHz);
-      const heard = inPassband(entry.ham.freqHz, dialHz, passbandHz);
-      // Three states, not two: inside the passband, on the filter's skirt
-      // (audible but too weak to work — see `ham/tuning`), and gone.
-      const gain = passbandGain(entry.ham.freqHz, dialHz, passbandHz);
-      const line = el("div", { class: "row" });
-      line.append(el("span", { text: entry.ham.call }));
-      line.append(el("span", { class: "badge", text: activityLabel(entry.state) }));
-      line.append(
-        el("span", {
-          class: "hint",
-          text: `${(entry.ham.freqHz / 1e6).toFixed(4)} MHz · ${detune > 0 ? "+" : ""}${detune} Hz`,
-        }),
-      );
-      line.append(
-        el("span", {
-          class: heard ? "badge heard" : "hint tone-off",
-          text: heard ? "通带内" : gain > 0 ? "裙边 · 很弱" : "听不到",
-        }),
-      );
-      activity.append(line);
-    }
-  }
-  if (audible.length === 0 && roster.length > 0) {
-    activity.append(
-      el("div", {
-        class: "hint",
-        text: `窗口里这 ${roster.length} 个信号都不在通带内（拨轮 ±${halfHz} Hz 内才能通联）。调谐或直接点频谱上的亮斑。`,
-      }),
-    );
-  }
-  root.append(panel("波段活动", meter, activity));
+  // --- receiver ------------------------------------------------------------
+  // The roster is deliberately not shown. Which station sits where, and what it
+  // is called, is exactly what the operator has to find by tuning and copy by
+  // ear — a list would turn the exercise into reading. The S-meter stays: it is
+  // what the receiver itself reports, not a directory of the band.
+  root.append(panel("接收机", renderSMeter(host)));
 
   // --- start a QSO ---------------------------------------------------------
   const nearest = host.session.nearestWorkableHam();
@@ -254,7 +197,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     start.append(
       el("div", {
         class: "hint",
-        text: "监听会自动扫描到最近的电台；也可以自己用 ± 按钮或点频谱调谐。",
+        text: "监听会自动扫描到最近的电台；也可以自己用 ± 按钮或滚动频谱调谐。",
       }),
     );
   }

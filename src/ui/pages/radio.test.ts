@@ -209,21 +209,12 @@ describe("电台页 — S 表", () => {
   });
 });
 
-describe("电台页 — 波段活动与通联", () => {
-  it("没有活动 HAM 时提示窗口里没有信号", () => {
-    const { root } = makeHost();
-    expect(root.textContent).toContain("这个窗口里没有信号");
-  });
-
-  it("列出频谱窗口内的 HAM、频率与是否在通带内；窗口外的不列", () => {
+describe("电台页 — 信号与通联", () => {
+  it("页面上没有任何呼号：谁在台上要靠耳朵听", () => {
     const { root, host } = makeHost({ myCall: "BG7XXX" });
     const hams = [
       { call: "JA1ABC", freqHz: 14_027_000, strength: 0.8 },
       { call: "BG7ZZZ", freqHz: 14_028_000, strength: 0.6 },
-      // 拨轮外 300 Hz：出了 500 Hz 通带，但还在裙边上（听得到、很弱、不能通联）。
-      { call: "VR2ABC", freqHz: 14_025_800, strength: 0.7 },
-      // 20 kHz 之外：不在瀑布窗口里，页面上不该出现它的名字。
-      { call: "UA0XYZ", freqHz: 14_045_000, strength: 0.5 },
     ];
     host.session = {
       inQso: false,
@@ -231,7 +222,8 @@ describe("电台页 — 波段活动与通联", () => {
       passbandHz: 500,
       passbandHalfHz: 250,
       listHams: () => hams,
-      hamActivity: () => hams.map((ham) => ({ ham, state: "listening", nextCqAt: 0, cqSince: null })),
+      hamActivity: () =>
+        hams.map((ham) => ({ ham, state: "listening", nextCqAt: 0, cqSince: null })),
       hamCallsCq: async () => true,
       userCallsCq: async () => {},
       heardActiveHam: () => null,
@@ -240,13 +232,12 @@ describe("电台页 — 波段活动与通联", () => {
     } as unknown as QsoSession;
     host.refresh();
 
-    expect(root.textContent).toContain("JA1ABC");
-    expect(root.textContent).toContain("BG7ZZZ");
-    expect(root.textContent).not.toContain("UA0XYZ");
-    expect(root.textContent).toContain("MHz");
-    expect(root.textContent).toContain("裙边 · 很弱");
-    expect(root.textContent).toContain("听不到");
-    expect(root.textContent).toContain("都不在通带内");
+    // 谁在哪、叫什么，正是要靠调谐和抄收得到的，页面不该先说出来。
+    expect(root.textContent).not.toContain("JA1ABC");
+    expect(root.textContent).not.toContain("BG7ZZZ");
+    expect(root.textContent).not.toContain("MHz ·");
+    // S 表还在：那是接收机自己的读数，不是波段名册。
+    expect(root.querySelector(".smeter")).not.toBeNull();
   });
 
   it("未填写本方呼号时提示去设置，填写后不再提示", () => {
@@ -320,7 +311,8 @@ describe("电台页 — 波段活动与通联", () => {
     host.refresh();
 
     expect(root.textContent).toContain("通联状态");
-    expect(root.textContent).toContain("收报 / 发报记录");
     expect(root.textContent).not.toContain("开始通联");
+    // 收发记录不显示：报文只在空中，屏幕上没有回放。
+    expect(root.textContent).not.toContain("收报 / 发报记录");
   });
 });

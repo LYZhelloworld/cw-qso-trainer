@@ -206,7 +206,7 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.dispose();
   });
 
-  it("点击频谱把该处的频率交给 onTune", () => {
+  it("滚轮向上滚一格，频率上调 1 kHz", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
     wf.setSource(() => snapshot(CENTER, [signal()]));
@@ -214,42 +214,103 @@ describe("瀑布图 — 组件生命周期", () => {
 
     const tuned: number[] = [];
     wf.onTune = (hz) => tuned.push(hz);
-    canvas.dispatchEvent(new MouseEvent("click", { clientX: 500 }));
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
 
-    expect(tuned).toEqual([CENTER]);
+    expect(tuned).toEqual([CENTER + 1000]);
     wf.dispose();
   });
 
-  it("点击落在一个可通联电台附近时吸附到它", () => {
+  it("滚轮向下滚一格，频率下调 1 kHz", () => {
     const canvas = makeCanvas();
-    const station = CENTER + 200; // 10 px to the right of centre
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
-    wf.setSource(() => snapshot(CENTER, [signal({ freqHz: station })]));
+    wf.setSource(() => snapshot(CENTER));
     wf.advance(0);
 
     const tuned: number[] = [];
     wf.onTune = (hz) => tuned.push(hz);
-    canvas.dispatchEvent(new MouseEvent("click", { clientX: 510 }));
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
 
-    expect(tuned).toEqual([station]);
+    expect(tuned).toEqual([CENTER - 1000]);
     wf.dispose();
   });
 
-  it("点击远离任何电台时不吸附（调到该频率本身）", () => {
+  it("Shift + 滚轮是 100 Hz 微调", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
-    wf.setSource(() => snapshot(CENTER, [signal({ freqHz: CENTER + 5000 })]));
+    wf.setSource(() => snapshot(CENTER));
     wf.advance(0);
 
     const tuned: number[] = [];
     wf.onTune = (hz) => tuned.push(hz);
-    canvas.dispatchEvent(new MouseEvent("click", { clientX: 0 }));
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -50, shiftKey: true }));
 
-    expect(tuned).toEqual([CENTER - SPAN / 2]);
+    expect(tuned).toEqual([CENTER + 100]);
     wf.dispose();
   });
 
-  it("dispose 之后不再响应点击", () => {
+  it("一次滚几格就调几步", () => {
+    const canvas = makeCanvas();
+    const wf = new Waterfall(canvas, { context: null, now: () => 0 });
+    wf.setSource(() => snapshot(CENTER));
+    wf.advance(0);
+
+    const tuned: number[] = [];
+    wf.onTune = (hz) => tuned.push(hz);
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -200 }));
+
+    expect(tuned).toEqual([CENTER + 2000]);
+    wf.dispose();
+  });
+
+  it("一帧内连滚两格会累加，而不是都按旧拨轮算", () => {
+    const canvas = makeCanvas();
+    const wf = new Waterfall(canvas, { context: null, now: () => 0 });
+    wf.setSource(() => snapshot(CENTER));
+    wf.advance(0);
+
+    const tuned: number[] = [];
+    wf.onTune = (hz) => tuned.push(hz);
+    // No advance() in between: the picture has not caught up yet.
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+
+    expect(tuned).toEqual([CENTER + 1000, CENTER + 2000]);
+    wf.dispose();
+  });
+
+  it("触控板的细碎增量会累积成整格，而不是每像素调一次", () => {
+    const canvas = makeCanvas();
+    const wf = new Waterfall(canvas, { context: null, now: () => 0 });
+    wf.setSource(() => snapshot(CENTER));
+    wf.advance(0);
+
+    const tuned: number[] = [];
+    wf.onTune = (hz) => tuned.push(hz);
+    // 4 × 25 = 100 = one notch; the first three must not tune yet.
+    for (let i = 0; i < 3; i += 1) {
+      canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -25 }));
+    }
+    expect(tuned).toEqual([]);
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -25 }));
+    expect(tuned).toEqual([CENTER + 1000]);
+    wf.dispose();
+  });
+
+  it("滚轮不会让页面跟着滚动", () => {
+    const canvas = makeCanvas();
+    const wf = new Waterfall(canvas, { context: null, now: () => 0 });
+    wf.setSource(() => snapshot(CENTER));
+    wf.advance(0);
+    wf.onTune = () => {};
+
+    const e = new WheelEvent("wheel", { deltaY: -100, cancelable: true });
+    canvas.dispatchEvent(e);
+
+    expect(e.defaultPrevented).toBe(true);
+    wf.dispose();
+  });
+
+  it("dispose 之后不再响应滚轮", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
     wf.setSource(() => snapshot(CENTER));
@@ -258,7 +319,7 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.onTune = onTune;
     wf.dispose();
 
-    canvas.dispatchEvent(new MouseEvent("click", { clientX: 500 }));
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
     expect(onTune).not.toHaveBeenCalled();
   });
 });

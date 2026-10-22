@@ -15,7 +15,7 @@ import type { AppHost, PageId } from "../app.js";
 function mount(overrides: Partial<AppSettings> = {}) {
   const root = document.createElement("div");
   document.body.append(root);
-  const settings = normalizeSettings({ myCall: "BG7XXX", assistMode: false, ...overrides });
+  const settings = normalizeSettings({ myCall: "BG7XXX", ...overrides });
   const session = new QsoSession(14.025, settings);
   let cleanups: Array<() => void> = [];
 

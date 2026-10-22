@@ -1,15 +1,7 @@
-import { button, clear, el, panel } from "../dom.js";
+import { button, el, panel } from "../dom.js";
 import { addLog } from "../storage/logStore.js";
-import type { TranscriptLine } from "../session.js";
 import type { AppHost } from "../app.js";
 import { renderKeyPanel } from "./keyPanel.js";
-
-/** Lines the user chose to reveal while assist mode is off (per-session). */
-const revealed = new WeakSet<TranscriptLine>();
-
-function maskText(text: string): string {
-  return text.replace(/\S/g, "█");
-}
 
 const STATE_LABEL: Record<string, string> = {
   IDLE: "空闲",
@@ -22,35 +14,31 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 /**
- * The QSO operating panel (status / transcript / send / keying). Rendered by the
- * radio page once the user has a partner; it appends its panels to `root`.
+ * The QSO operating panel: status / send / keying / log.
+ *
+ * There is deliberately **no transcript**, and no station is named. The
+ * conversation is on the air: the operator copies what the other station sends
+ * and writes back what they heard. Echoing every message on screen would turn
+ * the exercise into reading, and labelling the other station would hand over
+ * the callsign that copying is supposed to produce.
+ *
+ * The tuning note stays, because it is about the *receiver* (are you on
+ * frequency?), not about what was said.
  */
 export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   const session = host.session;
   const settings = host.settings;
 
-  // --- assist mode ---------------------------------------------------------
-  const assistBox = el("input", { attrs: { type: "checkbox" } });
-  assistBox.checked = settings.assistMode;
-  assistBox.addEventListener("change", () =>
-    host.updateSettings({ assistMode: assistBox.checked }),
-  );
-  const assistLabel = el("label", { class: "row" });
-  assistLabel.append(assistBox, document.createTextNode("辅助模式（直接显示对方原文）"));
-
   // --- status --------------------------------------------------------------
-  const ctx = session.machine?.getContext();
   const status = el("div", { class: "row" });
   status.append(
     el("span", { class: "badge", text: STATE_LABEL[session.state] ?? session.state }),
   );
-  if (session.ham) status.append(el("span", { class: "hint", text: `对方 ${session.ham.call}` }));
-  // The note the partner is actually heard at. Zero-beaten it is the rig's pitch;
-  // off-frequency it is shifted by the detuning (see ham/tuning), signed by the
-  // receiving sideband (CW-L / CW-U), which is what the operator's ear is
-  // supposed to notice. Outside the passband the filter's skirt keeps it audible
-  // for a while — quieter and quieter — and then it is gone. Worth saying out
-  // loud in both cases, because the transcript keeps running either way.
+  // The note the partner is actually heard at. Zero-beaten it is the rig's
+  // pitch; off-frequency it is shifted by the detuning (see ham/tuning), signed
+  // by the receiving sideband (CW-L / CW-U). Outside the passband the filter's
+  // skirt keeps it audible for a while — quieter and quieter — and then it is
+  // gone. Worth saying out loud in both cases.
   const halfHz = session.passbandHalfHz;
   const detune = session.partnerDetuneHz();
   if (detune !== null) {
@@ -78,10 +66,10 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
       );
     }
   }
-  if (ctx?.rstRx) status.append(el("span", { class: "hint", text: `收 ${ctx.rstRx}` }));
-  if (ctx?.rstTx) status.append(el("span", { class: "hint", text: `发 ${ctx.rstTx}` }));
 
   // --- pile-up: several stations answered the CQ at once --------------------
+  // Only the count is shown. Which stations they are is on the air, and naming
+  // one is the operator's job — see the hint under the send box.
   const pileupCallers = session.pileupCallers();
   if (pileupCallers.length > 0) {
     status.append(
@@ -89,44 +77,9 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     );
   }
 
-  // --- transcript ----------------------------------------------------------
-  const pane = el("div", { class: "cw-pane" });
-  /**
-   * Redraws only the transcript, leaving the send box and its draft untouched.
-   * Runs on every appended line, so the user's own transmission shows up the
-   * instant it is sent instead of after the HAM's delayed reply.
-   */
-  const renderTranscript = (): void => {
-    clear(pane);
-    if (session.lines.length === 0) {
-      pane.append(el("div", { class: "hint", text: "尚无通联内容。" }));
-      return;
-    }
-    for (const line of session.lines) {
-      const row = el("div", { class: `cw-line ${line.who}` });
-      const who = line.who === "me" ? "我" : line.who === "ham" ? "对方" : "系统";
-      row.append(el("span", { class: "who", text: who }));
-      const hidden = line.who === "ham" && !settings.assistMode && !revealed.has(line);
-      if (hidden) {
-        row.append(el("span", { class: "txt masked", text: maskText(line.text) }));
-        row.append(
-          button("显示", () => {
-            revealed.add(line);
-            renderTranscript();
-          }, "btn small"),
-        );
-      } else {
-        row.append(el("span", { class: "txt", text: line.text }));
-      }
-      pane.append(row);
-    }
-  };
-  renderTranscript();
-  session.setTranscriptListener(renderTranscript);
-
   // --- send box ------------------------------------------------------------
   const input = el("textarea", {
-    attrs: { placeholder: "输入要发送的内容，例如 R UR RST 599 BK" },
+    attrs: { placeholder: "把你抄到的内容发出去，例如 R UR RST 599 BK" },
   });
   input.value = session.draft;
   input.addEventListener("input", () => {
@@ -170,35 +123,19 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     }
   });
 
+  // Canned lines are protocol, not content: they say *what* to send, never who
+  // to send it to or what was received. The callsign in an answer is the
+  // operator's to copy.
   const my = settings.myCall || "BG7XXX";
-  const peer = session.ham?.call ?? "";
   const macros = el("div", { class: "row" });
-  // In a pile-up the only useful reply is naming a station, so the macros are
-  // one per station the operator has actually heard. A station that has not
-  // called yet is not a name you could have written down.
-  const heardCallers = session.heardPileupCallers();
-  if (heardCallers.length > 0) {
-    for (const ham of heardCallers) {
-      macros.append(
-        button(
-          `点名 ${ham.call}`,
-          () => {
-            setDraft(`${ham.call} DE ${my} K`);
-          },
-          "btn small",
-        ),
-      );
-    }
-  } else {
-    const macroList: Array<[string, string]> = [
-      ["应答 CQ", peer ? `${peer} DE ${my} K` : `${my} DE ${my} K`],
-      ["RST 599", "R UR RST 599 BK"],
-      ["收到", "R BK"],
-      ["73 SK", "R TU 73 SK"],
-    ];
-    for (const [label, text] of macroList) {
-      macros.append(button(label, () => { setDraft(text); }, "btn small"));
-    }
+  const macroList: Array<[string, string]> = [
+    ["我发 CQ", `CQ CQ CQ DE ${my} ${my} PSE K`],
+    ["RST 599", "R UR RST 599 BK"],
+    ["收到", "R BK"],
+    ["73 SK", "R TU 73 SK"],
+  ];
+  for (const [label, text] of macroList) {
+    macros.append(button(label, () => setDraft(text), "btn small"));
   }
 
   // --- key input: straight key or iambic paddles ---------------------------
@@ -211,33 +148,19 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     onPhrase: (text) => setDraft(input.value ? `${input.value} ${text}` : text),
   });
 
-  // --- assemble ------------------------------------------------------------
-  const banner = settings.assistMode
-    ? el("div", {
-        class: "assist-banner",
-        text: "辅助模式开启：对方原文可见。关闭后才能有效练习抄收。",
-      })
-    : el("div", {
-        class: "hint",
-        text: "辅助模式关闭：对方内容需自行抄收，可点「显示」对照。",
-      });
-
   const controls = el("div", { class: "row" });
-  controls.append(
-    button("新通联（结束当前）", () => host.newSession()),
-  );
+  controls.append(button("新通联（结束当前）", () => host.newSession()));
 
   const pileupHint =
     pileupCallers.length > 0
       ? el("div", {
           class: "hint",
-          text: "多台同时在呼：回复里必须点名（如 JA1ABC DE BG7XXX），不点名谁也接不上。",
+          text: "多台同时在呼：回复里必须点名，把你抄到的呼号写进报文，不点名谁也接不上。",
         })
       : null;
 
   root.append(
-    panel("通联状态", banner, assistLabel, status),
-    panel("收报 / 发报记录", pane),
+    panel("通联状态", status),
     panel(
       "发送",
       input,
@@ -249,6 +172,4 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     panel(keyPanel.title, keyPanel.node),
     panel("操作", controls),
   );
-
-  host.onLeave(() => session.setTranscriptListener(null));
 }

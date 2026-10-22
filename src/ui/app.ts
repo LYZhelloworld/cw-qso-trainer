@@ -243,7 +243,7 @@ export class App implements AppHost {
   /**
    * Flip the receiving sideband from the mode label. The band's convention is
    * the starting point; clicking pins the other one. Only how the receiver
-   * interprets the dial changes — nothing is torn down and the transcript keeps
+   * interprets the dial changes — nothing is torn down and the QSO keeps
    * running, exactly as flipping a real rig's mode mid-QSO would.
    */
   private toggleSideband(current: Sideband): void {
@@ -362,14 +362,12 @@ export class App implements AppHost {
     const pileup = this.powerOn ? session.pileupCallers() : [];
     // Below the dial is the receiver's filter, so only stations inside it are
     // actually being heard — the rest are visible signals not yet tuned in.
-    const calling = audible.find((e) => e.state === "cqing");
     return {
       powered: this.powerOn,
       passbandHz: session.passbandHz,
       signalsInWindow: roster.length,
       audibleInPassband: audible.length,
       pileupCount: pileup.length,
-      callingCall: calling?.ham.call ?? null,
     };
   }
 

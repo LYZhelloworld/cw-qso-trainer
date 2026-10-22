@@ -28,8 +28,6 @@ export interface AppSettings {
   /** Effective Farnsworth speed; never higher than `wpm`. */
   farnsworthWpm: number;
   difficulty: UiDifficulty;
-  /** Assist mode: reveal received text instead of copying by ear. */
-  assistMode: boolean;
   freqMHz: number;
   bandIndex: number;
   /** Straight key or iambic paddles. */
@@ -70,7 +68,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   farnsworthEnabled: false,
   farnsworthWpm: 18,
   difficulty: "novice",
-  assistMode: false,
   freqMHz: 14.025,
   bandIndex: 1,
   keyMode: "straight",
@@ -121,8 +118,6 @@ export function normalizeSettings(raw: unknown): AppSettings {
     // Farnsworth speed can never exceed the character speed.
     farnsworthWpm: clampNum(r.farnsworthWpm, wpm, WPM_MIN, wpm),
     difficulty: isDifficulty(r.difficulty) ? r.difficulty : DEFAULT_SETTINGS.difficulty,
-    assistMode:
-      typeof r.assistMode === "boolean" ? r.assistMode : DEFAULT_SETTINGS.assistMode,
     freqMHz:
       typeof r.freqMHz === "number" && Number.isFinite(r.freqMHz)
         ? r.freqMHz

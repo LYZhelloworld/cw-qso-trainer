@@ -13,7 +13,7 @@ import type { VirtualHam } from "../ham/virtualHam.js";
 /** Who produced a transcript line. */
 export type Speaker = "me" | "ham" | "sys";
 
-/** One line of the on-screen transcript. */
+/** One line of the transcript (internal bookkeeping — it is never rendered). */
 export interface TranscriptLine {
   who: Speaker;
   text: string;

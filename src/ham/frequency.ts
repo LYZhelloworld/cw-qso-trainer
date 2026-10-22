@@ -188,11 +188,17 @@ export class Frequency {
   }
 
   /**
-   * Advance the CQ rhythm to `at` and return what happened: HAMs calling CQ,
-   * and HAMs giving up after 3 minutes unanswered (already removed).
+   * Advance the CQ rhythm to `at` and return what happened: the HAMs that
+   * started a CQ burst. Stations stay on the band — a calling station repeats
+   * for as long as the operator leaves it alone.
    */
   advance(at?: number): HamActivityEvent[] {
     return this.activity.advance(at);
+  }
+
+  /** Re-time one station's next CQ (the session knows the message length). */
+  scheduleNextCq(call: string, delayMs: number): void {
+    this.activity.scheduleNext(call, delayMs);
   }
 
   /** The user started working this HAM: it stops calling CQ. */

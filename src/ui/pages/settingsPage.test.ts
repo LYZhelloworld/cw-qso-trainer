@@ -189,17 +189,6 @@ describe("设置页", () => {
     expect(host.settings.passbandHz).toBe(100);
   });
 
-  it("辅助模式开关会更新设置", () => {
-    const { root, host } = makeHost({ assistMode: false });
-    const box = checkboxByLabel(root, "辅助模式（默认）");
-
-    expect(box.checked).toBe(false);
-    box.checked = true;
-    box.dispatchEvent(new Event("change"));
-
-    expect(host.settings.assistMode).toBe(true);
-  });
-
   it("Farnsworth 开关会更新设置", () => {
     const { root, host } = makeHost({ farnsworthEnabled: false });
     const box = checkboxByLabel(root, "启用 Farnsworth");

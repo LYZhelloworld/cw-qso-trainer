@@ -222,8 +222,10 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
     panel(
       "通联",
       diffField,
-      checkRow("辅助模式（默认）", s.assistMode, (v) => host.updateSettings({ assistMode: v })),
-      el("div", { class: "hint", text: "辅助模式也可在通联面板上随时开关。" }),
+      el("div", {
+        class: "hint",
+        text: "难度决定底噪、衰落与干扰，以及对方抄不清你报文的概率。",
+      }),
     ),
     panel(
       "键位",

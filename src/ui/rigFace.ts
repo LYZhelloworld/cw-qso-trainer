@@ -41,8 +41,6 @@ export interface ScopeView {
   audibleInPassband: number;
   /** Stations answering our CQ right now; 0 = not in a pile-up. */
   pileupCount: number;
-  /** A station inside the passband that is calling CQ, if there is one. */
-  callingCall: string | null;
 }
 
 export class RigFace {
@@ -132,18 +130,16 @@ export class RigFace {
       // view", not "stations on the band".
       this.label.textContent =
         view.signalsInWindow > 0
-          ? `通带内没有信号 · 窗口里有 ${view.signalsInWindow} 个信号（点击亮斑可调谐）`
-          : "波段频谱 · 点击信号可调谐";
+          ? `通带内没有信号 · 窗口里有 ${view.signalsInWindow} 个信号（滚轮调谐）`
+          : "波段频谱 · 滚轮调谐";
     } else {
-      this.label.textContent = "波段频谱 · 点击信号可调谐";
+      this.label.textContent = "波段频谱 · 滚轮调谐（Shift = 100 Hz）";
     }
 
-    this.call.textContent =
-      view.pileupCount > 0
-        ? `堆叠 ×${view.pileupCount}`
-        : view.callingCall
-          ? `CQ ${view.callingCall}`
-          : "";
+    // Who is calling is deliberately not shown: copying the callsign off the
+    // air is the exercise. Only the pile-up count is a fact the operator could
+    // not miss with their own ears.
+    this.call.textContent = view.pileupCount > 0 ? `堆叠 ×${view.pileupCount}` : "";
   }
 
   /**

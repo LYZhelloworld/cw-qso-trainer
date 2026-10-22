@@ -230,17 +230,17 @@ describe("频谱瀑布图", () => {
     expect(root.querySelector(".rig-scope canvas")).toBe(canvas);
   });
 
-  it("关台时说明本波段仍在活动；开台后提示可以点信号调谐", () => {
+  it("关台时说明本波段仍在活动；开台后提示可以用滚轮调谐", () => {
     const { root, app } = mountApp();
     expect(root.querySelector(".rig-scope")?.textContent).toContain("设备已关机");
 
     app.setPower(true);
     const scope = root.querySelector(".rig-scope");
-    expect(scope?.textContent).toContain("可调谐");
+    expect(scope?.textContent).toContain("滚轮调谐");
     expect(scope?.textContent).not.toContain("设备已关机");
   });
 
-  it("点击频谱能调谐（tuneTo），并夹在当前波段范围内", () => {
+  it("滚轮调谐（tuneTo）会被夹在当前波段范围内", () => {
     const { app } = mountApp();
     app.setPower(true);
 
