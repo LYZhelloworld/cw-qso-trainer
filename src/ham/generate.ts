@@ -20,6 +20,7 @@
 import { DxccDatabase, type DxccEntity } from "../data/dxcc.js";
 import { extractLetterPrefix, validateCallsign } from "../message/parse.js";
 import { VirtualHam, type Difficulty, type HamRole } from "./virtualHam.js";
+import { S9_STRENGTH, strengthForSUnit } from "./smeter.js";
 import {
   BAND_SIGNAL_SPREAD_HZ,
   SIGNAL_GRID_HZ,
@@ -118,12 +119,23 @@ function pickDifficulty(rng: () => number): Difficulty {
   return "hardcore";
 }
 
+/**
+ * The RST a station reports for the operator's signal. Its S digit doubles as
+ * the station's simulated strength (see `strengthFromReport`), so this spread
+ * is what puts stations on different marks of the S-meter: mostly loud enough
+ * to read on the top third of the scale, a few down at S4.
+ *
+ * Exactly one draw either way, so widening the spread did not shift the RNG
+ * sequence that generates callsigns, reports or frequencies.
+ */
 function pickReport(rng: () => number): string {
   const r = rng();
-  if (r < 0.6) return "599";
-  if (r < 0.8) return "589";
-  if (r < 0.95) return "579";
-  return "599";
+  if (r < 0.45) return "599";
+  if (r < 0.67) return "589";
+  if (r < 0.83) return "579";
+  if (r < 0.92) return "569";
+  if (r < 0.97) return "559";
+  return "549";
 }
 
 /** Stable 32-bit hash of a callsign (used for per-station visual variation). */
@@ -141,10 +153,13 @@ function hashString(s: string): number {
  * strong signal, 579 a noticeably weaker one. A small per-call jitter keeps two
  * 599 stations from looking identical on the waterfall. Derived (not drawn from
  * the RNG) so it does not disturb the generation sequence.
+ *
+ * The scale itself lives in `ham/smeter` (`strengthForSUnit`), so a station
+ * reporting S7 is exactly the strength the meter reads back as S7.
  */
 function strengthFromReport(report: string, call: string): number {
   const digit = Number(report[1]);
-  const base = Number.isFinite(digit) ? 0.3 + ((digit - 1) / 8) * 0.65 : 0.7;
+  const base = Number.isFinite(digit) ? strengthForSUnit(digit) : S9_STRENGTH;
   const jitter = (((hashString(call) % 21) - 10) / 10) * 0.07;
   return Math.min(1, Math.max(0.15, base + jitter));
 }

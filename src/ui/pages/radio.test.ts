@@ -6,6 +6,10 @@ import { normalizeSettings, type AppSettings } from "../settingsSchema.js";
 import { QsoSession } from "../session.js";
 import type { AppHost, PageId } from "../app.js";
 
+/** Page-level cleanups handed to `onLeave`, run between tests so the S-meter's
+ * redraw timer never outlives the test that started it. */
+const pendingCleanups: Array<() => void> = [];
+
 /** Host double for the radio page. `powered` defaults to on. */
 function makeHost(overrides: Partial<AppSettings> = {}, powered = true) {
   const root = document.createElement("div");
@@ -26,6 +30,7 @@ function makeHost(overrides: Partial<AppSettings> = {}, powered = true) {
       userCallsCq: async () => {},
       heardActiveHam: () => null,
       nearestWorkableHam: () => null,
+      sMeter: () => null,
     } as unknown as QsoSession,
     powered,
     setPower(on: boolean) {
@@ -41,7 +46,9 @@ function makeHost(overrides: Partial<AppSettings> = {}, powered = true) {
     refresh() {
       render();
     },
-    onLeave(_fn: () => void) {},
+    onLeave(fn: () => void) {
+      pendingCleanups.push(fn);
+    },
   };
 
   function render(): void {
@@ -67,6 +74,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const fn of pendingCleanups.splice(0)) fn();
   document.body.innerHTML = "";
 });
 
@@ -163,6 +171,44 @@ describe("电台页 — 波段与调谐", () => {
   });
 });
 
+describe("电台页 — S 表", () => {
+  it("刻度是九段，没有信号时读数为空", () => {
+    const { root } = makeHost({ myCall: "BG7XXX" });
+
+    expect(root.querySelectorAll(".signal i").length).toBe(9);
+    expect(root.querySelectorAll(".signal i.on").length).toBe(0);
+    expect(root.querySelector(".smeter-read")?.textContent).toBe("—");
+  });
+
+  it("读数与点亮格数跟着会话的 S 表走", () => {
+    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    (host.session as unknown as { sMeter: () => unknown }).sMeter = () => ({
+      dbm: -85,
+      s: 7,
+      overDb: 0,
+      label: "S7",
+    });
+    host.refresh();
+
+    expect(root.querySelector(".smeter-read")?.textContent).toBe("S7");
+    expect(root.querySelectorAll(".signal i.on").length).toBe(7);
+  });
+
+  it("超过 S9 时读数带 dB，并且九格全亮", () => {
+    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    (host.session as unknown as { sMeter: () => unknown }).sMeter = () => ({
+      dbm: -53,
+      s: 9,
+      overDb: 20,
+      label: "S9+20",
+    });
+    host.refresh();
+
+    expect(root.querySelector(".smeter-read")?.textContent).toBe("S9+20");
+    expect(root.querySelectorAll(".signal i.on").length).toBe(9);
+  });
+});
+
 describe("电台页 — 波段活动与通联", () => {
   it("没有活动 HAM 时提示窗口里没有信号", () => {
     const { root } = makeHost();
@@ -190,6 +236,7 @@ describe("电台页 — 波段活动与通联", () => {
       userCallsCq: async () => {},
       heardActiveHam: () => null,
       nearestWorkableHam: () => hams[0],
+      sMeter: () => null,
     } as unknown as QsoSession;
     host.refresh();
 
@@ -234,6 +281,7 @@ describe("电台页 — 波段活动与通联", () => {
       userCallsCq: async () => {},
       heardActiveHam: () => null, // 还没对准
       nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
+      sMeter: () => null,
     } as unknown as QsoSession;
     host.refresh();
 
@@ -255,6 +303,7 @@ describe("电台页 — 波段活动与通联", () => {
       userCallsCq: async () => {},
       heardActiveHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
       nearestWorkableHam: () => ({ call: "JA1ABC", freqHz: 14_031_000 }),
+      sMeter: () => null,
     } as unknown as QsoSession;
     host.refresh();
 

@@ -22,6 +22,54 @@ function activityLabel(state: string): string {
 }
 
 /**
+ * How often the S-meter redraws. Fast enough to follow a signal's fade, slow
+ * enough not to matter: a real needle does not jump, it drifts.
+ */
+const SMETER_TICK_MS = 150;
+
+/**
+ * The receiver's S-meter: nine units plus a dB-over-S9 readout, following the
+ * strongest signal the filter is passing (see `ham/smeter`). It redraws on its
+ * own timer — the needle drifts with each signal's slow QSB, which has nothing
+ * to do with when the band's stations happen to call CQ — and the page-level
+ * cleanup stops the timer whenever this view is thrown away.
+ */
+function renderSMeter(host: AppHost): HTMLElement {
+  const row = el("div", { class: "row smeter" });
+  row.append(el("span", { class: "hint smeter-label", text: "信号强度" }));
+
+  const bar = el("div", { class: "signal" });
+  const cells: HTMLElement[] = [];
+  for (let unit = 1; unit <= 9; unit += 1) {
+    // A stepped ladder, not equal bars: the scale rises towards S9 the way a
+    // real meter's does, so a reading one unit higher is visibly higher.
+    const cell = el("i", {});
+    cell.style.height = `${5 + unit * 1.7}px`;
+    cells.push(cell);
+    bar.append(cell);
+  }
+  const readout = el("span", { class: "smeter-read", text: "—" });
+  row.append(readout, bar);
+
+  const draw = (): void => {
+    const reading = host.session.sMeter();
+    readout.textContent = reading?.label ?? "—";
+    row.classList.toggle("quiet", reading === null);
+    for (const [i, cell] of cells.entries()) {
+      cell.classList.toggle("on", reading !== null && i < reading.s);
+    }
+    row.title =
+      reading === null
+        ? "滤波器里没有信号"
+        : `信号 ${Math.round(reading.dbm)} dBm · ${reading.label}`;
+  };
+  draw();
+  const timer = setInterval(draw, SMETER_TICK_MS);
+  host.onLeave(() => clearInterval(timer));
+  return row;
+}
+
+/**
  * The main "radio" screen: band tuning and live activity, plus the QSO operating
  * panel (transcript / send / keying) once the user has a partner. The frequency
  * readout itself lives in the persistent rig header, so it is not repeated here.
@@ -124,15 +172,12 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     .filter((e) => inSpectrumWindow(e.ham.freqHz, host.session.dialHz));
   const dialHz = host.session.dialHz;
   const passbandHz = host.session.passbandHz;
-  // S-meter reading follows the strongest station you can actually hear, so it
-  // agrees with what the receiver is passing rather than with the whole band.
+  // The meter sits above the list because it is what the receiver is doing,
+  // not something you read off the list: it follows the strongest signal the
+  // filter passes, so it agrees with what the operator is hearing.
+  const meter = renderSMeter(host);
+
   const audible = roster.filter((e) => inPassband(e.ham.freqHz, dialHz, passbandHz));
-  const strongest = audible.reduce((max, e) => Math.max(max, e.ham.strength ?? 0), 0);
-  const level = audible.length === 0 ? 0 : Math.max(2, Math.min(5, Math.round(strongest * 5)));
-  const signal = el("div", { class: "signal" });
-  for (let i = 0; i < 5; i += 1) signal.append(el("i", { class: i < level ? "on" : "" }));
-  const signalRow = el("div", { class: "row" });
-  signalRow.append(el("span", { class: "hint", text: "信号强度" }), signal);
 
   const activity = el("div", { class: "col" });
   if (roster.length === 0) {
@@ -170,7 +215,7 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
       }),
     );
   }
-  root.append(panel("波段活动", signalRow, activity));
+  root.append(panel("波段活动", meter, activity));
 
   // --- start a QSO ---------------------------------------------------------
   const nearest = host.session.nearestWorkableHam();

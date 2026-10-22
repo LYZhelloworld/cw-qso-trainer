@@ -12,10 +12,12 @@ import {
 } from "../ham/activity.js";
 import {
   buildBackgroundSignals,
+  inSpectrumWindow,
   mulberry32,
   type SpectrumSignal,
   type SpectrumSnapshot,
 } from "../ham/spectrum.js";
+import { qsbDb, qsbDepthFor, smeterReading, type SMeterReading } from "../ham/smeter.js";
 import {
   PILEUP_MAX_CALLS,
   matchCaller,
@@ -324,6 +326,34 @@ export class QsoSession {
     }
     for (const bg of this.backgroundSignals()) signals.push(bg);
     return { centerHz: this.dialHz, signals };
+  }
+
+  /**
+   * What the S-meter reads: the strongest signal the receiver is passing right
+   * now. Only stations on the slice the panadapter is showing can register, and
+   * only as far as the filter lets them through — one out on the skirt reads
+   * lower, one beyond it reads nothing at all. Each station carries its own
+   * slow QSB (see `ham/smeter`), so the needle keeps moving between CQ events
+   * rather than only when the band does something.
+   *
+   * `null` when nothing is coming through: there is no signal to point at.
+   */
+  sMeter(): SMeterReading | null {
+    const at = this.now();
+    let best: SMeterReading | null = null;
+    for (const ham of this.freq.listHams()) {
+      if (!inSpectrumWindow(ham.freqHz, this.dialHz)) continue;
+      const rx = this.hamReception(ham);
+      if (rx === null) continue;
+      // The needle moves on every band, more violently on a hard one — see
+      // `qsbDepthFor` for why this is not the audio's QSB depth.
+      const reading = smeterReading(ham.strength, {
+        gain: rx.gain,
+        qsbDb: qsbDb(ham.call, at, qsbDepthFor(ham.difficulty)),
+      });
+      if (reading !== null && (best === null || reading.dbm > best.dbm)) best = reading;
+    }
+    return best;
   }
 
   /**

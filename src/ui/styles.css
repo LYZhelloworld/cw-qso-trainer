@@ -240,6 +240,26 @@ textarea:focus {
   font-weight: 600;
 }
 
+/* S-meter: the nine-unit ladder plus its dB-over-S9 readout. The readout is
+   monospaced and fixed width so "S9+12" does not shove the ladder sideways as
+   the number changes width. */
+.smeter {
+  gap: 8px;
+  align-items: center;
+}
+
+.smeter-read {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--accent);
+  min-width: 5ch;
+  text-align: right;
+}
+
+.smeter.quiet .smeter-read {
+  color: var(--muted);
+}
+
 .signal {
   display: flex;
   gap: 3px;
