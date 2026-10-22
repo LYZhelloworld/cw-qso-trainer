@@ -205,11 +205,6 @@ textarea:focus {
   font-size: 12px;
 }
 
-/* Off-frequency readout: the note is shifted, so the dial is not on the station. */
-.hint.tone-off {
-  color: var(--accent-2);
-}
-
 .err {
   color: var(--danger);
   font-size: 12px;
@@ -576,13 +571,6 @@ table.log input {
 /* Powered down nothing is being received, so the passband is not either. */
 .rig-scope.off .scope-passband {
   opacity: 0.25;
-}
-
-.badge.heard {
-  color: #16202a;
-  background: var(--accent-2);
-  border-color: var(--accent-2);
-  font-weight: 600;
 }
 
 .standby {

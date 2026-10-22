@@ -12,9 +12,9 @@
  * Tuning is a wheel, not a click
  *  - A real rig is tuned with a knob, and a panadapter is a display: clicking a
  *    signal to jump onto it is a mouse idiom that belongs to SDR software, not
- *    to an operating position. The wheel over the display moves the dial one
- *    1 kHz step per notch (Shift = 100 Hz), which is the same grid the stations
- *    sit on. See `handleWheel`.
+ *    to an operating position. The wheel over the display moves the dial
+ *    100 Hz per notch (Shift = 1 kHz) — the same 0.0001 MHz step the fine
+ *    tuning buttons use. See `handleWheel`.
  *
  * Why tuning traces a curve
  *  - Each line is computed from the dial *at the moment that line is drawn*.
@@ -77,10 +77,10 @@ const MAX_ROWS_PER_FRAME = 6;
 
 /** Wheel travel (deltaY units) that counts as one notch — a mouse wheel click. */
 const WHEEL_NOTCH = 100;
-/** Fine tuning step in Hz, while Shift is held. */
-const WHEEL_FINE_HZ = 100;
-/** Coarse tuning step in Hz — the grid the band's stations sit on. */
-const WHEEL_COARSE_HZ = 1_000;
+/** Tuning step in Hz per notch: 0.0001 MHz, the fine-tuning step. */
+const WHEEL_STEP_HZ = 100;
+/** Coarse step in Hz while Shift is held (the 1 kHz station grid). */
+const WHEEL_SHIFT_STEP_HZ = 1_000;
 
 // --- colour map ------------------------------------------------------------
 
@@ -302,7 +302,7 @@ export class Waterfall {
   private targetHz = 0;
   /** Unspent wheel travel, so a trackpad's many small deltas still notch once. */
   private wheelAccum = 0;
-  private wheelFine = false;
+  private wheelCoarse = false;
   private wpm: number;
 
   private w = 0;
@@ -502,9 +502,10 @@ export class Waterfall {
   }
 
   /**
-   * The knob. Scrolling up tunes up, one 1 kHz notch at a time (Shift = 100 Hz),
-   * which lands exactly on the grid the band's stations sit on. Trackpads send a
-   * stream of small deltas, so travel accumulates until it is worth a notch.
+   * The knob. Scrolling up tunes up, one **100 Hz** notch at a time (0.0001 MHz,
+   * the same step as the fine-tuning buttons); holding Shift makes it 1 kHz, the
+   * grid the band's stations sit on. Trackpads send a stream of small deltas, so
+   * travel accumulates until it is worth a notch.
    *
    * The step is applied to the *dial* (`targetHz`), not to the eased display
    * centre: the operator turns a knob, and the picture catches up afterwards.
@@ -514,27 +515,26 @@ export class Waterfall {
     // Never let the page scroll underneath the display.
     e.preventDefault();
 
-    const fine = e.shiftKey;
-    const notch = fine ? WHEEL_NOTCH / 2 : WHEEL_NOTCH;
-    if (fine !== this.wheelFine) {
-      // Switching step size: a leftover half-notch must not fire immediately.
-      this.wheelFine = fine;
+    const coarse = e.shiftKey;
+    if (coarse !== this.wheelCoarse) {
+      // Switching step size: leftover travel must not fire immediately.
+      this.wheelCoarse = coarse;
       this.wheelAccum = 0;
     }
 
     let travel = this.wheelAccum + e.deltaY;
     let steps = 0;
-    while (Math.abs(travel) >= notch) {
+    while (Math.abs(travel) >= WHEEL_NOTCH) {
       // Wheel down (positive deltaY) lowers the frequency, like turning a knob
       // anticlockwise.
       steps += travel > 0 ? -1 : 1;
-      travel -= travel > 0 ? notch : -notch;
+      travel -= travel > 0 ? WHEEL_NOTCH : -WHEEL_NOTCH;
     }
     this.wheelAccum = travel;
     if (steps === 0) return;
 
     const base = this.targetHz > 0 ? this.targetHz : this.displayCenterHz;
-    const stepHz = fine ? WHEEL_FINE_HZ : WHEEL_COARSE_HZ;
+    const stepHz = coarse ? WHEEL_SHIFT_STEP_HZ : WHEEL_STEP_HZ;
     const next = base + steps * stepHz;
     // Anticipate the tune: several notches can land within one frame, and each
     // must build on the previous one rather than on the dial as it was. The

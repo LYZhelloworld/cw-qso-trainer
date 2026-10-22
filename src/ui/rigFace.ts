@@ -133,7 +133,7 @@ export class RigFace {
           ? `通带内没有信号 · 窗口里有 ${view.signalsInWindow} 个信号（滚轮调谐）`
           : "波段频谱 · 滚轮调谐";
     } else {
-      this.label.textContent = "波段频谱 · 滚轮调谐（Shift = 100 Hz）";
+      this.label.textContent = "波段频谱 · 滚轮调谐 100 Hz（Shift = 1 kHz）";
     }
 
     // Who is calling is deliberately not shown: copying the callsign off the

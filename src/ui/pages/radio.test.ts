@@ -305,9 +305,10 @@ describe("电台页 — 信号与通联", () => {
     host.session = session;
     host.refresh();
 
-    expect(root.textContent).toContain("通联状态");
+    expect(root.textContent).toContain("电键输入");
     expect(root.textContent).not.toContain("开始通联");
-    // 收发记录不显示：报文只在空中，屏幕上没有回放。
+    // 状态行与收发记录都不显示：报文只在空中，屏幕上没有回放。
+    expect(root.textContent).not.toContain("通联状态");
     expect(root.textContent).not.toContain("收报 / 发报记录");
   });
 });

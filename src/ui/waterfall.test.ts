@@ -206,7 +206,7 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.dispose();
   });
 
-  it("滚轮向上滚一格，频率上调 1 kHz", () => {
+  it("滚轮向上滚一格，频率上调 100 Hz（0.0001 MHz）", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
     wf.setSource(() => snapshot(CENTER, [signal()]));
@@ -216,11 +216,11 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.onTune = (hz) => tuned.push(hz);
     canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
 
-    expect(tuned).toEqual([CENTER + 1000]);
+    expect(tuned).toEqual([CENTER + 100]);
     wf.dispose();
   });
 
-  it("滚轮向下滚一格，频率下调 1 kHz", () => {
+  it("滚轮向下滚一格，频率下调 100 Hz", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
     wf.setSource(() => snapshot(CENTER));
@@ -230,11 +230,11 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.onTune = (hz) => tuned.push(hz);
     canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 }));
 
-    expect(tuned).toEqual([CENTER - 1000]);
+    expect(tuned).toEqual([CENTER - 100]);
     wf.dispose();
   });
 
-  it("Shift + 滚轮是 100 Hz 微调", () => {
+  it("Shift + 滚轮是 1 kHz 粗调", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
     wf.setSource(() => snapshot(CENTER));
@@ -242,9 +242,9 @@ describe("瀑布图 — 组件生命周期", () => {
 
     const tuned: number[] = [];
     wf.onTune = (hz) => tuned.push(hz);
-    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -50, shiftKey: true }));
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, shiftKey: true }));
 
-    expect(tuned).toEqual([CENTER + 100]);
+    expect(tuned).toEqual([CENTER + 1000]);
     wf.dispose();
   });
 
@@ -258,7 +258,7 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.onTune = (hz) => tuned.push(hz);
     canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -200 }));
 
-    expect(tuned).toEqual([CENTER + 2000]);
+    expect(tuned).toEqual([CENTER + 200]);
     wf.dispose();
   });
 
@@ -274,7 +274,7 @@ describe("瀑布图 — 组件生命周期", () => {
     canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
     canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
 
-    expect(tuned).toEqual([CENTER + 1000, CENTER + 2000]);
+    expect(tuned).toEqual([CENTER + 100, CENTER + 200]);
     wf.dispose();
   });
 
@@ -292,7 +292,7 @@ describe("瀑布图 — 组件生命周期", () => {
     }
     expect(tuned).toEqual([]);
     canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -25 }));
-    expect(tuned).toEqual([CENTER + 1000]);
+    expect(tuned).toEqual([CENTER + 100]);
     wf.dispose();
   });
 

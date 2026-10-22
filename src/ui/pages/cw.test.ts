@@ -64,12 +64,13 @@ afterEach(() => {
 });
 
 describe("通联面板", () => {
-  it("只有状态、发送、电键与操作，没有收发记录", () => {
+  it("只有发送、电键与操作，没有状态行与收发记录", () => {
     const { root } = makeHarness();
-    expect(root.textContent).toContain("通联状态");
     expect(root.textContent).toContain("发送");
+    expect(root.textContent).toContain("电键输入");
     expect(root.textContent).toContain("操作");
-    // 记录面板整个不在了，也不再提示「尚无通联内容」。
+    // 状态行、记录面板都不在了。
+    expect(root.textContent).not.toContain("通联状态");
     expect(root.textContent).not.toContain("收报 / 发报记录");
     expect(root.textContent).not.toContain("尚无通联内容");
     expect(root.querySelector(".cw-pane")).toBeNull();
@@ -136,47 +137,6 @@ describe("通联面板", () => {
     host.refresh();
 
     expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
-  });
-
-  it("状态行显示对方实际被听到的音调（拨轮对准后回到设定值）", async () => {
-    const { root, session, render } = makeHarness({ toneHz: 700 });
-    session.seedHams(1);
-    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
-    await session.hamCallsCq();
-    session.retune(session.ham!.freqHz / 1e6); // 拨轮对准台，无偏频
-    render();
-
-    expect(root.textContent).toContain("音调 700 Hz");
-    expect(root.textContent).not.toContain("偏频");
-  });
-
-  it("没有对准频率时状态行标出偏频量", async () => {
-    const { root, session, render } = makeHarness({ toneHz: 700 });
-    session.seedHams(1);
-    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
-    await session.hamCallsCq();
-    // 把拨轮挪开 200 Hz（仍在 ±250 Hz 通带内，音调跟着偏）
-    session.retune((session.ham!.freqHz - 200) / 1e6);
-    render();
-
-    expect(root.textContent).toContain("偏频 +200 Hz");
-  });
-
-  it("调出通带后状态行先说信号变弱，再说没有声音", async () => {
-    const { root, session, render } = makeHarness({ toneHz: 700 });
-    session.seedHams(1);
-    session.retune(session.listHams()[0].freqHz / 1e6);
-    await session.hamCallsCq();
-
-    session.retune((session.ham!.freqHz - 320) / 1e6); // 通带外，但还在裙边上
-    render();
-    expect(root.textContent).toContain("信号很弱");
-    expect(root.textContent).not.toContain("音调 700 Hz");
-
-    session.retune((session.ham!.freqHz - 1000) / 1e6); // 挪开 1 kHz，早已出了滤波器
-    render();
-    expect(root.textContent).toContain("没有声音了");
-    expect(root.textContent).not.toContain("信号很弱");
   });
 });
 
@@ -293,10 +253,10 @@ describe("堆叠提示", () => {
     renderQsoPanel(host, root);
     const caller = session.heardPileupCallers()[0];
     expect(caller).toBeDefined();
-    expect(root.textContent).toContain("台同时应答");
     expect(root.textContent).toContain("必须点名");
-    // 谁在应你，得自己抄；页面上不列、也没有「点名 XXX」按钮。
+    // 谁在应你、有几台，都得自己听；页面上不列、也没有「点名 XXX」按钮。
     expect(root.textContent).not.toContain(caller.call);
+    expect(root.textContent).not.toContain("台同时应答");
     expect(
       Array.from(root.querySelectorAll("button")).some((b) => (b.textContent ?? "").includes("点名")),
     ).toBe(false);
