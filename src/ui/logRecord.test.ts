@@ -68,6 +68,6 @@ describe("formatFreqMHz", () => {
   it("formats to four decimals", () => {
     expect(formatFreqMHz(14.025)).toBe("14.0250");
     expect(formatFreqMHz(7.025)).toBe("7.0250");
-    expect(formatFreqMHz(3.55)).toBe("3.5500");
+    expect(formatFreqMHz(28.025)).toBe("28.0250");
   });
 });

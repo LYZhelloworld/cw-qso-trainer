@@ -150,7 +150,7 @@ describe("App 外壳", () => {
     const { app, root } = mountApp();
     const before = app.session;
 
-    app.updateSettings({ freqMHz: 7.025, bandIndex: 1 });
+    app.updateSettings({ freqMHz: 7.025, bandIndex: 0 });
 
     expect(app.session).not.toBe(before);
     expect(app.session.freqMHz).toBe(7.025);
@@ -175,11 +175,11 @@ describe("App 外壳", () => {
     expect(mode()).toBe("CW-U"); // 默认 14.025 MHz
     expect(app.session.sideband).toBe("USB");
 
-    app.updateSettings({ freqMHz: 7.025, bandIndex: 1 });
+    app.updateSettings({ freqMHz: 7.025, bandIndex: 0 });
     expect(mode()).toBe("CW-L");
     expect(app.session.sideband).toBe("LSB");
 
-    app.updateSettings({ freqMHz: 21.025, bandIndex: 3 });
+    app.updateSettings({ freqMHz: 21.025, bandIndex: 2 });
     expect(mode()).toBe("CW-U");
   });
 
@@ -196,7 +196,7 @@ describe("App 外壳", () => {
     expect(app.session.sideband).toBe("LSB");
 
     // 固定后换波段仍是 LSB（波段约定只是初始值）
-    app.updateSettings({ freqMHz: 21.025, bandIndex: 3 });
+    app.updateSettings({ freqMHz: 21.025, bandIndex: 2 });
     expect(label().textContent).toBe("CW-L");
     expect(app.session.sideband).toBe("LSB");
   });
@@ -248,7 +248,7 @@ describe("频谱瀑布图", () => {
     expect(app.settings.freqMHz).toBeCloseTo(14.028, 6);
 
     app.tuneTo(99_000_000); // far outside 20 m
-    expect(app.settings.freqMHz).toBe(BANDS[2].maxMHz);
+    expect(app.settings.freqMHz).toBe(BANDS[1].maxMHz);
   });
 
   it("关台时不允许调谐（关着的电台不会被点动）", () => {
@@ -318,7 +318,7 @@ describe("环境与电源（关台只是不接收）", () => {
     expect(app.session.isReceiving).toBe(true); // 接收跟着人走
     expect(app.session.listHams().length).toBeGreaterThan(0);
 
-    app.updateSettings({ bandIndex: 2, freqMHz: BANDS[2].defaultMHz });
+    app.updateSettings({ bandIndex: 1, freqMHz: BANDS[1].defaultMHz });
     expect(app.session).toBe(first);
     expect(app.session.listHams().map((h) => h.call).sort()).toEqual(firstCalls);
   });

@@ -117,17 +117,17 @@ describe("电台页 — 电源", () => {
 
 describe("电台页 — 波段与调谐", () => {
   it("列出四个频段并高亮当前频段", () => {
-    const { root } = makeHost({ bandIndex: 2 });
+    const { root } = makeHost({ bandIndex: 1 });
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".band-tabs button"));
 
     expect(tabs.map((b) => b.textContent)).toEqual(BANDS.map((b) => b.label));
     const active = tabs.filter((b) => b.classList.contains("active"));
     expect(active.length).toBe(1);
-    expect(active[0].textContent).toBe(BANDS[2].label);
+    expect(active[0].textContent).toBe(BANDS[1].label);
   });
 
   it("点击别的频段会切换 bandIndex 与默认频率", () => {
-    const { root, host } = makeHost({ bandIndex: 2 });
+    const { root, host } = makeHost({ bandIndex: 1 });
 
     findButton(root, BANDS[0].label).click();
 
@@ -136,7 +136,7 @@ describe("电台页 — 波段与调谐", () => {
   });
 
   it("±1 kHz 步进会改变频率且不越界", () => {
-    const { root, host } = makeHost({ bandIndex: 2, freqMHz: 14.025 });
+    const { root, host } = makeHost({ bandIndex: 1, freqMHz: 14.025 });
 
     findButton(root, "+ 1 kHz").click();
     expect(host.settings.freqMHz).toBe(14.026);
@@ -147,14 +147,14 @@ describe("电台页 — 波段与调谐", () => {
   });
 
   it("调谐到下边界时不再继续下降", () => {
-    const { root, host } = makeHost({ bandIndex: 2, freqMHz: BANDS[2].minMHz });
+    const { root, host } = makeHost({ bandIndex: 1, freqMHz: BANDS[1].minMHz });
 
     findButton(root, "− 1 kHz").click();
-    expect(host.settings.freqMHz).toBe(BANDS[2].minMHz);
+    expect(host.settings.freqMHz).toBe(BANDS[1].minMHz);
   });
 
   it("±100 Hz 微调用来对准通带", () => {
-    const { root, host } = makeHost({ bandIndex: 2, freqMHz: 14.025 });
+    const { root, host } = makeHost({ bandIndex: 1, freqMHz: 14.025 });
 
     findButton(root, "+ 100 Hz").click();
     expect(host.settings.freqMHz).toBe(14.0251);
@@ -165,7 +165,7 @@ describe("电台页 — 波段与调谐", () => {
   });
 
   it("说明接收通带宽度与电台间隔", () => {
-    const { root } = makeHost({ bandIndex: 2 });
+    const { root } = makeHost({ bandIndex: 1 });
     expect(root.textContent).toContain("接收通带 500 Hz");
     expect(root.textContent).toContain("电台间隔 1 kHz");
   });

@@ -72,7 +72,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   difficulty: "novice",
   assistMode: false,
   freqMHz: 14.025,
-  bandIndex: 2,
+  bandIndex: 1,
   keyMode: "straight",
   keyCode: "Space",
   // Z/X: adjacent, so both can be squeezed at once; no browser shortcut grabs
