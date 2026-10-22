@@ -57,12 +57,17 @@ export interface QsoMachineOptions {
 }
 
 /**
- * QSO state machine (step 1 prototype). It consumes the user's transmitted CW
- * text (already decoded to letters) and drives a deterministic virtual HAM.
+ * QSO state machine. It consumes the user's transmitted CW text (already
+ * decoded to letters) and drives a deterministic virtual HAM.
  *
- * Timer semantics are modeled explicitly rather than with real timers, so the
- * logic stays deterministic and unit-testable; a later step wires real timers to
- * these hooks (timeoutFirstCall / timeoutResend / hamOffline).
+ * Timer semantics are modelled explicitly rather than with real timers, so the
+ * logic stays deterministic and unit-testable. The 「超时」 hooks below
+ * (`timeoutFirstCall` / `timeoutResend` / `hamOffline`) are the deterministic
+ * *interface* for that, and are covered by tests — but note they are **not
+ * wired into the app**: with the current flow a HAM's reply is generated at the
+ * moment the user's line is parsed (there is no window in which the user waits
+ * for an answer), and the band-level 3-minute give-up is scheduled by
+ * `ham/activity` instead. They exist for a flow that waits on the air.
  */
 export class QsoMachine {
   state: QsoState = "IDLE";
@@ -192,16 +197,16 @@ export class QsoMachine {
     return reply;
   }
 
-  // --- Timer hooks (deterministic; real timers wired in a later step) --------
+  // --- Timer hooks (deterministic; NOT called by the app — see class comment) -
 
-  /** 15s first-call wait expired with no answer -> back to IDLE. */
+  /** Would be "15 s first-call wait expired with no answer" → back to IDLE. */
   timeoutFirstCall(): void {
     if (this.state === "USER_CQ" || this.state === "PEER_CQ") {
       this.reset();
     }
   }
 
-  /** 5s wait after a transmission expired with no valid reply -> HAM resends. */
+  /** Would be "5 s wait after a transmission expired" → HAM resends. */
   timeoutResend(): string[] {
     if (this.state !== "EXCHANGE" && this.state !== "SIGNOFF") return [];
     if (this.lastRetryKey) {
@@ -215,7 +220,7 @@ export class QsoMachine {
     return this.lastReply ? [this.lastReply] : [];
   }
 
-  /** 3min with no answer to the HAM's CQ -> HAM goes offline. */
+  /** Would be "3 min with no answer to the HAM's CQ" → HAM goes offline. */
   hamOffline(): void {
     if (this.state === "PEER_CQ") {
       this.hamOnline = false;

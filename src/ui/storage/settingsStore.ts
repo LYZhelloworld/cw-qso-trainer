@@ -1,6 +1,6 @@
 import { normalizeSettings, type AppSettings } from "../settingsSchema.js";
 
-/** Settings persistence (localStorage), per UI.md data-storage plan. */
+/** Settings persistence (localStorage), per the data-storage plan in LOG.md. */
 
 const KEY = "cw-qso-trainer:settings";
 

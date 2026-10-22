@@ -52,6 +52,26 @@ function checkRow(
   return wrap;
 }
 
+/** Labelled `<select>`: `[value, text]` pairs in, committed value out. */
+function selectRow<T extends string>(
+  label: string,
+  options: ReadonlyArray<readonly [T, string]>,
+  value: string,
+  onCommit: (value: T) => void,
+): HTMLLabelElement {
+  const select = el("select");
+  for (const [optionValue, text] of options) {
+    const opt = el("option", { attrs: { value: optionValue } });
+    opt.textContent = text;
+    select.append(opt);
+  }
+  select.value = value;
+  select.addEventListener("change", () => onCommit(select.value as T));
+  const wrap = el("label", { class: "field" });
+  wrap.append(document.createTextNode(label), select);
+  return wrap;
+}
+
 /** Button that captures the next key press and reports its `KeyboardEvent.code`. */
 function keyCaptureButton(
   label: string,
@@ -98,32 +118,23 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
   callField.append(document.createTextNode("本方呼号"), callInput, callMsg);
 
   // --- difficulty ----------------------------------------------------------
-  const diffSelect = el("select");
-  for (const d of ["novice", "intermediate", "hardcore"] as const) {
-    const opt = el("option", { attrs: { value: d } });
-    opt.textContent = DIFFICULTY_LABEL[d];
-    diffSelect.append(opt);
-  }
-  diffSelect.value = s.difficulty;
-  diffSelect.addEventListener("change", () =>
-    host.updateSettings({ difficulty: diffSelect.value as UiDifficulty }),
+  const diffField = selectRow(
+    "难度等级",
+    (Object.keys(DIFFICULTY_LABEL) as UiDifficulty[]).map((d) => [d, DIFFICULTY_LABEL[d]] as const),
+    s.difficulty,
+    (difficulty) => host.updateSettings({ difficulty }),
   );
-  const diffField = el("label", { class: "field" });
-  diffField.append(document.createTextNode("难度等级"), diffSelect);
 
   // --- key mode ------------------------------------------------------------
-  const keyModeSelect = el("select");
-  for (const m of ["straight", "iambic"] as const) {
-    const opt = el("option", { attrs: { value: m } });
-    opt.textContent = m === "straight" ? "直键（手键，手动控制点划）" : "iambic 双桨（自动键）";
-    keyModeSelect.append(opt);
-  }
-  keyModeSelect.value = s.keyMode;
-  keyModeSelect.addEventListener("change", () =>
-    host.updateSettings({ keyMode: keyModeSelect.value as KeyMode }),
+  const keyModeField = selectRow<KeyMode>(
+    "电键类型",
+    [
+      ["straight", "直键（手键，手动控制点划）"],
+      ["iambic", "iambic 双桨（自动键）"],
+    ],
+    s.keyMode,
+    (keyMode) => host.updateSettings({ keyMode }),
   );
-  const keyModeField = el("label", { class: "field" });
-  keyModeField.append(document.createTextNode("电键类型"), keyModeSelect);
 
   // --- key bindings --------------------------------------------------------
   const straightBtn = keyCaptureButton("直键按键", s.keyCode, host, (code) =>
@@ -137,56 +148,42 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
   );
 
   // --- iambic mode ---------------------------------------------------------
-  const iambicSelect = el("select");
-  for (const m of ["A", "B"] as const) {
-    const opt = el("option", { attrs: { value: m } });
-    opt.textContent =
-      m === "A" ? "模式 A（松开双桨即停）" : "模式 B（松开双桨补发记忆元素）";
-    iambicSelect.append(opt);
-  }
-  iambicSelect.value = s.iambicMode;
-  iambicSelect.addEventListener("change", () =>
-    host.updateSettings({ iambicMode: iambicSelect.value as IambicMode }),
+  const iambicField = selectRow<IambicMode>(
+    "iambic 模式",
+    [
+      ["A", "模式 A（松开双桨即停）"],
+      ["B", "模式 B（松开双桨补发记忆元素）"],
+    ],
+    s.iambicMode,
+    (iambicMode) => host.updateSettings({ iambicMode }),
   );
-  const iambicField = el("label", { class: "field" });
-  iambicField.append(document.createTextNode("iambic 模式"), iambicSelect);
 
   // --- CW sideband ---------------------------------------------------------
   // Which sideband the receiver demodulates decides which way the note moves as
   // the dial is turned. The rig's mode label (CW-L / CW-U) toggles it too; this
   // is where "follow the band" is restored.
-  const sidebandSelect = el("select");
-  for (const [value, label] of [
-    ["auto", "自动（跟随波段：40m 及以下 CW-L，20m 及以上 CW-U）"],
-    ["LSB", "CW-L（下边带）"],
-    ["USB", "CW-U（上边带）"],
-  ] as const) {
-    const opt = el("option", { attrs: { value } });
-    opt.textContent = label;
-    sidebandSelect.append(opt);
-  }
-  sidebandSelect.value = s.cwSideband;
-  sidebandSelect.addEventListener("change", () =>
-    host.updateSettings({ cwSideband: sidebandSelect.value as CwSideband }),
+  const sidebandField = selectRow<CwSideband>(
+    "CW 边带",
+    [
+      ["auto", "自动（跟随波段：40m 及以下 CW-L，20m 及以上 CW-U）"],
+      ["LSB", "CW-L（下边带）"],
+      ["USB", "CW-U（上边带）"],
+    ],
+    s.cwSideband,
+    (cwSideband) => host.updateSettings({ cwSideband }),
   );
-  const sidebandField = el("label", { class: "field" });
-  sidebandField.append(document.createTextNode("CW 边带"), sidebandSelect);
 
   // --- receiver filter width ----------------------------------------------
   // A narrower filter is harder to stay inside, so this is also a difficulty
   // dial: 500 Hz is forgiving, 100 Hz demands you park on the signal.
-  const passbandSelect = el("select");
-  for (const hz of PASSBAND_OPTIONS) {
-    const opt = el("option", { attrs: { value: String(hz) } });
-    opt.textContent = hz === PASSBAND_HZ ? `${hz} Hz（默认）` : `${hz} Hz`;
-    passbandSelect.append(opt);
-  }
-  passbandSelect.value = String(s.passbandHz);
-  passbandSelect.addEventListener("change", () =>
-    host.updateSettings({ passbandHz: Number(passbandSelect.value) }),
+  const passbandField = selectRow(
+    "接收滤波带宽",
+    PASSBAND_OPTIONS.map(
+      (hz) => [`${hz}`, hz === PASSBAND_HZ ? `${hz} Hz（默认）` : `${hz} Hz`] as const,
+    ),
+    String(s.passbandHz),
+    (value) => host.updateSettings({ passbandHz: Number(value) }),
   );
-  const passbandField = el("label", { class: "field" });
-  passbandField.append(document.createTextNode("接收滤波带宽"), passbandSelect);
 
   root.append(
     panel("身份", callField),

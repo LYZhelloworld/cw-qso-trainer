@@ -108,8 +108,6 @@ export interface HamActivityOptions {
   rng?: () => number;
   /** Injected clock. */
   now?: () => number;
-  /** Notified of every CQ / offline as soon as `advance()` produces it. */
-  onEvent?: (event: HamActivityEvent) => void;
 }
 
 interface Record {
@@ -127,12 +125,10 @@ export class HamActivity {
   private readonly records = new Map<string, Record>();
   private readonly rng: () => number;
   private readonly now: () => number;
-  private readonly onEvent?: (event: HamActivityEvent) => void;
 
   constructor(opts: HamActivityOptions = {}) {
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? (() => Date.now());
-    this.onEvent = opts.onEvent;
   }
 
   /**
@@ -175,22 +171,6 @@ export class HamActivity {
     return out;
   }
 
-  /** The HAM whose CQ is currently out and unanswered, if any. */
-  cqingHam(): VirtualHam | null {
-    for (const r of this.records.values()) {
-      if (!r.inQso && r.cqSince !== null) return r.ham;
-    }
-    return null;
-  }
-
-  /** A HAM that is free to work (not already in a QSO with the user). */
-  availableHam(): VirtualHam | null {
-    for (const r of this.records.values()) {
-      if (!r.inQso) return r.ham;
-    }
-    return null;
-  }
-
   /** Count of HAMs still on the frequency. */
   get size(): number {
     return this.records.size;
@@ -230,14 +210,6 @@ export class HamActivity {
   }
 
   /**
-   * The user answered this HAM's CQ. The HAM re-enters a normal CQ rhythm
-   * rather than waiting for the give-up timer to expire.
-   */
-  markAnswered(call: string): void {
-    this.markListening(call);
-  }
-
-  /**
    * Advance to `at` and return everything that happened.
    *
    * A HAM that is calling repeats its CQ every 30–60 s while nobody answers,
@@ -264,7 +236,6 @@ export class HamActivity {
       }
     }
 
-    for (const e of events) this.onEvent?.(e);
     return events;
   }
 }

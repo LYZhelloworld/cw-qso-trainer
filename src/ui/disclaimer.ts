@@ -1,6 +1,7 @@
 /**
- * Disclaimer copy, shown per UI.md: first-run dialog, about page, log page
- * watermark and footer. Kept in one place so the wording never drifts.
+ * Disclaimer copy, defined in the root README.md and shown in four places: the
+ * first-run dialog, the about page, the log page watermark and the footer. Kept
+ * in one place so the wording never drifts.
  */
 
 export const DISCLAIMER_TEXT =

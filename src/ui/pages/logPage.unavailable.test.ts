@@ -10,7 +10,7 @@ import type { AppHost, PageId } from "../app.js";
 /**
  * jsdom ships no IndexedDB. Without a polyfill (this file deliberately does not
  * install one) the log page must degrade instead of throwing, per
- * "storage may be unavailable" in UI.md.
+ * "storage may be unavailable" in LOG.md.
  */
 
 function mountLog(root: HTMLElement): void {

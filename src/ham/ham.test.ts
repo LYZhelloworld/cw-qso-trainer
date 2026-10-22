@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { VirtualHam, MISS_PROBABILITY } from "./virtualHam.js";
 import { generateVirtualHam, haversineKm } from "./generate.js";
-import { Frequency, planHamToHam } from "./frequency.js";
+import { Frequency } from "./frequency.js";
 import { BAND_SIGNAL_SPREAD_HZ, SIGNAL_GRID_HZ } from "./spectrum.js";
 import { dxccDatabase } from "../data/dxcc.js";
 
@@ -109,7 +109,7 @@ describe("Frequency", () => {
     const ham = f.spawnHam("BG7XXX");
     expect(ham.call).toMatch(/^[A-Z]{1,2}[0-9][A-Z]{2,3}$/);
     expect(f.listHams()).toHaveLength(1);
-    expect(f.activeHam()?.call).toBe(ham.call);
+    expect(f.activityState()[0].ham).toBe(ham);
   });
 
   it("波段上摆满台时也不会两台共用一个频率槽", () => {
@@ -125,14 +125,5 @@ describe("Frequency", () => {
       expect(hz % SIGNAL_GRID_HZ).toBe(0); // 都在 1 kHz 网格上
       expect(Math.abs(hz - 14_000_000)).toBeLessThanOrEqual(BAND_SIGNAL_SPREAD_HZ);
     }
-  });
-
-  it("exposes a reserved HAM-to-HAM plan stub (step 3 placeholder)", () => {
-    const f = new Frequency(14.0, dxccDatabase);
-    const a = f.spawnHam("BG7XXX", "novice", mulberry32(1));
-    const b = f.spawnHam("BG7XXX", "novice", mulberry32(2));
-    const plan = planHamToHam(a, b);
-    expect(plan.reserved).toBe(true);
-    expect(plan.participants).toEqual([a, b]);
   });
 });

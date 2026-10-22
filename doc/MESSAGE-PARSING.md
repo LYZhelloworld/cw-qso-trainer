@@ -1,7 +1,7 @@
 # 报文解析（字母文本 → 结构化报文）
 
-> 本文件负责把 CW 解码产出的**字母文本** → **结构化报文**（`ParsedMessage`）的语义解析，供 [QSO 协议](./QSO-PROTOCOL.md) 的状态机消费。
-> 上游：字母文本由 [CW 编解码](./CW-PARSING.md) 的摩斯解码层产出；下游：状态机见 [QSO 协议](./QSO-PROTOCOL.md)；虚拟 HAM 策略见 [虚拟 HAM 策略](./VIRTUAL-HAM.md)。
+> 本文件负责把 CW 解码产出的**字母文本** → **结构化报文**（`ParsedMessage`）的语义解析，以及解析时用到的**呼号规格与校验**；产出供 [QSO 协议](./QSO-PROTOCOL.md) 的状态机消费。
+> 上游：字母文本由 [CW 编解码](./CW-PARSING.md) 的摩斯解码层产出；下游：状态机见 [QSO 协议](./QSO-PROTOCOL.md)；虚拟 HAM 的生成与策略见 [虚拟 HAM 策略](./VIRTUAL-HAM.md)。
 
 ---
 
@@ -38,7 +38,7 @@
 
 不合法示例：`5999`（四位）、`ABC`、`59`（两位）、`5NNN`（归一化后仍非三位数字）
 
-> **校验对象（明确）**：RST 是对**独立的 RST token** 校验，不是对整条消息。解析时先在分词后的消息 token 中找出形如三位数字、且**整体匹配**上述正则的 token（即整 token 匹配 `^[1-5][1-9][1-9]$`），才认定为 RST；消息中偶然出现的三位数字子串（如呼号里的数字、或其他数字）不会被误判。为避免 `5999` 这类被词边界 `\b` 部分命中，务必用「整 token 匹配」而非「消息内子串搜索」。
+> **校验对象**：RST 是对**独立的 RST token** 校验，不是对整条消息。解析时先在分词后的消息 token 中找出**整 token 匹配**上述正则的那一个，才认定为 RST；消息中偶然出现的三位数字子串（如呼号里的数字）不会被误判。为避免 `5999` 这类被词边界 `\b` 部分命中，务必用「整 token 匹配」而非「消息内子串搜索」。
 
 不合法时，虚拟 HAM 发：
 
@@ -56,43 +56,35 @@ interface ParsedMessage {
   rst: string | null;       // 归一化后的 RST
   end: "PSE_K" | "K" | "BK" | "SK" | null;
   omit_calls: boolean;      // 是否省略了呼号
-  callsignValid: boolean;   // 提取到的呼号是否通过格式 + 前缀表校验（供状态机判抄错 / 非法）
-  callsigns: string[];      // 提取到的全部呼号 token（已对连续重复去重），供状态机做抄错判定（出现非 myCall/peerCall 的呼号即计 CALL 重试）
+  callsignValid: boolean;   // 提取到的呼号是否通过格式 + 前缀表校验
+  callsigns: string[];      // 提取到的全部呼号 token（不含 CQ、已对连续重复去重）
   raw: string;              // 原始文本
 }
 ```
 
-> `callsignValid` 由解析器在提取呼号 token 时即执行校验（见「呼号合法性校验」），状态机消费时直接读取，无需重复校验。
+> `callsignValid` 由解析器在提取呼号 token 时即执行校验，状态机消费时直接读取，无需重复校验。
 
 ## 解析流程
 
 ```text
-1. 转大写，合并空格
-2. 识别结束符：PSE K / K / BK / SK / 无
+1. 归一化（大写、合并空格、5NN/TNX/<SK> 折叠）
+2. 识别结束符：PSE K → BK → SK → K（顺序有意义，先长后短）
 3. 移除 DE
-4. 提取呼号 token，并对每个呼号 token 做合法性校验（格式 + 前缀表）
-5. 根据上下文判断 to / from
+4. 提取呼号 token 并逐个校验；连续重复的同一呼号只留一个；CQ 单独记一个标志
+5. 根据上下文判断 to / from（含省略呼号的推断）
 6. 识别消息类型
-7. 处理 BK：记录「用户使用过 BK」（callsignsOmitted 语义见 QSO 协议——仅作显式记录，省略资格的唯一判据是 callsignsConfirmed）
+7. 处理 BK：记录「用户使用过 BK」（省略资格的唯一判据仍是 callsignsConfirmed）
 8. 返回 ParsedMessage
 ```
 
-## 重复的 CQ 去重
+几个容易写错的地方：
 
-标准惯例 `CQ` 重复三遍（`CQ CQ CQ`）。第 4 步提取呼号 token 时，需先对连续重复的 `CQ` 去重为一个，否则 `CQ CQ CQ DE BG7XXX…` 会被误判为 `to = CQ, from = CQ`（发送方变成 `CQ` 而非用户呼号）。去重后再进入第 5 步的 to / from 判定。
+- **结束符顺序**：必须先测 `PSE K` 再测单独的 `K`，否则 `PSE K` 会被当成 `K` 且留下一个 `PSE` 词。
+- **`CQ` 不进 `callsigns`**：`CQ` 不是呼号，它只置一个标志。否则 `CQ CQ CQ DE BG7XXX` 会得到 `to = CQ, from = CQ`。
+- **连续重复去重**：`DE BG7XXX BG7XXX` 里同一呼号重复两次，只留一个，否则会被误判成「接收方 + 发送方」两个不同的人。
+- **`type` 的判定顺序**：有合法 RST → `RST`；有 `RST` 字样但没有合法 RST → `QUERY`（即 `UR RST?`）；有结束语或 `end === SK` → `END`；有 `QRZ?` / `AGN?` / `?` → `QUERY`；有 `CQ` → `CQ`；有呼号 → `CALL`。
 
-## 呼号合法性校验（前缀表落地）
-
-> 这一步把 [QSO 协议](./QSO-PROTOCOL.md) 中「呼号合法性在消费前校验」的要求在此落地。
-
-提取到呼号 token 后，对每个非 `CQ` 的呼号 token 执行两步校验：
-
-1. **ITU 格式**：匹配 `[A-Z]{1,2}[0-9][A-Z]{0,4}(/[A-Z0-9]{1,4})?`（后缀字母可选，以容纳中国 `B5` 这类异地 / 便携呼号；`/` 操作后缀仍允许）。
-2. **前缀表命中**：从呼号提取「字母前缀」（首个数字前的字母，并先去掉 `/...` 操作后缀），该字母前缀必须命中 `data/dxcc.json` 的 `prefixes` 全集——要么精确等于某个 token，要么是其首部子串（如 `B` 是 `BA` / `BD` / `BG` / … 的首部）。
-
-- 两步都通过 → `callsignValid = true`。
-- 任一不通过（如杜撰前缀 `ZZ1ABC`、格式非法）→ `callsignValid = false`。
-- 状态机据此判断：若已确认 `peerCall` 而本条呼号 `callsignValid == false` 或与 `peerCall` 不一致，均计 `CALL` 重试并发 `QRZ?`——**切勿误当作「省略呼号」处理**，否则会掩盖用户的抄号错误。
+> 实现见 `src/message/parse.ts`（`normalize` / `parseMessage`）。它不碰 DOM、不碰存储，用注入的 `DxccDatabase` 做前缀校验，因此可以单测。
 
 ## 呼号省略处理
 
@@ -111,113 +103,67 @@ interface ParsedMessage {
 
 ---
 
-## 报文解析伪代码（实现参考）
+## 用户呼号
 
-> 该实现消费摩斯解码产出的字母文本，并遵循 [QSO 协议](./QSO-PROTOCOL.md) 定义的报文格式规范。
+用户呼号是**练习用的呼号**，只判格式、不查真伪；它同时也是虚拟 HAM 生成的权重基准（见 [虚拟 HAM 策略](./VIRTUAL-HAM.md)）。
 
-```typescript
-// ITU 呼号格式（后缀字母可选，以容纳 B5 这类异地/便携呼号）
-const CALL_RE = /^[A-Z]{1,2}[0-9][A-Z]{0,4}(?:\/[A-Z0-9]{1,4})?$/;
-const RST_RE = /^[1-5][1-9][1-9]$/;  // 整 token 匹配
+- 必须填写，统一大写
+- 允许虚拟格式，如 `BG7XXX`、`B5`
+- 不校验呼号是否在现实中存在
+- 校验分两步：先符合 **ITU 呼号格式**，再确认前缀命中**枚举的前缀表**（`data/dxcc.json`）
+- 允许 `/P`、`/M`、`/QRP`、`/5` 等操作后缀
+- **只判定格式合法性，不记录、不展示该呼号属于哪个国家 / 地区**（延续去争议化原则）
 
-function validateCallsign(token: string): boolean {
-  if (!CALL_RE.test(token)) return false;
-  // 去掉 /... 操作后缀，取首个数字前的字母前缀
-  const base = token.split("/")[0];
-  const prefix = base.replace(/[0-9].*$/, "");  // 首个数字前的字母
-  // 命中 data/dxcc.json 的 prefixes 全集：精确等于或为首部子串
-  return DXCC_PREFIXES.some((p: string) => prefix === p || prefix.startsWith(p));
-}
+### ITU 呼号格式
 
-function parseMessage(raw: string, ctx: QsoContext, direction: "rx" | "tx"): ParsedMessage {
-  // 1. 归一化
-  let text = raw.toUpperCase().replace(/\s+/g, " ").trim();
-  text = text.replace(/5NN/g, "599");
-  text = text.replace(/\bTNX\b|\bTHX\b/g, "TU");
-  text = text.replace(/<SK>/g, "SK");
+ITU 呼号由「国家 / 地区前缀 + 数字 + 后缀」构成，分两种基本格式：
 
-  // 2. 识别结束符
-  let end: ParsedMessage["end"] = null;
-  if (/\bPSE\s+K\b/.test(text)) { end = "PSE_K"; text = text.replace(/\bPSE\s+K\b/, ""); }
-  else if (/\bBK\b/.test(text)) { end = "BK"; text = text.replace(/\bBK\b/, ""); }
-  else if (/\bSK\b/.test(text)) { end = "SK"; text = text.replace(/\bSK\b/, ""); }
-  else if (/\bK\b/.test(text)) { end = "K"; text = text.replace(/\bK\b/, ""); }
-  text = text.trim();
+- 格式一：1 个字符 + 1 位数字 + 1–4 个字母的后缀
+- 格式二：2 个字符 + 1 位数字 + 1–4 个字母的后缀
 
-  // 3. 移除 DE
-  text = text.replace(/\bDE\b/g, " ").replace(/\s+/g, " ").trim();
+约束：
 
-  // 4. 提取呼号 token + 合法性校验
-  const tokens = text.split(" ");
-  const calls: string[] = [];
-  const msgTokens: string[] = [];
-  let callsignValid = true;
-  for (const t of tokens) {
-    if (t === "CQ") { calls.push("CQ"); }
-    else if (CALL_RE.test(t)) {
-      calls.push(t);
-      if (!validateCallsign(t)) callsignValid = false;  // 标记非法（交由状态机判抄错）
-    }
-    else { msgTokens.push(t); }
-  }
+- 前 1–2 个字符是国家 / 地区标识（如中国为 `B`）
+- 中国的典型结构为 `B` + 电台种类字母 + 分区数字 + 后缀，例如 `BG5ABC`
+- 后缀由字母组成，最多 4 个；部分国家用后缀首字母 / 长度区分执照等级（如澳大利亚标准呼号后缀为 3 字母，首字母限 H / L / M / N / P / V）
+- 呼号后可加 `/` + 操作状态标识（`/M` 移动、`/P` 便携、`/AM` 航空移动、`/MM` 海上移动，以及 `/5` 这类分区数字），这不是呼号本身的一部分
+- 禁止使用可能被误认为遇险信号的组合（例如以数字开头且第二字符为 `O` 或 `I`）
 
-  // 5. 判断 to / from
-  let to: string | null = null;
-  let from: string | null = null;
-  let omitCalls = false;
+### 中国异地 / 便携呼号（易漏写的情况）
 
-  if (calls.length === 0) {
-    if (ctx.callsignsConfirmed || ctx.callsignsOmitted) {
-      omitCalls = true;
-      to = direction === "tx" ? ctx.peerCall : ctx.myCall;
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    }
-  } else if (calls.length === 1) {
-    const c = calls[0];
-    if (c === "CQ") {
-      to = "CQ";
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    } else if (c === ctx.myCall) {
-      to = ctx.myCall;
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    } else if (c === ctx.peerCall) {
-      to = ctx.peerCall;
-      from = direction === "tx" ? ctx.myCall : ctx.peerCall;
-    } else {
-      to = c;
-      from = direction === "tx" ? ctx.myCall : null;
-    }
-  } else {
-    to = calls[0];
-    from = calls[1];
-  }
+- 美国 / 日志类呼号用**后缀**表示异地，例如 `W1AW/5`（在 5 区操作）。
+- 中国用**前缀**表示异地：在 `B` 后直接跟分区数字，**可省略后继字母后缀**，例如 `B5`、`B1`。`B` + 数字 也属合法（虽少见）。
+- 因此 `B5`、`B1`、`B5ABC` 这类「`B` 起头、数字后无（或少量）字母」的呼号同样是合法的，校验时不应判为非法。
+- 注意：这与 `/5` 后缀式是**同一语义的不同写法**，两者都允许；本项目只判格式合法，不区分、不记录其国家 / 地区。
 
-  // 6. 识别消息类型
-  let type: ParsedMessage["type"] = "UNKNOWN";
-  let rst: string | null = null;
+### 呼号正则
 
-  // RST：对独立 token 整 token 匹配，避免子串误判
-  const rstTok = msgTokens.find((t) => RST_RE.test(t));
-  if (rstTok) {
-    rst = rstTok;
-    type = "RST";
-  } else if (/\bRST\b/.test(text)) {
-    type = "QUERY";
-  } else if (/\b(TU|73|SK)\b/.test(text)) {
-    type = "END";
-  } else if (/\b(QRZ\?|AGN\?|\?)\b/.test(text)) {
-    type = "QUERY";
-  } else if (calls.includes("CQ")) {
-    type = "CQ";
-  } else if (calls.length > 0) {
-    type = "CALL";
-  }
-
-  // 7. 处理 BK（仅记录用户使用过 BK；省略资格判据见 QSO 协议）
-  if (end === "BK") {
-    ctx.callsignsOmitted = true;
-  }
-
-  return { to, from, type, rst, end, omit_calls: omitCalls, callsignValid, raw };
-}
+```regex
+^[A-Z]{1,2}[0-9][A-Z]{0,4}(/[A-Z0-9]{1,4})?$
 ```
+
+> 后缀字母改为可选（`[A-Z]{0,4}`），以容纳中国 `B5` 这类无后继字母的异地 / 便携呼号；`/` 操作后缀（如 `/P`、`/M`、`/QRP`、`/5`）仍允许。
+
+示例（均合法）：
+
+- `BG7XXX`（中国，标准）
+- `B5`（中国，异地 / 便携，无后缀）
+- `B1`、`B5ABC`（中国，`B` + 数字，少见但合法）
+- `JA1ABC`（日本）
+- `VR2XXX`（香港特别行政区）
+- `W1AW`（美国）
+- `BG7XXX/P`、`JA1ABC/QRP`、`W1AW/5`（带操作后缀）
+
+### 呼号合法性校验
+
+对每个非 `CQ` 的呼号 token 执行两步校验：
+
+1. **ITU 格式**：匹配上方正则（后缀字母可选、`/` 操作后缀允许）。
+2. **前缀表命中**：从呼号提取「字母前缀」（**首个数字前的字母**，并先去掉 `/...` 操作后缀），该字母前缀必须命中 [`data/dxcc.json`](../data/dxcc.json) 的 `prefixes` 全集——要么精确等于某个 token，要么是其首部子串（如 `B` 是 `BA` / `BD` / `BG` / … 的首部）。
+
+- 两步都通过 → `callsignValid = true`。
+- 任一不通过（如杜撰前缀 `ZZ1ABC`、格式非法）→ `callsignValid = false`。
+- 状态机据此判断：若已确认 `peerCall` 而本条呼号非法、或出现了第三方的合法呼号，均计 `CALL` 重试并发 `QRZ?`——**切勿误当作「省略呼号」处理**，否则会掩盖用户的抄号错误。
+- 收紧后的正则同时排除了 `599` 这类全数字被误判为呼号的情况。
+
+> 前缀表如何生成、坐标怎么来、为什么要去掉国家 / 地区字段，见 [虚拟 HAM 策略](./VIRTUAL-HAM.md) 的「呼号前缀表与地理位置」。

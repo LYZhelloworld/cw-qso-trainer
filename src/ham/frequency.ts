@@ -1,13 +1,12 @@
 /**
  * Frequency: models a band slot where multiple virtual HAMs are active. It
- * spawns weighted virtual HAMs (via generateVirtualHam) and tracks who is on
- * the frequency, so the app can pick a partner for the user to work.
+ * spawns weighted virtual HAMs (via generateVirtualHam), owns their CQ rhythm
+ * (via HamActivity), and holds the band's much larger population of listeners
+ * (via AnswererPool) — so a HAM that goes offline is gone from both the roster
+ * and the schedule, while a station that only ever answers a CQ holds no slot.
  *
- * Per ROADMAP step 3, this is the "multiple virtual HAMs & frequency activity"
- * piece. The "two AI HAMs conduct a QSO while the user listens but cannot
- * interrupt" scenario is RESERVED: the architecture already supports it (a
- * VirtualHam is a standalone entity and a QsoMachine can pair any two), but its
- * scheduling/rendering is deferred. `planHamToHam` is the typed placeholder.
+ * The band's own HAM-to-HAM exchanges are *not* modelled here: they are
+ * scheduled by `QsoSession` on top of this roster (see `ham/hamQso`).
  */
 
 import { DxccDatabase } from "../data/dxcc.js";
@@ -20,12 +19,6 @@ import {
   type HamActivityEntry,
   type HamActivityEvent,
 } from "./activity.js";
-
-/** Reserved stub describing a HAM-to-HAM exchange (not implemented in step 3). */
-export interface HamToHamExchange {
-  reserved: true;
-  participants: [VirtualHam, VirtualHam];
-}
 
 export interface FrequencyOptions {
   /** RNG for activity timing (CQ intervals, give-up). Defaults to Math.random. */
@@ -42,16 +35,8 @@ export interface FrequencyOptions {
 }
 
 /**
- * Frequency: models a band slot where multiple virtual HAMs are active. It
- * spawns weighted virtual HAMs (via generateVirtualHam) and owns their CQ
- * rhythm (via HamActivity) — one store, so a HAM that goes offline is gone from
- * both the roster and the schedule.
- *
- * Per ROADMAP step 3, this is the "multiple virtual HAMs & frequency activity"
- * piece. The "two AI HAMs conduct a QSO while the user listens but cannot
- * interrupt" scenario is RESERVED: the architecture already supports it (a
- * VirtualHam is a standalone entity and a QsoMachine can pair any two), but its
- * scheduling/rendering is deferred. `planHamToHam` is the typed placeholder.
+ * The band. One store for both facts: who is on the frequency (the roster, with
+ * their CQ schedule) and who is listening off it (the answerer pool).
  */
 export class Frequency {
   readonly freqMHz: number;
@@ -192,22 +177,9 @@ export class Frequency {
     return this.activity.list().map((e) => e.ham);
   }
 
-  /**
-   * The HAM the user can currently work: the one calling CQ if there is one,
-   * otherwise any HAM that is not already in a QSO.
-   */
-  activeHam(): VirtualHam | null {
-    return this.activity.cqingHam() ?? this.activity.availableHam();
-  }
-
   /** Roster with each HAM's activity state (listening / calling / in QSO). */
   activityState(): HamActivityEntry[] {
     return this.activity.list();
-  }
-
-  /** The HAM whose CQ is out and unanswered, if any. */
-  cqingHam(): VirtualHam | null {
-    return this.activity.cqingHam();
   }
 
   /** Number of HAMs still on the frequency. */
@@ -237,20 +209,4 @@ export class Frequency {
   resumeCq(call: string, delayMs?: number): void {
     this.activity.resumeCq(call, delayMs);
   }
-
-  /** Take a HAM off the frequency entirely. */
-  removeHam(call: string): void {
-    this.activity.remove(call);
-  }
-
-}
-
-/**
- * RESERVED placeholder for two AI HAMs talking to each other. Real
- * implementation (scripted exchange + background rendering, user cannot
- * interrupt) is deferred to a later step. Returns a typed stub so callers can
- * already type against the interface.
- */
-export function planHamToHam(a: VirtualHam, b: VirtualHam): HamToHamExchange {
-  return { reserved: true, participants: [a, b] };
 }

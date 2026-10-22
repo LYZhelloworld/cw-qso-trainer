@@ -13,16 +13,10 @@ import { renderRadio } from "./pages/radio.js";
 import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { BANDS, clampToBand, roundFreq } from "./bands.js";
-import { formatFreqMHz } from "./logRecord.js";
-import {
-  inPassband,
-  otherSideband,
-  resolveSideband,
-  sidebandLabel,
-  type Sideband,
-} from "../ham/tuning.js";
-import { SPECTRUM_SPAN_HZ, inSpectrumWindow } from "../ham/spectrum.js";
+import { otherSideband, inPassband, type Sideband } from "../ham/tuning.js";
+import { inSpectrumWindow } from "../ham/spectrum.js";
 import { Waterfall } from "./waterfall.js";
+import { RigFace, type ScopeView } from "./rigFace.js";
 
 export type PageId = "radio" | "log" | "about";
 
@@ -106,35 +100,14 @@ export class App implements AppHost {
   /** Radio power. Off by default so the band is silent until the user opens up. */
   private powerOn = false;
   private settingsOverlay: HTMLElement | null = null;
-  private readonly rigRoot = el("div", { class: "rig" });
-  private readonly rigMain = el("div", { class: "rig-main" });
+  /** The radio face (header + panadapter). Owns its own DOM and its canvas. */
+  private readonly rig = new RigFace({
+    onPower: (on) => this.setPower(on),
+    onOpenSettings: () => this.openSettings(),
+    onToggleSideband: (sideband) => this.toggleSideband(sideband),
+  });
   private readonly navRoot = el("nav", { class: "nav" });
   private readonly pageRoot = el("div");
-  /**
-   * The waterfall lives in the rig, like a real radio's panadapter. Both the
-   * canvas and its overlay labels are built ONCE and re-used across every
-   * re-render: a canvas holds its picture in the element, so rebuilding it
-   * would throw the whole history away (and re-attaching keeps it).
-   */
-  private readonly scopeCanvas = el("canvas", { class: "scope-canvas" });
-  /**
-   * The receiver's passband drawn on top of the waterfall: a band down the
-   * middle of the display as wide as the CW filter (by default 500 Hz out of
-   * the 20 kHz window, narrower if the operator picked a tighter filter). It is
-   * always centred because the display is drawn around the dial, and the filter
-   * is centred on the dial too. Anything lit up outside it is on the band but
-   * *not* being received. Its width is refreshed on every render from the
-   * current setting.
-   */
-  private readonly scopePassband = el("div", { class: "scope-passband" });
-  private readonly scopeLabel = el("span", { class: "scope-label" });
-  private readonly scopeCall = el("span", { class: "scope-call" });
-  private readonly scopeRoot = el("div", { class: "rig-scope" }, [
-    this.scopeCanvas,
-    this.scopePassband,
-    this.scopeLabel,
-    this.scopeCall,
-  ]);
   private waterfall: Waterfall | null = null;
   private cleanups: Array<() => void> = [];
 
@@ -199,8 +172,8 @@ export class App implements AppHost {
 
   start(): void {
     clear(this.root);
+    this.rig.mount(this.root);
     this.root.append(
-      this.rigRoot,
       this.navRoot,
       this.pageRoot,
       el("div", { class: "footer", text: DISCLAIMER_TEXT }),
@@ -228,7 +201,7 @@ export class App implements AppHost {
    */
   private startWaterfall(): void {
     if (!this.waterfall) {
-      this.waterfall = new Waterfall(this.scopeCanvas);
+      this.waterfall = new Waterfall(this.rig.canvas);
       this.waterfall.setSource(() => this.session.spectrum());
       this.waterfall.onTune = (hz) => this.tuneTo(hz);
     }
@@ -368,109 +341,36 @@ export class App implements AppHost {
 
   /** The radio face: frequency, band, mode, power switch and settings gear. */
   private renderRig(): void {
-    // Only the face is rebuilt — the waterfall below it is never detached, so
-    // its history survives every re-render.
-    this.rigRoot.classList.toggle("powered", this.powerOn);
-    clear(this.rigMain);
-
-    const bandIndex = Math.min(Math.max(this.settings.bandIndex, 0), BANDS.length - 1);
-    const band = BANDS[bandIndex];
-
-    const brand = el("div", { class: "rig-brand" });
-    brand.append(el("span", { class: "app-title", text: "CW QSO 练习器" }));
-    brand.append(el("span", { class: "app-sub", text: "离线摩尔斯电码通联练习" }));
-
-    const freq = el("div", { class: "rig-freq" });
-    freq.append(el("span", { class: "freq-value", text: formatFreqMHz(this.settings.freqMHz) }));
-    freq.append(el("span", { class: "freq-unit", text: "MHz" }));
-
-    const meta = el("div", { class: "rig-meta" });
-    meta.append(el("span", { class: "badge", text: band.name }));
-    // The mode readout is also the sideband switch: CW-L / CW-U. The band's
-    // convention (40 m and down LSB, 20 m and up USB) is only the starting
-    // point — the operator can pin the other sideband by clicking here. Either
-    // way a logged QSO is plain CW (see logRecord).
-    const sideband = resolveSideband(
-      this.settings.cwSideband,
-      Math.round(this.settings.freqMHz * 1e6),
-    );
-    const modeBtn = button(
-      sidebandLabel(sideband),
-      () => this.toggleSideband(sideband),
-      "badge mode sideband-btn",
-    );
-    modeBtn.title =
-      this.settings.cwSideband === "auto"
-        ? `${sidebandLabel(sideband)}（本波段默认）· 点击切换到 ${
-            sideband === "USB" ? "CW-L" : "CW-U"
-          }`
-        : `${sidebandLabel(sideband)}（手动指定）· 点击切换（可在设置里恢复跟随波段）`;
-    meta.append(modeBtn);
-
-    const right = el("div", { class: "rig-right" });
-    const power = button(
-      this.powerOn ? "⏻ 关台" : "⏻ 开台",
-      () => this.setPower(!this.powerOn),
-      this.powerOn ? "btn power on" : "btn power",
-    );
-    power.setAttribute("aria-pressed", String(this.powerOn));
-    right.append(power, button("⚙ 设置", () => this.openSettings(), "btn gear"));
-
-    this.rigMain.append(brand, freq, meta, right);
-
-    if (this.rigRoot.childElementCount === 0) {
-      this.rigRoot.append(this.rigMain, this.scopeRoot);
-    }
+    this.rig.render({ settings: this.settings, powered: this.powerOn });
     this.waterfall?.setSpeed(this.settings.wpm);
-    this.updateScope();
+    this.rig.updateScope(this.scopeView());
   }
 
   /**
-   * Refresh the waterfall's overlay text. Deliberately does not touch the
-   * canvas, so the picture (and its history) is untouched by a re-render.
+   * Gather what the panadapter's overlay says. The facts come from the session
+   * (which signals are in view, which of them the filter passes, whether a
+   * pile-up is building); `RigFace` only turns them into text.
    */
-  private updateScope(): void {
-    this.scopeRoot.classList.toggle("off", !this.powerOn);
-    // The passband marking is as wide as the filter the operator picked.
-    this.scopePassband.style.width = `${
-      (this.session.passbandHz / SPECTRUM_SPAN_HZ) * 100
-    }%`;
-    // Below the dial is the receiver's filter, so only stations inside it are
-    // actually being heard — the rest are visible signals the operator has not
-    // tuned to yet.
-    // What the scope itself is showing. The band slice is wider than this
-    // window, so the count is "signals in view", not "stations on the band".
+  private scopeView(): ScopeView {
+    const session = this.session;
     const roster = this.powerOn
-      ? this.session.hamActivity().filter((e) => inSpectrumWindow(e.ham.freqHz, this.session.dialHz))
+      ? session.hamActivity().filter((e) => inSpectrumWindow(e.ham.freqHz, session.dialHz))
       : [];
     const audible = roster.filter((e) =>
-      inPassband(e.ham.freqHz, this.session.dialHz, this.session.passbandHz),
+      inPassband(e.ham.freqHz, session.dialHz, session.passbandHz),
     );
-    // A pile-up is the one moment the label has something more useful to say
-    // than "tune around": the operator has to pick a station by name.
-    const pileup = this.powerOn ? this.session.pileupCallers() : [];
-
-    // Powered down the band does not go quiet — the other stations keep calling.
-    // Say so, so "standby" is never mistaken for "empty".
-    if (!this.powerOn) {
-      this.scopeLabel.textContent = "设备已关机 · 本波段其他电台仍在活动";
-    } else if (pileup.length > 0) {
-      this.scopeLabel.textContent = `${pileup.length} 台同时应答 · 回复时请点名`;
-    } else if (audible.length === 0) {
-      this.scopeLabel.textContent =
-        roster.length > 0
-          ? `通带内没有信号 · 窗口里有 ${roster.length} 个信号（点击亮斑可调谐）`
-          : "波段频谱 · 点击信号可调谐";
-    } else {
-      this.scopeLabel.textContent = "波段频谱 · 点击信号可调谐";
-    }
-
-    if (pileup.length > 0) {
-      this.scopeCall.textContent = `堆叠 ×${pileup.length}`;
-    } else {
-      const cq = audible.find((e) => e.state === "cqing");
-      this.scopeCall.textContent = cq ? `CQ ${cq.ham.call}` : "";
-    }
+    const pileup = this.powerOn ? session.pileupCallers() : [];
+    // Below the dial is the receiver's filter, so only stations inside it are
+    // actually being heard — the rest are visible signals not yet tuned in.
+    const calling = audible.find((e) => e.state === "cqing");
+    return {
+      powered: this.powerOn,
+      passbandHz: session.passbandHz,
+      signalsInWindow: roster.length,
+      audibleInPassband: audible.length,
+      pileupCount: pileup.length,
+      callingCall: calling?.ham.call ?? null,
+    };
   }
 
   private renderNav(): void {

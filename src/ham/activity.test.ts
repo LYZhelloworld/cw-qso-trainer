@@ -203,9 +203,9 @@ describe("通联期间", () => {
     const { act, advanceTo } = manual();
     act.add(ham, 30_000);
     advanceTo(170_000); // 已呼叫很久
-    act.markAnswered("JA1ABC");
+    act.markInQso("JA1ABC"); // 用户应答：这台转入通联，计时归零
 
-    // 应答后计时归零：即便再过去近 3 分钟，也不会被判为「无应答」
+    // 计时归零：即便再过去近 3 分钟，也不会被判为「无应答」
     const events = advanceTo(170_000 + GIVE_UP_MS - 1_000);
     expect(events.some((e) => e.type === "offline")).toBe(false);
     expect(act.size).toBe(1);
@@ -213,28 +213,28 @@ describe("通联期间", () => {
 });
 
 describe("查询", () => {
-  it("cqingHam 给出正在呼叫的台", () => {
+  it("list() 给出正在呼叫的台与仍在守听的台", () => {
     const a = hamOf("JA1ABC");
     const b = hamOf("K1DEF");
     const { act, advanceTo } = manual();
     act.add(a, 30_000);
     act.add(b, 300_000); // 晚很多才呼叫
 
-    expect(act.cqingHam()).toBeNull();
+    expect(act.list().map((e) => e.state)).toEqual(["listening", "listening"]);
     advanceTo(30_000);
-    expect(act.cqingHam()).toBe(a);
+    expect(act.list().map((e) => [e.ham.call, e.state])).toEqual([
+      ["JA1ABC", "cqing"],
+      ["K1DEF", "listening"],
+    ]);
   });
 
-  it("availableHam 跳过已通联的台", () => {
-    const a = hamOf("JA1ABC");
-    const b = hamOf("K1DEF");
-    const { act } = manual();
-    act.add(a);
-    act.add(b);
-
-    expect(act.availableHam()).toBe(a);
+  it("inQso 优先于 cqing：通联中的台不再算「在呼叫」", () => {
+    const ham = hamOf("JA1ABC");
+    const { act, advanceTo } = manual();
+    act.add(ham, 30_000);
+    advanceTo(30_000);
     act.markInQso("JA1ABC");
-    expect(act.availableHam()).toBe(b);
+    expect(act.list()[0].state).toBe("inQso");
   });
 
   it("重复 add 同一呼号不会产生两份记录", () => {

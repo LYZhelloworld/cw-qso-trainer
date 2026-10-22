@@ -1,10 +1,8 @@
 import { button, clear, el, panel } from "../dom.js";
-import { IambicKeyerInput, StraightKeyer } from "../keyer.js";
-import { Sidetone } from "../../audio/sidetone.js";
-import type { Paddle } from "../../cw/keyer.js";
 import { addLog } from "../storage/logStore.js";
 import type { TranscriptLine } from "../session.js";
 import type { AppHost } from "../app.js";
+import { renderKeyPanel } from "./keyPanel.js";
 
 /** Lines the user chose to reveal while assist mode is off (per-session). */
 const revealed = new WeakSet<TranscriptLine>();
@@ -204,134 +202,14 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   }
 
   // --- key input: straight key or iambic paddles ---------------------------
-  const keySymbols = el("div", { class: "hint", text: "" });
-  const keyArea = el("div", { class: "key-area" });
-
-  const isTextField = (target: EventTarget | null): boolean => {
-    const node = target as HTMLElement | null;
-    return !!node && (node.tagName === "INPUT" || node.tagName === "TEXTAREA");
-  };
-
-  /** Characters arrive one by one when keying, so they are appended as-is. */
-  const appendKeyed = (text: string): void => {
-    setDraft(input.value + text);
-  };
-
-  const useIambic = settings.keyMode === "iambic";
-
-  // Sidetone: the operator's own monitor tone while keying. It follows the key
-  // (straight) or the element phase (iambic) and is never affected by QSB/QRM.
-  const sidetone = new Sidetone({
-    enabled: settings.sidetone,
-    volume: settings.sidetoneVolume / 100,
-    freqHz: settings.toneHz,
+  // The key itself (listeners, keyer, sidetone) is a device of its own — see
+  // `keyPanel`. All it gives back is text.
+  const keyPanel = renderKeyPanel({
+    settings,
+    onLeave: (fn) => host.onLeave(fn),
+    onCharacter: (text) => setDraft(input.value + text),
+    onPhrase: (text) => setDraft(input.value ? `${input.value} ${text}` : text),
   });
-  const driveSidetone = (on: boolean): void => {
-    if (on) sidetone.keyDown();
-    else sidetone.keyUp();
-  };
-  const sidetoneHint = el("div", {
-    class: "hint",
-    text: !settings.sidetone
-      ? "侧音：关（可在设置页开启）"
-      : sidetone.available
-        ? `侧音：开（${settings.toneHz} Hz，音量 ${settings.sidetoneVolume}%）`
-        : "侧音：开，但当前环境没有可用的音频输出（仅影响发声，不影响发报）",
-  });
-
-  if (useIambic) {
-    const iambic = new IambicKeyerInput({
-      wpm: settings.wpm,
-      mode: settings.iambicMode,
-      onText: appendKeyed,
-      onSymbols: (s) => {
-        keySymbols.textContent = s ? `正在发：${s}` : "";
-      },
-      onKeying: driveSidetone,
-    });
-
-    keyArea.append(
-      el("div", {
-        text: `点键「${settings.dotCode}」/ 划键「${settings.dashCode}」，同时按下为 squeeze；空格分词（焦点在输入框时不生效）`,
-      }),
-      keySymbols,
-      sidetoneHint,
-      button("结束电键输入", () => { iambic.finish(); keySymbols.textContent = ""; }, "btn small"),
-    );
-
-    const paddleFor = (code: string): Paddle | null =>
-      code === settings.dotCode ? "dot" : code === settings.dashCode ? "dash" : null;
-
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.repeat || isTextField(e.target)) return;
-      const paddle = paddleFor(e.code);
-      if (paddle) {
-        e.preventDefault();
-        iambic.press(paddle);
-        keyArea.classList.add("active");
-        return;
-      }
-      if (e.code === "Space") {
-        e.preventDefault();
-        iambic.wordBreak();
-      }
-    };
-    const onKeyUp = (e: KeyboardEvent): void => {
-      if (isTextField(e.target)) return;
-      const paddle = paddleFor(e.code);
-      if (!paddle) return;
-      e.preventDefault();
-      iambic.release(paddle);
-      keyArea.classList.remove("active");
-    };
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("keyup", onKeyUp);
-    host.onLeave(() => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("keyup", onKeyUp);
-      iambic.clear();
-      sidetone.dispose();
-    });
-  } else {
-    const keyer = new StraightKeyer(
-      (text) => {
-        setDraft(input.value ? `${input.value} ${text}` : text);
-          keySymbols.textContent = `已解码：${text}`;
-      },
-      1500,
-      driveSidetone,
-    );
-
-    keyArea.append(
-      el("div", { text: `按住「${settings.keyCode}」发报（焦点在输入框时不生效）` }),
-      keySymbols,
-      sidetoneHint,
-      button("结束电键输入", () => { keyer.finish(); keySymbols.textContent = ""; }, "btn small"),
-    );
-
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.code !== settings.keyCode || e.repeat || isTextField(e.target)) return;
-      e.preventDefault();
-      keyer.keyDown();
-      keyArea.classList.add("active");
-      keySymbols.textContent = keyer.currentSymbols();
-    };
-    const onKeyUp = (e: KeyboardEvent): void => {
-      if (e.code !== settings.keyCode || isTextField(e.target)) return;
-      e.preventDefault();
-      keyer.keyUp();
-      keyArea.classList.remove("active");
-      keySymbols.textContent = keyer.currentSymbols();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("keyup", onKeyUp);
-    host.onLeave(() => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("keyup", onKeyUp);
-      keyer.clear();
-      sidetone.dispose();
-    });
-  }
 
   // --- assemble ------------------------------------------------------------
   const banner = settings.assistMode
@@ -368,7 +246,7 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
       el("div", { class: "row" }, [sendBtn]),
       el("div", { class: "hint", text: "Ctrl+Enter 也可发送。发送内容会按设定速度播出 CW 音调。" }),
     ),
-    panel(useIambic ? "电键输入（iambic 双桨）" : "电键输入（直键）", keyArea),
+    panel(keyPanel.title, keyPanel.node),
     panel("操作", controls),
   );
 

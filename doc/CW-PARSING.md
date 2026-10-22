@@ -6,15 +6,15 @@
 > - 输出侧：文本 → CW 音频（编码）
 >
 > 报文的「语义解析」（字母文本 → `ParsedMessage`，含呼号 / RST / 结束语提取）是**独立模块**，见 [报文解析](./MESSAGE-PARSING.md)。本文件只产出 / 消费字母，不做语义判断。
-> 相关：报文格式规范见 [QSO 协议](./QSO-PROTOCOL.md)；音频环境（底噪 / QSB / QRM）见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md)；UI 见 [UI 界面](./UI.md)。
+> 相关：报文格式规范见 [QSO 协议](./QSO-PROTOCOL.md)；音频环境（底噪 / QSB / QRM）见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md)；界面见 [界面](./UI.md)。
 
 ---
 
 ## 键盘输入与 CW 发送（发送侧 keyer）
 
-> **已实现（2026-10-14）**：核心在 `src/cw/keyer.ts` 的 `IambicKeyer` —— Mode A/B、点划记忆（squeeze）、自动 3d 字符间隔与 7d 单词间隔均已落地。它的时钟与驱动全部由外部注入（每个方法都接收 `now`），因此行为完全确定、可单测。UI 接线见 `src/ui/keyer.ts` 的 `IambicKeyerInput`，设置页可切换「直键 / iambic」并绑定点划键位。
+> **已实现（2026-10-14）**：核心在 `src/cw/keyer.ts` 的 `IambicKeyer` —— Mode A/B、点划记忆（squeeze）、自动 3d 字符间隔与 7d 单词间隔均已落地。它的时钟与驱动全部由外部注入（每个方法都接收 `now`），因此行为完全确定、可单测。UI 接线见 `src/ui/keyer.ts` 的 `IambicKeyerInput`，界面面板见 `src/ui/pages/keyPanel.ts`，设置页可切换「直键 / iambic」并绑定点划键位。
 >
-> 尚未实现：**发报没有侧音（sidetone）**——目前只输出文本，边敲边响尚未接音频引擎。
+> **侧音**也已实现（`src/audio/sidetone.ts`，详见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 的「发报侧音」）：它不走报文渲染，而是常驻振荡器实时开关，按下即响、松开即停。
 
 ### 键位绑定
 
@@ -144,16 +144,16 @@
 
 ### 速度与时序
 
-- WPM 范围：**5 – 40**，默认 **20**
+- WPM 范围：**5 – 40**，默认 **18**
 - 支持 Farnsworth 间隔（含义见上方「摩斯解码」层：字符快、间隔慢，练习初期 / 低难度时使用）
 - 标准比例：点 : 划 : 字符间隔 : 单词间隔 = **1 : 3 : 3 : 7**
 
 ### CW 音调生成
 
 - 默认：**700 Hz**
-- 可调范围：**400 – 1000 Hz**
+- 可调范围：**300 – 1200 Hz**
 - 波形：正弦波
-- 实现：`OscillatorNode` 生成 700 Hz 正弦波（见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 音频架构）
+- 实现：**先整段渲染成 PCM 采样**（`src/audio/render.ts`：正弦载波乘摩尔斯键控包络，再叠 QSB / QRM / QRN），交给 lookahead 播放器按音频时钟分块播出（见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 的「音频处理架构」）。整段一次算完，衰落与干扰才是连续的、没有接缝爆音。**只有侧音**用常驻 `OscillatorNode`。
 
 ---
 

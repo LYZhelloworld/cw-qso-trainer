@@ -72,7 +72,7 @@ describe("日志页（IndexedDB 可用）", () => {
     await vi.waitFor(() => expect(root.textContent).toContain("暂无日志记录"));
   });
 
-  it("有记录时按 UI.md 的字段顺序渲染表格", async () => {
+  it("有记录时按 LOG.md 的字段顺序渲染表格", async () => {
     await addLog(SAMPLE);
     const root = freshRoot();
     mountLog(root);

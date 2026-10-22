@@ -20,7 +20,7 @@ const completeQso: QsoLog = {
 };
 
 describe("canWriteLog", () => {
-  it("is true only when all six UI.md conditions hold", () => {
+  it("is true only when all six LOG.md conditions hold", () => {
     expect(canWriteLog(completeGate)).toBe(true);
   });
 
@@ -45,7 +45,7 @@ describe("canWriteLog", () => {
 });
 
 describe("deriveLogRecord", () => {
-  it("maps a completed QSO onto the UI.md log fields", () => {
+  it("maps a completed QSO onto the LOG.md log fields", () => {
     const rec = deriveLogRecord(completeQso, 14.025, new Date("2026-10-14T12:34:56.000Z"));
     expect(rec).not.toBeNull();
     expect(rec?.date).toBe("2026-10-14");
