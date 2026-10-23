@@ -587,6 +587,11 @@ export class BandSynth {
       if (on > 0) {
         const onSec = on / 1000;
         const upSec = Math.min(KEY_RAMP_SEC, onSec);
+        // Pin the gain to zero *at this element's start* before ramping up.
+        // Without it the ramp up interpolates from the previous element's
+        // fall — which is the start of the gap — so the whole gap becomes a
+        // slow fade-in instead of silence, and the dots run into each other.
+        param.setValueAtTime(0, t);
         param.linearRampToValueAtTime(1, t + upSec);
         param.setValueAtTime(1, Math.max(t + upSec, t + onSec - KEY_RAMP_SEC));
         param.linearRampToValueAtTime(0, t + onSec);

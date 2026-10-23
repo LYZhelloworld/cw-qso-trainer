@@ -128,3 +128,41 @@ export function stationGains(ctx: FakeBandContext, index: number) {
 export function round(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
+
+/**
+ * Replay a param's automation the way a browser would, so a test can ask
+ * "what is the gain at 130 ms?" instead of counting events.
+ *
+ * Only `setValueAtTime` and `linearRampToValueAtTime` are modelled (`target`
+ * behaves like a step): those two are what the keying envelope is made of.
+ * `cancelScheduledValues(t)` drops everything from `t` on, matching the spec.
+ */
+export function sampleParam(param: FakeParam, time: number): number {
+  const timeline: Array<{ kind: string; value: number; time: number }> = [];
+  for (const event of param.events) {
+    if (event.kind === "cancel") {
+      while (timeline.length > 0 && timeline[timeline.length - 1]!.time >= event.time) {
+        timeline.pop();
+      }
+      continue;
+    }
+    timeline.push(event);
+  }
+  if (timeline.length === 0) return 0;
+
+  let last = timeline[0]!;
+  if (last.time > time) return 0;
+  for (const event of timeline) {
+    if (event.time <= time) last = event;
+    else break;
+  }
+
+  // A linear ramp stretches back to the previous event, not to its own start
+  // value — the whole reason a missing `setValueAtTime(0, …)` turns a gap into
+  // a slow fade-in.
+  const next = timeline.find((event) => event.time > time);
+  if (!next || next.kind !== "ramp") return last.value;
+  const span = next.time - last.time;
+  if (span <= 0) return next.value;
+  return last.value + ((next.value - last.value) * (time - last.time)) / span;
+}

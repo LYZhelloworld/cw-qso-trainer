@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BandSynth } from "./bandSynth.js";
-import { BUSSES, FakeBandContext, round, stationGains } from "./fakeContext.js";
+import { BUSSES, FakeBandContext, round, sampleParam, stationGains } from "./fakeContext.js";
 import { difficultyToEnvironment } from "./environment.js";
 import { makeTx } from "../ham/tx.js";
 import type { Sideband } from "../ham/tuning.js";
@@ -169,6 +169,35 @@ describe("BandSynth — 从报文中间接上", () => {
       [1, 0.655],
       [0, 0.75],
     ]);
+  });
+});
+
+describe("BandSynth — 键控包络的形状", () => {
+  /** "A B" at these elements: tone 0–100 ms, gap 100–200, tone 200–300. */
+  const envelopeOf = () => {
+    const h = makeSynth();
+    h.synth.ensureStation(STATION);
+    h.synth.key(makeTx("A B", ELEMENTS, 0), STATION.call, 0);
+    return (ms: number) => sampleParam(stationGains(h.ctx, 0).key, ms / 1000);
+  };
+
+  it("间隔里是真静音：不会从上一个点一路淡入过来", () => {
+    const at = envelopeOf();
+
+    expect(at(50)).toBeCloseTo(1, 6); // 点里
+    expect(at(100)).toBeCloseTo(0, 6); // 点的末尾
+    expect(at(140)).toBeCloseTo(0, 6); // 间隔的前段
+    expect(at(195)).toBeCloseTo(0, 6); // 间隔的末尾——起振前必须还是 0
+    expect(at(250)).toBeCloseTo(1, 6); // 第二个点里
+    expect(at(300)).toBeCloseTo(0, 6); // 报文结束
+  });
+
+  it("起振就是 5 ms 的斜坡，方波直上直下只留防爆音的边", () => {
+    const at = envelopeOf();
+
+    expect(at(0)).toBeCloseTo(0, 6);
+    expect(at(2.5)).toBeCloseTo(0.5, 2); // 半个斜坡
+    expect(at(5)).toBeCloseTo(1, 6);
   });
 });
 
