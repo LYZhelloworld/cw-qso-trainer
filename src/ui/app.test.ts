@@ -201,15 +201,15 @@ describe("App 外壳", () => {
     expect(app.session.sideband).toBe("LSB");
   });
 
-  it("瀑布图通带标记宽度跟随所选滤波带宽", () => {
+  it("瀑布图上当前频率是一条竖线，而不是通带的两条边", () => {
     const { root, app } = mountApp();
-    const width = (): string =>
-      (root.querySelector<HTMLElement>(".scope-passband")?.style.width ?? "");
+    expect(root.querySelectorAll(".scope-cursor").length).toBe(1);
+    expect(root.querySelector(".scope-passband")).toBeNull();
 
-    // 500 Hz / 20 kHz = 2.5%
-    expect(width()).toBe("2.5%");
+    // 带宽影响的是声音，不在画面里多画一条边线
     app.updateSettings({ passbandHz: 100 });
-    expect(width()).toBe("0.5%");
+    expect(root.querySelectorAll(".scope-cursor").length).toBe(1);
+    expect(root.querySelector(".scope-passband")).toBeNull();
   });
 });
 

@@ -1,6 +1,7 @@
 import { difficultyToEnvironment } from "../audio/environment.js";
 import type { AudioPlayer, EngineRenderOptions } from "../audio/engine.js";
 import { textToTiming } from "../cw/encode.js";
+import type { KeyElement } from "../cw/decoder.js";
 import { receiveStation, type Reception, type Sideband } from "../ham/tuning.js";
 import type { VirtualHam } from "../ham/virtualHam.js";
 import type { AppSettings } from "./settingsSchema.js";
@@ -109,14 +110,22 @@ export class SessionAudio {
     this.engine.stop();
   }
 
-  /** How long a message takes to key at the operator's current speed, in ms. */
-  callDurationMs(text: string): number {
+  /**
+   * The keying envelope of a message at the operator's current speed: the
+   * on/off element lengths in ms. The waterfall reads the same envelope the
+   * audio does, so a signal is lit exactly while its tone is on the air.
+   */
+  keyElements(text: string): KeyElement[] {
     const { settings } = this.view();
-    const elements = textToTiming(text, {
+    return textToTiming(text, {
       wpm: settings.wpm,
       ...(settings.farnsworthEnabled ? { farnsworthWpm: settings.farnsworthWpm } : {}),
     });
-    return elements.reduce((total, e) => total + e.on + e.off, 0);
+  }
+
+  /** How long a message takes to key at the operator's current speed, in ms. */
+  callDurationMs(text: string): number {
+    return this.keyElements(text).reduce((total, e) => total + e.on + e.off, 0);
   }
 
   private async play(text: string, extra: EngineRenderOptions): Promise<void> {

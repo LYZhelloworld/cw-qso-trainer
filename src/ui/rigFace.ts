@@ -1,7 +1,6 @@
 import { button, clear, el } from "./dom.js";
 import { BANDS } from "./bands.js";
 import { formatFreqMHz } from "./logRecord.js";
-import { SPECTRUM_SPAN_HZ } from "../ham/spectrum.js";
 import { resolveSideband, sidebandLabel, type Sideband } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
 
@@ -39,8 +38,6 @@ export interface RigView {
  */
 export interface ScopeView {
   powered: boolean;
-  /** Receiver filter width, for the passband marking. */
-  passbandHz: number;
 }
 
 export class RigFace {
@@ -50,16 +47,16 @@ export class RigFace {
 
   private readonly main = el("div", { class: "rig-main" });
   /**
-   * The receiver's passband drawn on top of the waterfall: a band down the
-   * middle as wide as the CW filter. It is always centred because the display
-   * is drawn around the dial, and the filter is centred on the dial too.
-   * Anything lit up outside it is on the band but *not* being received.
+   * The dial marker: one vertical line at the tuned frequency, the way a real
+   * rig's panadapter shows where the VFO is. It sits in the middle because the
+   * display is drawn around the dial; the filter width is an audio property,
+   * not a pair of edges to draw.
    */
-  private readonly passband = el("div", { class: "scope-passband" });
+  private readonly cursor = el("div", { class: "scope-cursor" });
   private readonly label = el("span", { class: "scope-label" });
   private readonly scope = el("div", { class: "rig-scope" }, [
     this.canvas,
-    this.passband,
+    this.cursor,
     this.label,
   ]);
   private mounted = false;
@@ -104,7 +101,6 @@ export class RigFace {
     right.append(power, button("⚙ 设置", () => this.opts.onOpenSettings(), "btn gear"));
 
     this.main.append(brand, freq, meta, right);
-    this.updateScopePassband(settings.passbandHz);
   }
 
   /**
@@ -113,7 +109,6 @@ export class RigFace {
    */
   updateScope(view: ScopeView): void {
     this.scope.classList.toggle("off", !view.powered);
-    this.updateScopePassband(view.passbandHz);
 
     // The display is a receiver, not a status board: no signal counts, no
     // "nobody is calling" hints, no station names. The label only says how the
@@ -143,9 +138,5 @@ export class RigFace {
           }`
         : `${sidebandLabel(sideband)}（手动指定）· 点击切换（可在设置里恢复跟随波段）`;
     return btn;
-  }
-
-  private updateScopePassband(passbandHz: number): void {
-    this.passband.style.width = `${(passbandHz / SPECTRUM_SPAN_HZ) * 100}%`;
   }
 }

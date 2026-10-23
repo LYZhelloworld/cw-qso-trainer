@@ -8,6 +8,7 @@ import {
   keyingLevel,
   keyingSeed,
   renderRow,
+  signalLevel,
   xAtFreq,
 } from "./waterfall.js";
 import type { SpectrumSignal, SpectrumSnapshot } from "../ham/spectrum.js";
@@ -152,6 +153,34 @@ describe("瀑布图 — CW 键控包络", () => {
     expect(keyingSeed(signal())).not.toBe(keyingSeed(signal({ call: "DL1XYZ" })));
     expect(keyingSeed(signal())).not.toBe(keyingSeed(signal({ freqHz: CENTER + 500 })));
     expect(keyingSeed(signal())).toBe(keyingSeed(signal()));
+  });
+});
+
+describe("瀑布图 — 有声音才有信号", () => {
+  it("真实台只在发报时点亮；守听间隙里没有信号，不是暗载波", () => {
+    const sig = signal({ active: true, strength: 0.8 });
+    expect(signalLevel(sig, 0, 20)).toBeCloseTo(0.8, 6);
+    expect(signalLevel({ ...sig, active: false }, 0, 20)).toBe(0);
+  });
+
+  it("自己的发报按满强度画，不随合成点划闪断", () => {
+    const mine = signal({ call: "BG7XXX", workable: false, active: true, strength: 1 });
+    for (const t of [0, 37, 123, 900]) expect(signalLevel(mine, t, 20)).toBe(1);
+  });
+
+  it("装饰性背景载波没有音频，仍保留合成点划与暗载波", () => {
+    const bg = signal({ call: "", workable: false, active: true, strength: 0.3 });
+    let on = false;
+    let off = false;
+    for (let t = 0; t < 3000; t += 5) {
+      const v = signalLevel(bg, t, 20);
+      if (v === 0) off = true;
+      if (Math.abs(v - 0.3) < 1e-9) on = true;
+    }
+    expect(on && off).toBe(true);
+
+    // 守听中的装饰载波是很暗的一条，不会消失
+    expect(signalLevel({ ...bg, active: false }, 0, 20)).toBeCloseTo(0.06, 6);
   });
 });
 

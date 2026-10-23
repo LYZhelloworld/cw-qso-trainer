@@ -351,7 +351,7 @@ export class App implements AppHost {
    * `ScopeView`).
    */
   private scopeView(): ScopeView {
-    return { powered: this.powerOn, passbandHz: this.session.passbandHz };
+    return { powered: this.powerOn };
   }
 
   private renderNav(): void {

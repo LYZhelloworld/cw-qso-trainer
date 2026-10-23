@@ -76,7 +76,11 @@ export interface SpectrumSignal {
   call: string;
   /** True for a HAM on the band roster (a station the operator can work). */
   workable: boolean;
-  /** True while the station is calling (keyed); false when idle. */
+  /**
+   * True while the station's tone is on the air — its dots and dashes. False
+   * in the listening gap between transmissions and between elements, so the
+   * waterfall has nothing to draw when there is no sound.
+   */
   active: boolean;
 }
 

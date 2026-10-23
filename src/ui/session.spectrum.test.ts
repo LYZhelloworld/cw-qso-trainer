@@ -111,4 +111,25 @@ describe("会话频谱 — 瀑布图的数据源", () => {
 
     h.session.dispose();
   });
+
+  it("只在真正发报时 active；两条 CQ 之间的守听间隙里没有信号", async () => {
+    const h = makeSession();
+    h.session.seedHams(1);
+    h.session.start();
+    const call = h.session.listHams()[0].call;
+    const active = (): boolean | undefined =>
+      h.session.spectrum().signals.find((s) => s.call === call)?.active;
+
+    await h.tickTo(20_001); // the first CQ starts
+    expect(active()).toBe(true);
+
+    // 这条 CQ 已经发完，下一条还没开始。台仍在"持续呼叫"（state 仍是
+    // cqing），但此刻没有声音，瀑布上不应该再有它。
+    const dur = h.session.callDurationMs(`CQ CQ CQ DE ${call} ${call} PSE K`);
+    await h.tickTo(20_001 + dur + 50);
+    expect(h.session.hamActivity()[0].state).toBe("cqing");
+    expect(active()).toBe(false);
+
+    h.session.dispose();
+  });
 });

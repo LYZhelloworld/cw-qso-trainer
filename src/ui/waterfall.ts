@@ -5,8 +5,9 @@
  *  - A window of ±spanHz/2 around the dial (default ±10 kHz). Stations are
  *    drawn as bright peaks at their ABSOLUTE frequency, so a bright blob is a
  *    CW signal sitting on the band.
- *  - Brightness follows the signal strength; a station that is calling CQ is
- *    keyed, so it shows dots and dashes instead of a steady bar.
+ *  - Brightness follows the signal strength, and a station is drawn only while
+ *    its tone is on the air: its real dots and dashes, with nothing left
+ *    behind during the listening gap. No sound, no trace.
  *  - Time runs downwards: each line is one instant, older lines slide down.
  *
  * Tuning is a wheel, not a click
@@ -243,6 +244,31 @@ export function keyingLevel(seed: number, tMs: number, wpm: number): number {
   return 0;
 }
 
+/**
+ * How bright one signal is on a given line.
+ *
+ * A real station is lit only while its tone is on (`active`). The session
+ * computes that from the message's actual keying envelope, so the trace shows
+ * the real dots and dashes and disappears in the listening gap — there is no
+ * sound, so there is nothing to see.
+ *
+ * Decorative background carriers have no audio behind them; they keep the
+ * old synthetic dither (and a faint parked carrier when idle), because they
+ * exist to give the band texture rather than to represent a transmission.
+ */
+export function signalLevel(
+  sig: SpectrumSignal,
+  tMs: number,
+  wpm: number = DEFAULT_WPM,
+): number {
+  if (sig.call === "") {
+    return sig.active
+      ? sig.strength * keyingLevel(keyingSeed(sig), tMs, wpm)
+      : sig.strength * IDLE_FACTOR;
+  }
+  return sig.active ? sig.strength : 0;
+}
+
 // --- scheduler -------------------------------------------------------------
 
 function defaultNow(): number {
@@ -446,7 +472,7 @@ export class Waterfall {
     ctx.putImageData(this.rowImage, 0, 0);
   }
 
-  /** Turn the band's signals into per-line levels (keying, idle carrier). */
+  /** Turn the band's signals into per-line levels (see `signalLevel`). */
   private levelsFor(
     snapshot: SpectrumSnapshot | null,
     tMs: number,
@@ -457,9 +483,7 @@ export class Waterfall {
     const margin = this.spanHz * 0.6; // ignore anything well outside the window
     for (const sig of snapshot.signals) {
       if (Math.abs(sig.freqHz - centerHz) > margin) continue;
-      const level = sig.active
-        ? sig.strength * keyingLevel(keyingSeed(sig), tMs, this.wpm)
-        : sig.strength * IDLE_FACTOR;
+      const level = signalLevel(sig, tMs, this.wpm);
       if (level > 0.02) out.push({ freqHz: sig.freqHz, level });
     }
     return out;
