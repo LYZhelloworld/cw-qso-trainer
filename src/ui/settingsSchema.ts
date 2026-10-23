@@ -12,7 +12,12 @@ import { PASSBAND_HZ, normalisePassband } from "../ham/tuning.js";
 
 export type UiDifficulty = "novice" | "intermediate" | "hardcore";
 export type IambicMode = "A" | "B";
-export type KeyMode = "straight" | "iambic";
+/**
+ * How the operator puts a message on the air. The three modes are mutually
+ * exclusive in the operating panel: a straight key, iambic paddles, or typing
+ * the message and letting the rig key it out.
+ */
+export type KeyMode = "straight" | "iambic" | "text";
 
 export interface AppSettings {
   /** The user's own callsign (practise callsign; format-checked only). */
@@ -28,7 +33,7 @@ export interface AppSettings {
   difficulty: UiDifficulty;
   freqMHz: number;
   bandIndex: number;
-  /** Straight key or iambic paddles. */
+  /** Straight key, iambic paddles, or free-text message. */
   keyMode: KeyMode;
   /** Physical key (KeyboardEvent.code) used as the straight key. */
   keyCode: string;
@@ -114,7 +119,8 @@ export function normalizeSettings(raw: unknown): AppSettings {
         ? r.freqMHz
         : DEFAULT_SETTINGS.freqMHz,
     bandIndex,
-    keyMode: r.keyMode === "iambic" ? "iambic" : "straight",
+    keyMode:
+      r.keyMode === "iambic" || r.keyMode === "text" ? r.keyMode : "straight",
     keyCode: typeof r.keyCode === "string" && r.keyCode.length > 0 ? r.keyCode : DEFAULT_SETTINGS.keyCode,
     dotCode:
       typeof r.dotCode === "string" && r.dotCode.length > 0

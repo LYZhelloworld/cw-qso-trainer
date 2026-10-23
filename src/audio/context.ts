@@ -36,6 +36,16 @@ export function sharedAudioContext(): AudioContextLike | null {
   return shared;
 }
 
+/**
+ * The shared context if it already exists, without creating one.
+ *
+ * For diagnostics: opening a context just to read its sample rate would put a
+ * suspended context on the page before the operator has even pressed a key.
+ */
+export function existingAudioContext(): AudioContextLike | null {
+  return shared;
+}
+
 /** True where the browser has a Web Audio implementation at all. */
 export function audioAvailable(): boolean {
   return audioContextCtor() !== undefined;

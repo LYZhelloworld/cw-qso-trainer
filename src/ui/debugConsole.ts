@@ -1,4 +1,5 @@
 import type { QsoSession, AiredMessage } from "./session.js";
+import { existingAudioContext } from "../audio/context.js";
 
 /** Whether a HAM transmission is audible to the operator right now. */
 export type AirPath = "audible" | "offband" | "muted" | "transmitting";
@@ -70,6 +71,7 @@ export function installDebugConsole(sessions: QsoSession[], opts: DebugOptions):
             "cw.air()    — 当前值守波段最近发报（呼号 + 路径 + 内容）",
             "cw.hams()   — 当前波段台站表（呼号 + 频率）",
             "cw.state()  — 当前波段、通联状态、接收/发射",
+            "cw.audio()  — 音频上下文：采样率、baseLatency / outputLatency（判断跟手程度）",
             "",
             "控制台只打印你当前守听、且能实际听到的台；带外/静音/自己发射中的台不刷屏。",
           ].join("\n"),
@@ -96,6 +98,37 @@ export function installDebugConsole(sessions: QsoSession[], opts: DebugOptions):
           state: s.state,
           receiving: s.isReceiving,
           transmitting: s.isTransmitting,
+        };
+      },
+      /**
+       * The audio device's timing facts. `baseLatency` is the graph's own
+       * buffering; `outputLatency` is the estimated delay to the speaker. Their
+       * sum is the floor on how late a key press can sound — the one number this
+       * packaging decision turns on (see the desktop spike checklist).
+       */
+      audio(): {
+        available: boolean;
+        state?: string;
+        sampleRate?: number;
+        baseLatency?: number;
+        outputLatency?: number;
+        currentTime?: number;
+      } {
+        const ctx = existingAudioContext() as unknown as {
+          state?: string;
+          sampleRate?: number;
+          baseLatency?: number;
+          outputLatency?: number;
+          currentTime?: number;
+        } | null;
+        if (!ctx) return { available: false };
+        return {
+          available: true,
+          state: ctx.state,
+          sampleRate: ctx.sampleRate,
+          baseLatency: ctx.baseLatency,
+          outputLatency: ctx.outputLatency,
+          currentTime: ctx.currentTime,
         };
       },
     };

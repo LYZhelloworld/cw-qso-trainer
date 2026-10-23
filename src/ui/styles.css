@@ -1,14 +1,18 @@
 :root {
-  --bg: #0f1419;
-  --panel: #171d24;
-  --panel-2: #1e252e;
-  --border: #2a333d;
-  --text: #d8e0e8;
-  --muted: #8695a5;
-  --accent: #f0a020;
-  --accent-2: #4ec9b0;
-  --danger: #e05252;
-  --ok: #5cb85c;
+  --bg: #05080b;
+  --panel: #0d141a;
+  --panel-2: #131c24;
+  --border: #1f2b35;
+  --text: #d6e2ec;
+  --muted: #7c8b9a;
+  --accent: #38bdf8;
+  --accent-2: #f0a020;
+  --danger: #ff5349;
+  --ok: #3ddc84;
+  /* The receiver's own colour: cool white, like a backlit LCD. */
+  --lcd: #d9f4ff;
+  --s-blue: #2f7bf6;
+  --s-red: #ff3b30;
   --mono: Consolas, "SF Mono", "DejaVu Sans Mono", monospace;
 }
 
@@ -20,83 +24,51 @@ html,
 body {
   margin: 0;
   padding: 0;
+  height: 100%;
 }
 
 body {
-  background: var(--bg);
+  background: radial-gradient(120% 90% at 50% 0%, #0a1218 0%, #05080b 60%);
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   line-height: 1.6;
+  /* The console owns the viewport: the page area scrolls, the rig never leaves. */
+  overflow: hidden;
 }
 
+/*
+ * The whole app is one radio, top to bottom:
+ *   head (what I am doing) → page (what I am operating) → scope → footer.
+ * The page takes the slack, so the panadapter stays at the bottom of the screen
+ * instead of floating somewhere in the middle of a scrolling document.
+ */
 #app {
-  max-width: 980px;
+  height: 100dvh;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 16px 16px 64px;
-}
-
-.app-header {
+  padding: 10px 14px 8px;
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.app-title {
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-}
-
-.app-sub {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
-}
-
-.nav button {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--muted);
-  padding: 6px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.nav button:hover {
-  color: var(--text);
-  background: var(--panel-2);
-}
-
-.nav button.active {
-  color: #16202a;
-  background: var(--accent);
-  font-weight: 600;
-}
+/* --- panels & generic bits ---------------------------------------------- */
 
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 14px;
-  margin-bottom: 14px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 10px 0 0;
 }
 
 .panel h2 {
-  margin: 0 0 10px;
-  font-size: 14px;
+  margin: 0 0 8px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--accent);
+  letter-spacing: 1.5px;
+  color: var(--muted);
 }
 
 .panel h3 {
@@ -129,9 +101,12 @@ body {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 7px 12px;
+  padding: 6px 12px;
   cursor: pointer;
   font-size: 13px;
+  font-family: inherit;
+  /* 开台 / 关台 / 设置 are two-character labels: never break them. */
+  white-space: nowrap;
 }
 
 .btn:hover {
@@ -145,7 +120,7 @@ body {
 
 .btn.primary {
   background: var(--accent);
-  color: #16202a;
+  color: #04121a;
   font-weight: 600;
   border-color: var(--accent);
 }
@@ -215,94 +190,9 @@ textarea:focus {
   font-size: 12px;
 }
 
-.freq-display {
-  font-family: var(--mono);
-  font-size: 30px;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 1px;
-}
-
-.band-tabs {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.band-tabs button.active {
-  background: var(--accent);
-  color: #16202a;
-  font-weight: 600;
-}
-
-/* S-meter: the nine-unit ladder plus its dB-over-S9 readout. The readout is
-   monospaced and fixed width so "S9+12" does not shove the ladder sideways as
-   the number changes width. */
-.smeter {
-  gap: 8px;
-  align-items: center;
-}
-
-.smeter-read {
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--accent);
-  min-width: 5ch;
-  text-align: right;
-}
-
-.smeter.quiet .smeter-read {
-  color: var(--muted);
-}
-
-.signal {
-  display: flex;
-  gap: 3px;
-  align-items: flex-end;
-  height: 22px;
-}
-
-.signal i {
-  width: 5px;
-  background: var(--border);
-  border-radius: 1px;
-  display: block;
-}
-
-.signal i.on {
-  background: var(--accent);
-}
-
-.badge {
-  display: inline-block;
-  padding: 1px 7px;
-  border-radius: 10px;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-
-.badge.on {
-  color: #16202a;
-  background: var(--accent);
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
-.key-area {
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  padding: 12px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 12px;
-  user-select: none;
-}
-
+/* Key down: the pad lights up instead of drawing a frame around itself. */
 .key-area.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: #1a1610;
+  background: rgba(56, 189, 248, 0.07);
 }
 
 table.log {
@@ -343,19 +233,661 @@ table.log input {
   text-align: center;
 }
 
-.footer {
-  margin-top: 24px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 11px;
-  white-space: pre-line;
+/* --- the console --------------------------------------------------------- */
+
+/*
+ * The page area: the only part of the screen that scrolls.
+ *
+ * On the operating screen it is sized by its content — the readout and the key
+ * pad are a fixed little stack — because every pixel it does not claim goes to
+ * the panadapter underneath, which is the one part of the console that is worth
+ * more height. On the log and the credits the panadapter is put away, so the
+ * page takes the whole area and scrolls inside it.
+ */
+.page-area {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
+
+.radio-view .page-area {
+  flex: 0 1 auto;
+  overflow-y: auto;
+}
+
+.radio-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Switched off, the console sits in the middle of the dead screen instead of
+   clinging to the top of a large empty one. */
+.console.off {
+  flex: 1 1 auto;
+  align-content: center;
+}
+
+/* The key pad, with no card around it: the operator's eye is on the dial and
+   the display, and a bordered box in between them only pushed the picture of
+   the band further down the screen. */
+.key-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  user-select: none;
+}
+
+.key-head {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.footer {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  font-size: 10px;
+  color: #55636f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- head: RX/TX · band · mode | nav | settings · power ------------------ */
+
+.rig {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  background: linear-gradient(180deg, #101820, #0a1116);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.rig-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rig-center {
+  display: flex;
+  justify-content: center;
+}
+
+.rig-right {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/*
+ * RX / TX: upper case, boxed, green while listening and red while the key is
+ * down. The only framed item in the head, because it is the one thing that is
+ * either/or.
+ */
+.txrx {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1.35;
+  min-width: 3.4ch;
+  padding: 1px 6px;
+  text-align: center;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+
+.txrx.rx {
+  color: var(--ok);
+  text-shadow: 0 0 10px rgba(61, 220, 132, 0.4);
+}
+
+.txrx.tx {
+  color: var(--danger);
+  text-shadow: 0 0 10px rgba(255, 83, 73, 0.55);
+}
+
+.rig:not(.powered) .txrx {
+  color: var(--muted);
+  text-shadow: none;
+  opacity: 0.45;
+}
+
+/*
+ * Band and mode are boxed like the RX/TX badge, so the head reads as a row of
+ * labelled windows — three things you look at, not three words floating in a
+ * bar.
+ */
+.rig-band {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  padding: 1px 7px;
+  border: 1px solid #2b3b49;
+  border-radius: 3px;
+}
+
+.rig:not(.powered) .rig-band {
+  color: var(--muted);
+}
+
+/* The mode readout doubles as the sideband switch (CW-L / CW-U). */
+.rig-mode {
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.35;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  padding: 1px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.rig-mode:hover {
+  border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.rig-mode:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rig:not(.powered) .rig-mode {
+  color: var(--muted);
+}
+
+.btn.power {
+  border-color: #4a2a2a;
+  color: var(--danger);
+}
+
+.btn.power.on {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #04140a;
+  font-weight: 600;
+}
+
+/* --- nav, in the head's middle slot ------------------------------------- */
+
+.nav {
+  display: flex;
+  gap: 2px;
+}
+
+.nav button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.nav button:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.nav button.active {
+  color: #04121a;
+  background: var(--accent);
+  font-weight: 600;
+}
+
+/* --- the operating screen: meter + dial, controls ----------------------- */
+
+/*
+ * The receiver's line: the S-meter on the left, the dial centred on the screen.
+ * The two empty side columns keep the dial exactly in the middle whatever the
+ * meter is doing, so the number you read never shifts.
+ */
+.console {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 2px 0;
+}
+
+/* The meter is flush with the left edge of the display, the dial stays dead
+   centre: the two side columns are equal, so the middle column never moves
+   whatever the meter's reading does. */
+.console > .smeter {
+  grid-column: 1;
+  justify-self: start;
+  width: min(260px, 100%);
+  min-width: 0;
+}
+
+.console > .dial {
+  grid-column: 2;
+}
+
+/*
+ * The frequency is the anchor of the whole screen: centred horizontally, big,
+ * and in the rig's MHz.kHz.Hz grouping so the kHz digits keep their place.
+ */
+.dial {
+  padding-top: 2px;
+  text-align: center;
+}
+
+/* The number is the element that gets centred; the unit is taken out of the
+   flow and hung off its right edge, so adding a unit never shifts the dial. */
+.dial-value {
+  position: relative;
+  display: inline-block;
+}
+
+.dial-digits {
+  font-family: var(--mono);
+  font-size: clamp(32px, 6.2vw, 58px);
+  font-weight: 700;
+  letter-spacing: 2px;
+  line-height: 1.1;
+  color: var(--lcd);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 18px rgba(120, 220, 255, 0.3);
+}
+
+.console.off .dial-digits {
+  color: #33414d;
+  text-shadow: none;
+}
+
+/* A switched-off receiver has no needle: dim the scale with the dial. */
+.console.off .smeter {
+  opacity: 0.45;
+}
+
+.dial-unit {
+  position: absolute;
+  left: 100%;
+  bottom: 0.35em;
+  margin-left: 10px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* S-meter: one horizontal bar, blue to S9, red past it. */
+.smeter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The reading is the whole caption above the bar ("S7", "S9+12", "—"), left
+   aligned with it: the bar's right end is where the dial begins, and a number
+   there read as part of the frequency. */
+.smeter-read {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--lcd);
+  text-align: left;
+}
+
+.smeter.quiet .smeter-read {
+  color: var(--muted);
+}
+
+.smeter-track {
+  display: flex;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: #0e1922;
+  overflow: hidden;
+}
+
+.smeter-seg {
+  position: relative;
+  height: 100%;
+}
+
+.smeter-seg.s {
+  width: 60%;
+  background: rgba(47, 123, 246, 0.1);
+}
+
+.smeter-seg.over {
+  width: 40%;
+  background: rgba(255, 59, 48, 0.1);
+  border-left: 1px solid var(--border);
+}
+
+.smeter-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  transition: width 60ms linear;
+}
+
+.smeter-seg.s .smeter-fill {
+  background: linear-gradient(90deg, #1d5fd6, #62a8ff);
+  box-shadow: 0 0 8px rgba(79, 157, 255, 0.5);
+}
+
+.smeter-seg.over .smeter-fill {
+  background: linear-gradient(90deg, #ff6a5e, #ff2d20);
+  box-shadow: 0 0 8px rgba(255, 59, 48, 0.55);
+}
+
+.smeter-scale {
+  position: relative;
+  height: 13px;
+}
+
+.smeter-tick {
+  position: absolute;
+  top: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #5d6c7a;
+  white-space: nowrap;
+}
+
+.smeter-tick.s9 {
+  color: var(--text);
+}
+
+/* Band selector, as one slim strip under the dial, centred with it. */
+.rig-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 2px 0 4px;
+}
+
+.band-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.btn.chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.btn.chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #04121a;
+  font-weight: 600;
+}
+
+/* --- the panadapter, at the bottom of the screen ------------------------ */
+
+/*
+ * The panadapter fills the bottom of the window: it takes every pixel the head,
+ * the readout and the send bar leave over, and stops at the footer. `min-height`
+ * keeps it a real display rather than a sliver when the window is short.
+ */
+.rig-scope {
+  flex: 1 1 auto;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #000208;
+  overflow: hidden;
+}
+
+.rig-scope[hidden] {
+  display: none;
+}
+
+.scope-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.scope-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The dial is turned with the wheel; ← → says so. */
+  cursor: col-resize;
+}
+
+/* Powered down the picture freezes; dim it so "frozen" reads as "not receiving". */
+.rig-scope.off .scope-canvas {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The dial marker: a single vertical line at the tuned frequency. */
+.scope-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(120, 220, 255, 0.85);
+  box-shadow: 0 0 4px rgba(120, 220, 255, 0.55);
+  pointer-events: none;
+}
+
+.rig-scope.off .scope-cursor {
+  opacity: 0.15;
+}
+
+/* The kHz scale: 0 is the dial, negative left, positive right. */
+.scope-axis {
+  position: relative;
+  flex: 0 0 auto;
+  height: 16px;
+  border-top: 1px solid var(--border);
+  background: #050a0e;
+}
+
+.axis-tick {
+  position: absolute;
+  top: 2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: #5d6c7a;
+  white-space: nowrap;
+}
+
+.axis-tick.center {
+  color: var(--lcd);
+}
+
+.rig-scope.off .scope-axis {
+  opacity: 0.2;
+}
+
+/* The shutter: what a switched-off rig shows across the panadapter. */
+.standby {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px;
+  text-align: center;
+  background: rgba(5, 8, 11, 0.93);
+}
+
+.standby[hidden] {
+  display: none;
+}
+
+.standby-icon {
+  font-size: 24px;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.standby-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.standby-hint {
+  font-size: 12px;
+  color: #5d6c7a;
+}
+
+.standby .btn {
+  margin-top: 4px;
+}
+
+/* --- the send bar, directly under the panadapter ------------------------ */
+
+/*
+ * One line, the full width of the display above it: this is a message keyer,
+ * not a form. It takes the scope's border and radius so the two read as one
+ * console — the box you type an over into sits where the picture of the band
+ * ends.
+ */
+.send-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.send-bar[hidden] {
+  display: none;
+}
+
+.send-bar .send-input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+.send-bar .send-input::placeholder {
+  color: #55636f;
+  letter-spacing: 0;
+}
+
+.send-bar .send-input:focus {
+  border-color: var(--accent);
+}
+
+/* Key modes: the read-only echo bar. Decoded text, then the dots/dashes of the
+   character still being decoded (dimmer), then a block caret at the end. The
+   block is a terminal-style cursor: with a monospaced line it reads as "the next
+   character goes here", and it stays visible after a space where an underline
+   would blend into the border. */
+.send-echo {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.send-echo .echo-text {
+  white-space: pre;
+}
+
+.send-echo .echo-pending {
+  white-space: pre;
+  color: #7d8a96;
+}
+
+.send-echo .echo-caret {
+  flex: 0 0 auto;
+  width: 0.62em;
+  height: 1.2em;
+  margin-left: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: echo-caret-blink 1.06s steps(1) infinite;
+}
+
+@keyframes echo-caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .send-echo .echo-caret {
+    animation: none;
+  }
+}
+
+.send-bar .btn {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 10px;
+}
+
+/* --- settings sheet ------------------------------------------------------ */
 
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -389,201 +921,6 @@ table.log input {
   gap: 8px;
 }
 
-.error-panel {
-  border-color: #5a2a2a;
-  background: #2a1a1a;
-}
-
-.error-detail {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 12px;
-  color: #e0a0a0;
-  background: #1a1111;
-  border: 1px solid #3a2222;
-  border-radius: 6px;
-  padding: 8px 10px;
-  max-height: 240px;
-  overflow: auto;
-  margin: 8px 0;
-}
-
-/* --- rig: the persistent radio face ------------------------------------- */
-
-.rig {
-  background: linear-gradient(180deg, #1b222b, #141a20);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-}
-
-.rig-main {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.rig-brand {
-  display: flex;
-  flex-direction: column;
-  min-width: 150px;
-}
-
-.rig-freq {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex: 1;
-  min-width: 180px;
-}
-
-.rig-freq .freq-value {
-  font-family: var(--mono);
-  font-size: 34px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--accent);
-  text-shadow: 0 0 12px rgba(240, 160, 32, 0.25);
-}
-
-.rig:not(.powered) .rig-freq .freq-value {
-  color: var(--muted);
-  text-shadow: none;
-}
-
-.rig-freq .freq-unit {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.rig-meta {
-  display: flex;
-  gap: 6px;
-}
-
-.badge.mode {
-  color: var(--accent-2);
-  border-color: #2a4a3a;
-}
-
-/* The mode readout is also the CW sideband switch (CW-L / CW-U): a badge that
-   happens to be clickable, not a full button. */
-.badge.sideband-btn {
-  font-family: var(--mono);
-  font-size: 11px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.badge.sideband-btn:hover {
-  border-color: var(--accent-2);
-  background: rgba(78, 201, 176, 0.12);
-}
-
-.badge.sideband-btn:focus-visible {
-  outline: 1px solid var(--accent-2);
-  outline-offset: 1px;
-}
-
-.rig-right {
-  display: flex;
-  gap: 8px;
-}
-
-.btn.power {
-  border-color: #4a2a2a;
-  color: var(--danger);
-}
-
-.btn.power.on {
-  background: var(--ok);
-  border-color: var(--ok);
-  color: #0e1a0e;
-  font-weight: 600;
-}
-
-/* --- waterfall (band panadapter) ---------------------------------------- */
-
-.rig-scope {
-  position: relative;
-  margin-top: 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #000208;
-  overflow: hidden;
-}
-
-.scope-canvas {
-  display: block;
-  width: 100%;
-  /* Tall enough to read a couple of minutes of band history: the waterfall is
-     the main instrument on the page, not a decoration under the header. */
-  height: 240px;
-  /* The dial is turned with the wheel; ← → says so. */
-  cursor: col-resize;
-}
-
-/* Powered down the picture freezes; dim it so "frozen" reads as "not receiving". */
-.rig-scope.off .scope-canvas {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.scope-label {
-  position: absolute;
-  top: 5px;
-  left: 9px;
-  font-size: 11px;
-  pointer-events: none;
-  color: var(--muted);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-}
-
-/* The dial marker: a single vertical line at the tuned frequency, as on a real
-   rig's panadapter. The filter width is an audio property, not two edges drawn
-   on the display — two lines would read as two working frequencies. */
-.scope-cursor {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  transform: translateX(-50%);
-  background: rgba(120, 220, 255, 0.85);
-  box-shadow: 0 0 4px rgba(120, 220, 255, 0.55);
-  pointer-events: none;
-}
-
-/* Powered down nothing is being received, so the marker dims with the scope. */
-.rig-scope.off .scope-cursor {
-  opacity: 0.25;
-}
-
-.standby {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 20px;
-  text-align: center;
-}
-
-.standby-icon {
-  font-size: 40px;
-  color: var(--muted);
-  opacity: 0.6;
-}
-
-.standby-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--muted);
-}
-
-/* --- settings sheet ------------------------------------------------------ */
-
 .settings-modal {
   max-width: 560px;
   max-height: 86vh;
@@ -603,4 +940,69 @@ table.log input {
 
 .settings-body .panel {
   background: var(--bg);
+}
+
+.error-panel {
+  border-color: #5a2a2a;
+  background: #2a1a1a;
+}
+
+.error-detail {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  color: #e0a0a0;
+  background: #1a1111;
+  border: 1px solid #3a2222;
+  border-radius: 6px;
+  padding: 8px 10px;
+  max-height: 240px;
+  overflow: auto;
+  margin: 8px 0;
+}
+
+/* Narrow screens: RX/band/mode keeps the left corner, settings/power the right,
+   and the page nav drops to a second row of the same bar. */
+@media (max-width: 620px) {
+  /* No room for a meter beside the dial: put it above, still full width. */
+  .console {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .console > .smeter {
+    grid-column: 1;
+    width: 100%;
+  }
+
+  .console > .dial {
+    grid-column: 1;
+  }
+
+  .rig {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "left right"
+      "center center";
+    row-gap: 4px;
+  }
+
+  .rig-left {
+    grid-area: left;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .rig-center {
+    grid-area: center;
+    justify-content: flex-start;
+  }
+
+  .rig-right {
+    grid-area: right;
+  }
+
+  .nav button {
+    padding: 3px 8px;
+  }
 }

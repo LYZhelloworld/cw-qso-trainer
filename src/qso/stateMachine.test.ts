@@ -215,6 +215,47 @@ describe("QsoMachine — protocol leniency (user-side tolerance)", () => {
   });
 });
 
+describe("QsoMachine — reports exchanged both ways", () => {
+  it("answers the operator's report with 73 instead of echoing it back", () => {
+    // The operator hears a CQ, answers with callsigns only, gets the HAM's
+    // report, and reports back. Both directions have reported: the contact is
+    // done, so the HAM signs off. It used to send "R UR RST 599 BK" — the
+    // operator's own report handed straight back, which reads as "I am still
+    // here, say something", leaving the QSO hanging with nothing left to say.
+    const m = newMachine();
+    m.hamCq();
+    expect(m.state).toBe("PEER_CQ");
+
+    const report = m.userSend("JA1ABC DE BG7XXX K");
+    expect(report).toEqual(["R UR RST 599 BK"]);
+    expect(m.ctx.rstRx).toBe("599");
+    expect(m.ctx.rstTx).toBeNull();
+    expect(m.state).toBe("EXCHANGE");
+
+    const signoff = m.userSend("R UR RST 599 BK");
+    expect(signoff).toEqual(["R TU 73 SK"]);
+    expect(m.ctx.rstTx).toBe("599");
+    expect(m.ctx.peerEndHeard).toBe(true);
+    expect(m.state).toBe("SIGNOFF");
+
+    expect(m.userSend("R TU 73 SK")).toEqual(["73"]);
+    expect(m.state).toBe("LOGGED");
+    expect(m.getLog()?.rstRx).toBe("599");
+    expect(m.getLog()?.rstTx).toBe("599");
+  });
+
+  it("does not parrot a second report either", () => {
+    const m = newMachine();
+    m.hamCq();
+    m.userSend("JA1ABC DE BG7XXX K");
+    expect(m.userSend("R UR RST 579 BK")).toEqual(["R TU 73 SK"]);
+    // Sending the report again after the sign-off changes nothing.
+    expect(m.state).toBe("SIGNOFF");
+    m.userSend("R UR RST 579 BK");
+    expect(m.state).toBe("SIGNOFF");
+  });
+});
+
 describe("QsoMachine — reset lifecycle", () => {
   it("clears context after a FAILED QSO", () => {
     const m = newMachine();

@@ -179,7 +179,7 @@ describe("实时模型 — 会话驱动频段", () => {
     expect(session.state).toBe("EXCHANGE");
   });
 
-  it("自己发报时波段照常运转：别人的 CQ 也敲在频率上，只是进不了喇叭", async () => {
+  it("自己发报时本频段待机：别人的 CQ 等发完再上机", async () => {
     let t = 0;
     const ticks: Array<() => void> = [];
     const band = new SpyBand();
@@ -211,14 +211,13 @@ describe("实时模型 — 会话驱动频段", () => {
     expect(session.isTransmitting).toBe(true);
     band.clear();
 
-    // 半双工期间另一个台开口：记录必然伴随敲响，否则就又是"屏幕亮、喇叭哑"
+    // 半双工期间另一个台开口：频段待机，报文不上机（发完才轮得到它）。
     const handle = session as unknown as {
       handleActivity(events: Array<{ type: "cq"; ham: typeof hams[0] }>): void;
     };
     handle.handleActivity([{ type: "cq", ham: hams[1] }]);
     const keyed = band.all("key").filter((c) => String(c.text).startsWith("CQ CQ CQ DE"));
-    expect(keyed).toHaveLength(1);
-    expect(keyed[0]!.call).toBe(hams[1].call);
+    expect(keyed).toHaveLength(0);
 
     release();
     await sending;

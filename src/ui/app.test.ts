@@ -59,13 +59,16 @@ afterEach(() => {
 });
 
 describe("App 外壳", () => {
-  it("渲染品牌、三个导航按钮、电台头部与免责页脚", () => {
+  it("机头有 RX 徽标、波段、模式、三个导航按钮与免责页脚", () => {
     const { root } = mountApp();
 
-    expect(root.querySelector(".app-title")?.textContent).toBe("CW QSO 练习器");
+    expect(root.querySelector(".rig .txrx")?.textContent).toBe("RX");
+    expect(root.querySelector(".rig .rig-band")?.textContent).toBe("20m");
+    expect(root.querySelector(".rig .rig-mode")?.textContent).toBe("CW-U");
     const labels = Array.from(root.querySelectorAll("nav button")).map((b) => b.textContent);
     expect(labels).toEqual(NAV_LABELS);
-    expect(root.querySelector(".rig")).not.toBeNull();
+    // 导航在机头中间那一格，整块屏幕就是一台电台。
+    expect(root.querySelector(".rig .rig-center nav")).not.toBeNull();
     expect(root.querySelector(".footer")?.textContent).toBe(DISCLAIMER_TEXT);
   });
 
@@ -92,15 +95,19 @@ describe("App 外壳", () => {
     expect(document.querySelector(".modal-overlay")).toBeNull();
   });
 
-  it("默认关台：电台页显示待机；开台后显示波段界面", () => {
+  it("默认关台：瀑布图上盖着待机窗；开台后露出波段界面", () => {
     const { root, app } = mountApp();
 
     expect(app.powered).toBe(false);
-    expect(root.textContent).toContain("设备已关机");
+    // 待机窗盖在瀑布图上，而不是占着页面中间。
+    expect(root.querySelector(".rig-scope .standby")?.textContent).toContain("设备已关机");
+    expect(root.querySelector(".band-tabs")).toBeNull();
 
     app.setPower(true);
-    expect(root.textContent).toContain("波段与调谐");
-    expect(root.textContent).not.toContain("设备已关机");
+    expect(root.querySelector(".band-tabs")).not.toBeNull();
+    expect(
+      root.querySelector<HTMLElement>(".rig-scope .standby")?.hidden,
+    ).toBe(true);
   });
 
   it("电台头部的电源按钮切换开台/关台", () => {
@@ -132,7 +139,7 @@ describe("App 外壳", () => {
     const { root } = mountApp();
 
     navButton(root, "关于").click();
-    expect(root.textContent).toContain("CW QSO 练习器 v0.1.0");
+    expect(root.textContent).toContain("CW QSO 练习器 v1.0.0");
     expect(root.textContent).toContain(DISCLAIMER_TEXT);
     expect(root.textContent).toContain("日志不可导出为 ADIF / CSV / JSON");
   });
@@ -154,7 +161,8 @@ describe("App 外壳", () => {
 
     expect(app.session).not.toBe(before);
     expect(app.session.freqMHz).toBe(7.025);
-    expect(root.querySelector(".rig .freq-value")?.textContent).toBe("7.0250");
+    expect(root.querySelector(".dial-digits")?.textContent).toBe("7.025.000");
+    expect(root.querySelector(".rig .rig-band")?.textContent).toBe("40m");
   });
 
   it("同一波段内调谐不会重建会话", () => {
@@ -170,7 +178,7 @@ describe("App 外壳", () => {
   it("电台面板的模式标签显示 CW 边带（40m 及以下 CW-L，20m 及以上 CW-U）", () => {
     const { root, app } = mountApp();
     const mode = (): string | null | undefined =>
-      root.querySelector(".rig .badge.sideband-btn")?.textContent;
+      root.querySelector(".rig .rig-mode")?.textContent;
 
     expect(mode()).toBe("CW-U"); // 默认 14.025 MHz
     expect(app.session.sideband).toBe("USB");
@@ -186,7 +194,7 @@ describe("App 外壳", () => {
   it("点击模式标签只改这个波段，换到别的波段仍是它自己的默认模式", () => {
     const { root, app } = mountApp();
     const label = (): HTMLButtonElement =>
-      root.querySelector<HTMLButtonElement>(".rig .badge.sideband-btn")!;
+      root.querySelector<HTMLButtonElement>(".rig .rig-mode")!;
 
     // 默认 20m 跟随波段为 USB
     expect(label().textContent).toBe("CW-U");
@@ -239,13 +247,26 @@ describe("频谱瀑布图", () => {
     expect(root.querySelector(".rig-scope canvas")).toBe(canvas);
   });
 
-  it("画面不写调谐提示：开台只留画面，关台才说设备已关机", () => {
+  it("画面不写调谐提示：关台时只有待机窗，开台后待机窗收起", () => {
     const { root, app } = mountApp();
-    expect(root.querySelector(".rig-scope")?.textContent).toContain("设备已关机");
+    const shutter = (): HTMLElement => root.querySelector<HTMLElement>(".rig-scope .standby")!;
+    expect(shutter().hidden).toBe(false);
+    expect(shutter().textContent).toContain("设备已关机");
 
     app.setPower(true);
-    const scope = root.querySelector(".rig-scope");
-    expect(scope?.textContent).toBe("");
+    expect(shutter().hidden).toBe(true);
+  });
+
+  it("瀑布图底部是 kHz 刻度：0 在当前频率，左右为负正", () => {
+    const { root } = mountApp();
+    const ticks = Array.from(root.querySelectorAll(".scope-axis .axis-tick"));
+    const labels = ticks.map((t) => t.textContent);
+
+    expect(labels).toEqual(["-10", "-5", "0", "+5", "+10"]);
+    // 0 落在正中：那就是拨盘所在的位置。
+    expect(ticks[2].classList.contains("center")).toBe(true);
+    expect((ticks[2] as HTMLElement).style.left).toBe("50%");
+    expect((ticks[0] as HTMLElement).style.left).toBe("0%");
   });
 
   it("滚轮调谐（tuneTo）会被夹在当前波段范围内", () => {
@@ -375,5 +396,60 @@ describe("安全渲染页面边界", () => {
     expect(retry).toBeDefined();
     retry?.click();
     expect(retried).toBe(true);
+  });
+});
+
+describe("发送框（文本框模式）", () => {
+  /** The operating screen, powered up and in text mode. */
+  function textMode(): { app: App; root: HTMLElement } {
+    const { app, root } = mountApp();
+    app.updateSettings({ keyMode: "text" });
+    app.setPower(true);
+    return { app, root };
+  }
+
+  it("放在瀑布图下面：紧跟显示器，在页脚之前", () => {
+    const { root } = textMode();
+    const bar = root.querySelector<HTMLElement>(".send-bar")!;
+    const scope = root.querySelector<HTMLElement>(".rig-scope")!;
+    const footer = root.querySelector<HTMLElement>(".footer")!;
+
+    expect(bar.hidden).toBe(false);
+    expect(scope.nextElementSibling).toBe(bar);
+    expect(bar.nextElementSibling).toBe(footer);
+  });
+
+  it("是单行输入框，不是多行文本框", () => {
+    const { root } = textMode();
+    const input = root.querySelector<HTMLInputElement>(".send-bar .send-input")!;
+
+    expect(input.tagName).toBe("INPUT");
+    expect(input.getAttribute("type")).toBe("text");
+    expect(root.querySelector(".send-bar textarea")).toBeNull();
+  });
+
+  it("文本框模式与电键模式都留发送条，别的页面不留空条", () => {
+    const { app, root } = mountApp();
+    app.setPower(true);
+    // 默认直键：底部是只读回显框，和文本框模式占同一条位置。
+    expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(false);
+
+    app.updateSettings({ keyMode: "text" });
+    expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(false);
+
+    app.go("log");
+    expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(true);
+  });
+});
+
+describe("版面：瀑布图吃掉剩下的高度", () => {
+  it("只有电台页让页面按内容高度排，其它页拿回整块区域", () => {
+    const { app, root } = mountApp();
+
+    expect(root.classList.contains("radio-view")).toBe(true);
+    app.go("log");
+    expect(root.classList.contains("radio-view")).toBe(false);
+    app.go("radio");
+    expect(root.classList.contains("radio-view")).toBe(true);
   });
 });

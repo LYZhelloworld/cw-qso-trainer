@@ -24,6 +24,26 @@
 - 只靠耳朵：不显示对方是谁，也不回放收发记录；调准频率就听到正在发的报文
 - 通联成功后自动记录日志
 
+## 开发与运行
+
+需要 Node.js 22+。
+
+```powershell
+npm install
+npm run dev        # 浏览器里跑：http://localhost:5173
+```
+
+### Windows 桌面版
+
+需要 Rust 工具链（stable，MSVC）与 VS 2022 生成工具；系统要有 WebView2 运行时（Windows 11 自带，安装包会附带引导安装）。
+
+```powershell
+npm run desktop        # 开发模式（Tauri 窗口 + Vite 热更新）
+npm run desktop:build  # 打出免安装 exe：src-tauri/target/release/cw-qso-trainer.exe
+```
+
+首次运行会在 exe 旁生成 `app-data/`（WebView2 数据、设置、日志）——把 exe 和这个文件夹一起拷走，数据和练习记录就都在。exe 要放在**可写目录**（不要放 `Program Files`）；未签名，首次运行可能弹 SmartScreen 提示。
+
 ## 免责声明
 
 > 本软件仅供练习使用。其中生成的呼号为虚拟呼号，可能与现实存在的呼号重复，不代表真实的无线电环境，也不能作为真实的通联记录。

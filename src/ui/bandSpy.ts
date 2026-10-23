@@ -16,6 +16,8 @@ export class SpyBand implements LiveBand {
   readonly keyed: Array<{ call: string; text: string; atMs: number }> = [];
   readonly joined: Array<{ call: string; text: string; atMs: number; elapsedMs: number }> = [];
   readonly mine: string[] = [];
+  /** Stations the session took off the air (break-in). */
+  readonly silenced: string[] = [];
   readonly transmitting: boolean[] = [];
   readonly muted: boolean[] = [];
   receiver: SynthReceiver | null = null;
@@ -65,6 +67,10 @@ export class SpyBand implements LiveBand {
   silenceMine(): void {
     this.log("silenceMine");
   }
+  silenceStation(call: string): void {
+    this.silenced.push(call);
+    this.log("silenceStation", { call });
+  }
   setTransmitting(on: boolean): void {
     this.transmitting.push(on);
     this.log("transmitting", { on });
@@ -91,6 +97,7 @@ export class SpyBand implements LiveBand {
     this.keyed.length = 0;
     this.joined.length = 0;
     this.mine.length = 0;
+    this.silenced.length = 0;
     this.transmitting.length = 0;
     this.muted.length = 0;
   }

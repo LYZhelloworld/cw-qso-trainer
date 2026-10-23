@@ -32,6 +32,25 @@ function sendSymbol(k: IambicKeyer, sym: string, start: number, d = D): number {
   return t;
 }
 
+/**
+ * Play a run of paddle taps in real time order. A tap goes down at `i * spacing`
+ * and up `hold` ms later; when `hold > spacing` the next press lands before the
+ * previous release — which is exactly what fast alternation looks like.
+ */
+function playTaps(k: IambicKeyer, taps: Paddle[], spacing: number, hold: number): void {
+  const events: Array<{ at: number; down: boolean; paddle: Paddle }> = [];
+  taps.forEach((p, i) => {
+    events.push({ at: i * spacing, down: true, paddle: p });
+    events.push({ at: i * spacing + hold, down: false, paddle: p });
+  });
+  // At the same instant a release happens before a press ("hold 0" still works).
+  events.sort((a, b) => a.at - b.at || Number(a.down) - Number(b.down));
+  for (const e of events) {
+    if (e.down) k.press(e.paddle, e.at);
+    else k.release(e.paddle, e.at);
+  }
+}
+
 describe("IambicKeyer 时序基础", () => {
   it("dot unit 由 wpm 推导，也可显式指定", () => {
     expect(new IambicKeyer({ wpm: 20 }).unit).toBe(60);
@@ -92,6 +111,23 @@ describe("IambicKeyer 时序基础", () => {
 });
 
 describe("IambicKeyer squeeze 与点划记忆", () => {
+  it("连续快速交替按左右桨：每次按键都产生一个元素（不重叠）", () => {
+    const k = new IambicKeyer({ unit: D });
+    playTaps(k, ["dot", "dash", "dot", "dash", "dot", "dash"], 50, 20);
+    k.advance(5000);
+
+    expect(k.elements().map((e) => e.on)).toEqual([D, 3 * D, D, 3 * D, D, 3 * D]);
+  });
+
+  it("连续快速交替按左右桨：稍微重叠也不吞键", () => {
+    const k = new IambicKeyer({ unit: D });
+    // 按住 60 ms、每 50 ms 按下一键：下一键在上一键松开之前按下，手快时很常见
+    playTaps(k, ["dot", "dash", "dot", "dash", "dot", "dash"], 50, 60);
+    k.advance(5000);
+
+    expect(k.elements().map((e) => e.on)).toEqual([D, 3 * D, D, 3 * D, D, 3 * D]);
+  });
+
   it("双桨同时按下时点划交替", () => {
     const k = new IambicKeyer({ unit: D, mode: "B" });
     k.press("dot", 0);
@@ -139,15 +175,30 @@ describe("IambicKeyer squeeze 与点划记忆", () => {
 });
 
 describe("IambicKeyer 单词间隔与往返解码", () => {
-  it("wordBreak 把字符间隔加宽到 7d 并分词", () => {
+  it("长停顿后自动分词：下一个字符算新词，元素间隔反映实际沉默", () => {
     const k = new IambicKeyer({ unit: D });
-    let t = 0;
-    t = sendSymbol(k, ".", t); // E
-    k.wordBreak(t);
-    t = sendSymbol(k, ".", t); // E
+    let t = sendSymbol(k, ".", 0); // E，字符在 3d 后收尾
+    t = sendSymbol(k, ".", t + 4 * D); // 再停 4d（距上一元素 7d）→ 新词
+    k.finish(t);
 
     expect(k.text()).toBe("E E");
+    // 最后一个点的尾巴按真实停顿时长记，接收侧解码器才会在这里断词。
     expect(k.elements()[0]?.off).toBe(7 * D);
+  });
+
+  it("快速连按会排队播放，不会因为元素在途而丢键", () => {
+    const k = new IambicKeyer({ unit: D });
+    k.press("dot", 0);
+    k.release("dot", 10);
+    k.press("dash", 20); // 点的元素还没发完
+    k.release("dash", 30);
+    k.press("dot", 40);
+    k.release("dot", 50);
+    k.advance(2000);
+
+    // .-. => R：三次按键全部按顺序发出，没有被吞掉。
+    expect(k.text()).toBe("R");
+    expect(k.elements().map((e) => e.on)).toEqual([D, 3 * D, D]);
   });
 
   it("敲出的元素流能被既有解码器还原（CQ 往返）", () => {
@@ -163,13 +214,12 @@ describe("IambicKeyer 单词间隔与往返解码", () => {
     expect(k.text()).toBe("CQ");
   });
 
-  it("7d 单词间隔在往返解码中确实产生空格", () => {
+  it("长停顿在往返解码中确实产生空格", () => {
     const k = new IambicKeyer({ unit: D, mode: "B" });
     let t = 0;
     t = sendSymbol(k, "-.-.", t); // C
     t = sendSymbol(k, "--.-", t); // Q
-    k.wordBreak(t);
-    t = sendSymbol(k, ".-.", t); // R
+    t = sendSymbol(k, ".-.", t + 4 * D); // R：停 4d（距上一元素 7d）
     k.finish(t);
 
     expect(decodeKeying(k.elements(), { unit: D }).text).toBe("CQ R");

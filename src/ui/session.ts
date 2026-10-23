@@ -97,6 +97,18 @@ const TX_TAIL_MS = 1_500;
 const CALL_ANSWER_WAIT_MS = 15_000;
 
 /**
+ * How long the partner waits for the operator's next over before it sends the
+ * same thing again. A station that has just reported "R UR RST 579 BK" does not
+ * sit in silence — it repeats itself, and after `PARTNER_REPEAT_LIMIT` tries it
+ * gives up and goes back to calling CQ. Long enough to decode and key a reply at
+ * a learner's speed, short enough that the operator can tell nobody is there.
+ */
+const PARTNER_WAIT_MS = 10_000;
+
+/** How many times the partner repeats before it gives up on the operator. */
+const PARTNER_REPEAT_LIMIT = 2;
+
+/**
  * Does this line name a station? "R UR RST 599 BK" does not, "BT9BYA DE BG7XXX"
  * does. It separates the two things an operator can mean while a pile-up is
  * running: answering without picking a caller (keep the pile-up going), and
@@ -275,6 +287,17 @@ export class QsoSession implements SessionContext {
   /** True while a transmission is in flight; guards against interleaved sends. */
   private sending = false;
   /**
+   * Bumped whenever this session is reset or disposed.
+   *
+   * An over is asynchronous (it waits out its keying, then a reply, then
+   * another), so a band switch in the middle of one leaves work in flight that
+   * belongs to a world that no longer exists. Each over remembers the epoch it
+   * started in; anything that comes back after the epoch moved hangs up instead
+   * of dropping a carrier on the new one, or clearing a flag that a newer over
+   * now owns.
+   */
+  private epoch = 0;
+  /**
    * True from the moment the operator's carrier goes on the air until the
    * receiver opens again: a station cannot transmit and listen at once
    * (half-duplex). While it is set, nothing is received, the spectrum shows
@@ -285,11 +308,30 @@ export class QsoSession implements SessionContext {
   private txTiming: KeyElement[] | null = null;
   private txStartedAt = 0;
   /**
+   * When `spectrum()` was last asked for a line. The waterfall samples once per
+   * line, and a line covers a slice of time — see `txKeyedBetween`. Negative
+   * until the first line is drawn.
+   */
+  private spectrumAt = -1;
+  /**
+   * Live keying (straight key / paddles): when the key went down and when it
+   * last came up, so the envelope can be appended element by element as the
+   * operator keys instead of being known in advance.
+   */
+  private liveDownAt: number | null = null;
+  private liveUpAt: number | null = null;
+  /**
    * When the operator's own CQ stopped drawing any answer (the pile-up emptied,
    * or there never was one). `null` means the operator is not sitting on a call
    * that nobody answered. See `expireOwnCq`.
    */
   private ownCqSilentSince: number | null = null;
+  /**
+   * When the partner will repeat itself if the operator stays silent, and how
+   * many times it already has. `null` means no over is waiting on an answer.
+   */
+  private partnerWaitAt: number | null = null;
+  private partnerWaits = 0;
   /**
    * Whether the operator's receiver is open. Off = the rig is powered down.
    * Defaults to on so a session used on its own (tests, embedding) behaves like
@@ -352,6 +394,8 @@ export class QsoSession implements SessionContext {
 
   /** Stop the scheduler. Call before dropping a session (e.g. on band change). */
   dispose(): void {
+    // Nothing an in-flight over is waiting on may touch this session again.
+    this.epoch += 1;
     if (this.stopTicking) {
       this.stopTicking();
       this.stopTicking = null;
@@ -410,6 +454,10 @@ export class QsoSession implements SessionContext {
     }
     this.audio.setMuted(false);
     this.audio.wireSynth();
+    // A QSO that was left waiting while the rig was off gets its patience back:
+    // the partner has been calling into a dead receiver, and that must not count
+    // against the operator the moment they switch on.
+    if (this.exchangeInProgress) this.armPartnerWait();
     // Powering up onto a station that is mid-CQ should put us in the middle of
     // it, exactly like switching a real receiver on.
     this.rejoinOnAir();
@@ -568,9 +616,21 @@ export class QsoSession implements SessionContext {
    * makes it drift across the display instead of moving with the dial.
    */
   spectrum(): SpectrumSnapshot {
+    const at = this.clock();
+    // One line of the waterfall stands for a slice of time, so remember when the
+    // last one was drawn: a dot can be shorter than a line (see
+    // `txKeyedBetween`).
+    const since = this.spectrumAt;
+    this.spectrumAt = at;
+
     // Half-duplex: while the operator's carrier is on, the only signal on the
     // display is his own, at full strength. Everything being received is gone —
     // a transmitter is not listening, so there is nothing else to show.
+    //
+    // It is drawn **keyed**, not as one solid block: the envelope that drives
+    // the monitor tone is the same one read here, so the trace on the waterfall
+    // breaks where the tone breaks. A dash is a dash, and the gap after it is
+    // silent on screen as well as in the speaker.
     if (this.transmitting) {
       return {
         centerHz: this.dialHz,
@@ -578,14 +638,17 @@ export class QsoSession implements SessionContext {
           {
             freqHz: this.dialHz,
             strength: 1,
-            call: this.myCall(),
+            // A callsign-less operator gets a placeholder rather than an empty
+            // string: an empty `call` marks a decorative background carrier,
+            // which the waterfall draws with synthetic keying instead of
+            // following `active`.
+            call: this.myCall() || "ME",
             workable: false,
-            active: true,
+            active: this.txKeyedBetween(since < 0 ? at : since, at),
           },
         ],
       };
     }
-    const now = this.clock();
     const signals: SpectrumSignal[] = [];
     // The roster holds the band's callers. Answerers hold no slot, so they are
     // not on it — but while one of them is transmitting there *is* a carrier,
@@ -602,7 +665,7 @@ export class QsoSession implements SessionContext {
       // real dots and dashes if we recorded the message, one steady burst for a
       // driver that only reports "keying until" (pile-ups, the background
       // pair). Between transmissions there is nothing to see.
-      const active = this.onAirAt(ham, now) && this.toneKeyed(ham, now);
+      const active = this.onAirAt(ham, at) && this.toneKeyed(ham, at);
       signals.push({
         freqHz: ham.freqHz,
         strength: ham.strength,
@@ -619,6 +682,9 @@ export class QsoSession implements SessionContext {
    * What the S-meter reads: the strongest signal the receiver is hearing *right
    * now*. Two things make that agree with the operator's ears:
    *
+   *  - **A switched-off rig reads nothing.** The meter is part of the receiver,
+   *    so with the power off (or another band being monitored) the needle has no
+   *    reason to move, however busy the frequency is.
    *  - **Half-duplex.** While our own carrier is on, the meter reads our keying
    *    instead of the band: full scale on a dot or dash, nothing in the gap
    *    between them. Nothing is being received, so nothing else can register.
@@ -632,6 +698,10 @@ export class QsoSession implements SessionContext {
    * `null` when there is nothing to hear: no sound, no reading.
    */
   sMeter(): SMeterReading | null {
+    // A receiver that is switched off (or tuned to a band nobody is monitoring)
+    // has no needle to move, however busy the band is. Power sits upstream of
+    // everything else: with the rig off the meter reads nothing at all.
+    if (!this.receiving) return null;
     const at = this.clock();
     if (this.transmitting) return this.txKeyedAt(at) ? smeterReading(1) : null;
 
@@ -678,6 +748,23 @@ export class QsoSession implements SessionContext {
       t -= e.off;
     }
     return false;
+  }
+
+  /**
+   * Whether the operator's carrier was on at any point in `[from, to]`.
+   *
+   * A waterfall line stands for a slice of time, not an instant: at 25 WPM a dit
+   * is 48 ms and a line is 55 ms, so sampling only the line's own timestamp
+   * would drop dots and draw a pattern the operator never sent. Asking the whole
+   * slice keeps every element that was on during it.
+   */
+  private txKeyedBetween(from: number, to: number): boolean {
+    if (!(to > from)) return this.txKeyedAt(to);
+    // ~17 samples per line: fine enough for the shortest element at any speed
+    // the settings allow, cheap enough to run once per line.
+    const step = Math.max(4, (to - from) / 16);
+    for (let t = from; t < to; t += step) if (this.txKeyedAt(t)) return true;
+    return this.txKeyedAt(to);
   }
 
   /**
@@ -829,6 +916,44 @@ export class QsoSession implements SessionContext {
   // --- operator actions ----------------------------------------------------
 
   /**
+   * Drop the operator's carrier and reopen the receiver.
+   *
+   * Idempotent, and the only place that lowers `transmitting`: the audio layer's
+   * half-duplex gate belongs to the same fact, so the two can never disagree
+   * about whether the receiver is open.
+   */
+  private stopTransmitting(): void {
+    this.transmitting = false;
+    this.txTiming = null;
+    this.audio.setTransmitting(false);
+  }
+
+  /**
+   * Put every station on this frequency on standby for the operator's over.
+   *
+   * While the operator is on the air, nothing else transmits here: a message
+   * that was already keying is cut, and its station keeps its place in the
+   * rotation (it calls again after a listening gap). This is what makes the
+   * silence after the over real — nobody is left half-way through a CQ, waiting
+   * to be joined in the middle when the receiver opens.
+   */
+  private standByBand(): void {
+    const now = this.clock();
+    for (const entry of this.band.activityState()) {
+      if (!this.canHear(entry.ham)) continue;
+      const call = entry.ham.call;
+      const tx = this.txs.get(call);
+      if (!tx || !txOnAir(tx, now)) continue;
+      this.audio.silenceStation(call);
+      this.txs.delete(call);
+      this.keyingUntil.delete(call);
+      if (entry.state === "cqing") {
+        this.band.scheduleNextCq(call, nextCqGapMs(this.rng));
+      }
+    }
+  }
+
+  /**
    * Put the operator's own message on the air.
    *
    * Half-duplex: from the first dit the receiver is deaf, and it stays deaf for
@@ -837,7 +962,13 @@ export class QsoSession implements SessionContext {
    * `spectrum`). The S-meter follows the key while it lasts.
    */
   private async transmit(text: string): Promise<void> {
+    const epoch = this.epoch;
     this.audio.stop(); // our key comes down on top of whatever was playing
+    // The band stands by while this message is on the air.
+    this.standByBand();
+    // The operator is answering: the partner's patience starts over from
+    // scratch once this over has been answered.
+    this.clearPartnerWait();
     this.push("me", text);
     this.transmitting = true;
     this.txStartedAt = this.clock();
@@ -850,10 +981,148 @@ export class QsoSession implements SessionContext {
       await this.audio.playMine(tx, this.txStartedAt);
     } finally {
       await this.wait(TX_TAIL_MS);
-      this.transmitting = false;
-      this.audio.setTransmitting(false);
-      this.txTiming = null;
+      // The band may have been switched away from under this over: `reset()`
+      // already lowered the carrier, and a newer over may own it by now. The
+      // epoch says whether this one still has the right to touch it.
+      if (epoch === this.epoch) this.stopTransmitting();
     }
+  }
+
+  // --- live keying (straight key / paddles) --------------------------------
+  //
+  // In the two key modes the operator keys in real time: the rig goes on the
+  // air on the first key-down, the receiver is deaf for as long as they key,
+  // and the envelope is built up element by element from what actually went
+  // out. Nothing is replayed at the end — the message has already been sent.
+
+  /**
+   * Open the operator's carrier for live keying.
+   *
+   * Returns false when the rig cannot transmit right now (off, or already
+   * sending), in which case the key panel must not swallow the key press.
+   */
+  beginLiveKeying(): boolean {
+    // Already keying, or the rig is off: there is no carrier to open.
+    if (this.transmitting || !this.receiving) return false;
+
+    // **Break-in.** The previous over may still be handing its reply back and
+    // forth (`sending` is held until that cycle ends). The key takes over
+    // anyway — a transmitter can always transmit. That old cycle belongs to a
+    // message already on the air, so it is abandoned (the epoch stops it at its
+    // next wake-up) and the station that was still keying into it is silenced,
+    // so it cannot talk over the new over.
+    if (this.sending) {
+      this.epoch += 1;
+      if (this.ham) this.audio.silenceStation(this.ham.call);
+    }
+
+    this.sending = true;
+    // Our key comes down on top of whatever was playing.
+    this.audio.stop();
+    // The band stands by while this over is on the air.
+    this.standByBand();
+    // The operator is answering: the partner's patience starts over.
+    this.clearPartnerWait();
+    this.transmitting = true;
+    this.txStartedAt = this.clock();
+    this.txTiming = [];
+    this.liveDownAt = null;
+    this.liveUpAt = null;
+    this.audio.setTransmitting(true);
+    return true;
+  }
+
+  /** The operator's key went down (live keying). */
+  liveKeyDown(): void {
+    if (!this.transmitting || !this.txTiming) return;
+    if (this.liveDownAt !== null || !this.sending) return;
+    const at = this.clock();
+    // The over starts where the key went down, not where the carrier was
+    // opened: the wait between "ready to send" and the first dit is silence on
+    // the air and must not be counted as part of the envelope.
+    if (this.txTiming.length === 0) this.txStartedAt = at;
+    // Close the gap on the previous element now that its length is known.
+    if (this.liveUpAt !== null && this.txTiming.length > 0) {
+      this.txTiming[this.txTiming.length - 1].off = at - this.liveUpAt;
+    }
+    // An element of unknown length, open until the key goes up: the S-meter
+    // reads "keyed" for as long as the operator holds it.
+    this.txTiming.push({ on: Number.MAX_SAFE_INTEGER, off: 0 });
+    this.liveDownAt = at;
+    this.liveUpAt = null;
+  }
+
+  /** The operator's key came up (live keying). */
+  liveKeyUp(): void {
+    if (!this.transmitting || !this.txTiming) return;
+    if (this.liveDownAt === null) return;
+    const at = this.clock();
+    const last = this.txTiming[this.txTiming.length - 1];
+    if (last) last.on = Math.max(1, at - this.liveDownAt);
+    this.liveDownAt = null;
+    this.liveUpAt = at;
+  }
+
+  /**
+   * End one over keyed live and let the band react to it.
+   *
+   * The text is what the keyer decoded from the operator's own keying; the
+   * audio has already gone out, so this only records the line and runs the
+   * same decision the text mode runs after `transmit`.
+   *
+   * There is no carrier tail to wait out here: this is called after the key has
+   * already been silent for a beat (`KeyPanel` owns that clock), and that
+   * silence *is* the turn-around. So the carrier drops now and the receiver
+   * opens — measured from the last element, not the last element plus a tail.
+   */
+  async finishLiveKeying(text: string): Promise<void> {
+    if (this.liveDownAt !== null) this.liveKeyUp();
+    if (!this.sending) return;
+    const epoch = this.epoch;
+    const line = text.trim().toUpperCase();
+    this.liveDownAt = null;
+    this.liveUpAt = null;
+
+    try {
+      if (line) this.push("me", line);
+      // No tail: the key panel has already waited out the silence that ends an
+      // over, and that silence *is* the turn-around.
+      this.stopTransmitting();
+
+      if (!line) return;
+      if (/\bCQ\b/.test(line)) {
+        if (this.machine) this.endExchange();
+        this.beginPileup();
+        return;
+      }
+      await this.dispatchSent(line, epoch);
+    } finally {
+      // Reset under us (band switch): `reset()` already cleared `sending`, and a
+      // newer over may own it now.
+      if (epoch === this.epoch) {
+        this.sending = false;
+        // The receiver opens again: whatever is on the air now starts playing.
+        this.rejoinOnAir();
+      }
+    }
+  }
+
+  /**
+   * Abandon an over that is still open because the panel that owned it is gone
+   * (the operator left the page mid-key).
+   *
+   * The half-keyed text is not sent — the operator never finished it — but the
+   * carrier has to come down and the receiver has to open, or the rig stays
+   * stuck in TX for a panel that no longer exists.
+   */
+  cancelLiveKeying(): void {
+    if (!this.sending && !this.transmitting) return;
+    this.epoch += 1;
+    this.audio.stop();
+    this.stopTransmitting();
+    this.sending = false;
+    this.liveDownAt = null;
+    this.liveUpAt = null;
   }
 
   /**
@@ -890,6 +1159,11 @@ export class QsoSession implements SessionContext {
     // Non-blocking: do not await the full CQ, otherwise the user could not
     // answer until it finished. The audio is cut by the next user transmission.
     const tx = this.notePlaying(target, text);
+    // Re-time the station's next CQ from the *end* of this one. Without this the
+    // activity scheduler keeps firing on its fallback gap (3–8 s measured from
+    // the start), so a long call is cut off mid-message and restarted on top of
+    // itself — heard as garbled, stuttering audio.
+    if (tx) this.band.scheduleNextCq(target.call, tx.durationMs + nextCqGapMs(this.rng));
     if (tx) void this.audio.playTx(tx, target, this.now());
     return true;
   }
@@ -930,70 +1204,102 @@ export class QsoSession implements SessionContext {
     if (!this.receiving) return; // cannot transmit with the rig off
 
     this.sending = true;
+    const epoch = this.epoch;
     try {
       // A CQ is not addressed to anybody — it invites the band to answer, and
       // it is a fresh call whatever was going on before.
       if (/\bCQ\b/.test(line)) {
         if (this.machine) this.endExchange();
         await this.transmit(line);
+        if (epoch !== this.epoch) return;
         this.beginPileup();
         return;
       }
-
-      // A pile-up: the line's job is to name one of the stations answering.
-      // But naming somebody who is *not* in the pile-up means the operator has
-      // moved on — it is an answer to whatever else is on the frequency, not a
-      // failed attempt at picking a caller. Dropping that into the pile-up's
-      // "nobody was named" path is how a perfectly good reply disappeared into
-      // a call the operator had already left behind.
-      let namedElsewhere = false;
-      if (this.pileup.active) {
-        if (this.pileup.match(line) || !namesACall(line)) {
-          await this.transmit(line);
-          await this.answerPileup(line);
-          return;
-        }
-        this.pileup.clear();
-        namedElsewhere = true;
-      }
-
-      // Everything else is addressed to whoever is inside the passband now.
-      const machine = this.machineForAudible(line);
       await this.transmit(line);
-      // Nobody out there: the message went out and nothing came back.
-      if (!machine) {
-        if (namedElsewhere) this.note("没有点名应答的台，也没有别的台在呼叫");
+      if (epoch !== this.epoch) return;
+      await this.dispatchSent(line, epoch);
+    } finally {
+      // A band switch reset this session while the over was in flight: `reset()`
+      // already dropped the carrier and cleared `sending`, and a newer over may
+      // own that flag now. Only the epoch that started this send may clear it.
+      if (epoch === this.epoch) {
+        this.sending = false;
+        // The receiver opens again: whatever is on the air now starts playing.
+        this.rejoinOnAir();
+      }
+    }
+  }
+
+  /**
+   * What the band does about a line that has already gone out.
+   *
+   * Split out of `userSend` because the two key modes key the message live and
+   * only get here once the over has ended. The line is on the air either way,
+   * and the band's reaction must not depend on how it was keyed.
+   *
+   * `epoch` is the session generation this over belongs to. Resetting the
+   * session (a band switch, say) bumps it; anything that wakes up after a wait
+   * and finds a different one has been overtaken and must not play a reply into
+   * a band the operator has already left.
+   */
+  private async dispatchSent(line: string, epoch: number): Promise<void> {
+    // A pile-up: the line's job is to name one of the stations answering.
+    // But naming somebody who is *not* in the pile-up means the operator has
+    // moved on — it is an answer to whatever else is on the frequency, not a
+    // failed attempt at picking a caller. Dropping that into the pile-up's
+    // "nobody was named" path is how a perfectly good reply disappeared into
+    // a call the operator had already left behind.
+    let namedElsewhere = false;
+    if (this.pileup.active) {
+      if (this.pileup.match(line) || !namesACall(line)) {
+        await this.answerPileup(line, epoch);
         return;
       }
-
-      // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
-      if (this.ham && this.rng() < this.ham.missProbability) {
-        const agn = machine.hamMissed();
-        if (agn) {
-          await this.wait(replyDelayMs(this.rng));
-          this.push("ham", agn);
-          const tx = this.notePlaying(this.ham, agn);
-          if (tx) await this.audio.playTx(tx, this.ham, this.now());
-          return;
-        }
-      }
-
-      const replies = machine.userSend(line);
-      for (const reply of replies) {
-        // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
-        await this.wait(replyDelayMs(this.rng));
-        this.push("ham", reply);
-        const tx = this.notePlaying(this.ham, reply);
-        if (tx) await this.audio.playTx(tx, this.ham, this.now());
-      }
-
-      // QSO complete: the HAM goes back to its own CQ rhythm.
-      if (machine.state === "LOGGED" && this.ham) this.endStation(this.ham);
-    } finally {
-      this.sending = false;
-      // The receiver opens again: whatever is on the air now starts playing.
-      this.rejoinOnAir();
+      this.pileup.clear();
+      namedElsewhere = true;
     }
+
+    // Everything else is addressed to whoever is inside the passband now.
+    const machine = this.machineForAudible(line);
+    // Nobody out there: the message went out and nothing came back.
+    if (!machine) {
+      if (namedElsewhere) this.note("没有点名应答的台，也没有别的台在呼叫");
+      return;
+    }
+
+    // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
+    if (this.ham && this.rng() < this.ham.missProbability) {
+      const agn = machine.hamMissed();
+      if (agn) {
+        await this.wait(replyDelayMs(this.rng));
+        if (epoch !== this.epoch) return;
+        this.push("ham", agn);
+        const tx = this.notePlaying(this.ham, agn);
+        if (tx) await this.audio.playTx(tx, this.ham, this.now());
+        if (epoch !== this.epoch) return;
+        // The partner has asked for a repeat and is waiting for one.
+        this.armPartnerWait();
+        return;
+      }
+    }
+
+    const replies = machine.userSend(line);
+    for (const reply of replies) {
+      // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
+      await this.wait(replyDelayMs(this.rng));
+      if (epoch !== this.epoch) return;
+      this.push("ham", reply);
+      const tx = this.notePlaying(this.ham, reply);
+      if (tx) await this.audio.playTx(tx, this.ham, this.now());
+      if (epoch !== this.epoch) return;
+    }
+
+    // The station has said its piece and is listening for the operator's next
+    // over. If none comes it repeats itself instead of going silent.
+    this.armPartnerWait();
+
+    // QSO complete: the HAM goes back to its own CQ rhythm.
+    if (machine.state === "LOGGED" && this.ham) this.endStation(this.ham);
   }
 
   /** Draw the stations that will answer this CQ and start their schedule. */
@@ -1081,7 +1387,7 @@ export class QsoSession implements SessionContext {
    * silent and tries again later (see `PileupDriver.drive`). This is
    * deliberately unforgiving — naming the station is the skill it teaches.
    */
-  private async answerPileup(line: string): Promise<void> {
+  private async answerPileup(line: string, epoch: number): Promise<void> {
     const chosen = this.pileup.match(line);
     if (!chosen) {
       this.pileup.reschedule();
@@ -1097,10 +1403,14 @@ export class QsoSession implements SessionContext {
     // yet), so put it in the state it would have been in.
     machine.beginUserCq();
     await this.wait(replyDelayMs(this.rng));
+    if (epoch !== this.epoch) return;
     const reply = machine.hamAcceptedSelection();
     this.push("ham", reply);
     const tx = this.notePlaying(this.ham ?? chosen.ham, reply);
     if (tx) await this.audio.playTx(tx, this.ham ?? chosen.ham, this.now());
+    if (epoch !== this.epoch) return;
+    // The named station has sent its report and is waiting for ours.
+    this.armPartnerWait();
   }
 
   // --- log & lifecycle of a QSO --------------------------------------------
@@ -1138,6 +1448,7 @@ export class QsoSession implements SessionContext {
    * goes back to calling CQ, a pile-up is released, and the band carries on.
    */
   private endExchange(): void {
+    this.clearPartnerWait();
     this.pileup.clear();
     if (this.ham) this.endStation(this.ham);
     this.machine?.reset();
@@ -1149,9 +1460,18 @@ export class QsoSession implements SessionContext {
 
   /** Abandon the current QSO and clear the transcript. */
   reset(): void {
+    // Anything an over had queued (a reply, a repeat, a tail) belongs to the
+    // world this reset is ending: the epoch makes those wake-ups hang up
+    // instead of keying onto the band that replaces it.
+    this.epoch += 1;
     this.audio.stop(); // cut any in-flight audio along with the QSO
-    this.transmitting = false;
-    this.txTiming = null;
+    // Half-duplex ends here too. Without this the receiver stays muted if the
+    // band was switched in the middle of an over — and the live-key path never
+    // runs its `finishLiveKeying` when its panel has already been torn down.
+    this.stopTransmitting();
+    this.sending = false;
+    this.liveDownAt = null;
+    this.liveUpAt = null;
     this.endExchange();
     this.lines = [];
     this.draft = "";
@@ -1195,6 +1515,7 @@ export class QsoSession implements SessionContext {
     this.pileup.drive();
     this.hamQso.drive();
     this.expireOwnCq();
+    this.servicePartnerWait();
   }
 
   /**
@@ -1226,6 +1547,70 @@ export class QsoSession implements SessionContext {
     this.note("没有人回应你的呼叫，已回到守听");
   }
 
+  /**
+   * Start the clock on the operator's next over.
+   *
+   * The band is not a voicemail. A station that has just sent "R UR RST 579 BK"
+   * waits, sends it again, and after `PARTNER_REPEAT_LIMIT` tries it gives up
+   * and calls CQ again — which is also the cue that the operator has missed
+   * their opening. `afterMs` is the over that is still going out: the clock
+   * only starts once it has finished keying.
+   */
+  private armPartnerWait(afterMs = 0): void {
+    if (!this.ham || !this.exchangeInProgress) return;
+    this.partnerWaitAt = this.clock() + afterMs + PARTNER_WAIT_MS;
+  }
+
+  /** The operator is answering: the partner starts waiting from scratch. */
+  private clearPartnerWait(): void {
+    this.partnerWaitAt = null;
+    this.partnerWaits = 0;
+  }
+
+  /**
+   * The partner's patience runs out while the operator stays silent: it repeats
+   * its last over, and eventually gives up.
+   *
+   * Giving up is not silence either — the station goes back to its own CQ
+   * rhythm (`endStation` → `markListening`), so the operator can try again or
+   * move on, rather than being left in a QSO the other side has abandoned
+   * without saying so.
+   */
+  private servicePartnerWait(): void {
+    if (this.partnerWaitAt === null) return;
+    if (!this.exchangeInProgress || !this.ham || !this.machine) {
+      this.partnerWaitAt = null;
+      return;
+    }
+    // Powered down, mid-over, or busy keying: nothing to answer to yet.
+    if (!this.receiving || this.sending || this.transmitting) return;
+    if (this.clock() < this.partnerWaitAt) return;
+
+    if (this.partnerWaits >= PARTNER_REPEAT_LIMIT) {
+      this.partnerWaitAt = null;
+      this.partnerWaits = 0;
+      this.endExchange();
+      this.note("对方呼叫几次没人应，已回到 CQ");
+      return;
+    }
+
+    this.partnerWaits += 1;
+    // `timeoutResend` is the machine's own "say that again" (see its timer
+    // hooks): it hands back the last over rather than inventing a new one.
+    const text = this.machine.timeoutResend()[0];
+    this.partnerWaitAt = null;
+    if (!text) {
+      // Nothing to repeat — the contact had nothing to say in the first place.
+      this.endExchange();
+      return;
+    }
+    this.push("ham", text);
+    const tx = this.notePlaying(this.ham, text);
+    if (!tx) return;
+    void this.audio.playTx(tx, this.ham, this.now());
+    this.armPartnerWait(tx.durationMs);
+  }
+
   private handleActivity(events: HamActivityEvent[]): void {
     for (const e of events) {
       // Two ways to put this burst on the air, and both of them key it:
@@ -1239,6 +1624,13 @@ export class QsoSession implements SessionContext {
       // contact: the CQ is still keyed onto its carrier. The audio layer
       // decides what reaches the speaker (filter, mute, half-duplex) and the
       // band keeps its own rhythm either way.
+      // The operator's carrier is up: the band stands by rather than keying a
+      // CQ that would only be cut a moment later. The station keeps its place
+      // and calls again after a listening gap.
+      if (this.transmitting) {
+        this.band.scheduleNextCq(e.ham.call, nextCqGapMs(this.rng));
+        continue;
+      }
       if (
         !this.receiving ||
         this.transmitting ||

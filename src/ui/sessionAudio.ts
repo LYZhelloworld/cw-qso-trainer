@@ -49,6 +49,8 @@ export interface LiveBand {
   keyFrom(tx: Tx, call: string, atMs: number, elapsedMs: number): void;
   keyMine(tx: Tx, atMs: number, elapsedMs?: number): void;
   silenceMine(): void;
+  /** Cut one station's carrier (the operator is breaking in on it). */
+  silenceStation(call: string): void;
   setTransmitting(on: boolean): void;
   setMuted(on: boolean): void;
   dispose(): void;
@@ -218,14 +220,24 @@ export class SessionAudio {  /** Calls currently on the band, so `syncStations` 
     this.synth.setMuted(on);
   }
 
-  /**
-   * Cut the operator's own keying, if it is still going.
+  /** Cut the operator's own keying, if it is still going.
    *
    * Nobody else's transmission is stopped by pressing PTT: the band carries on
    * and only the receiver goes deaf (see `setTransmitting`).
    */
   stop(): void {
     this.synth.silenceMine();
+  }
+
+  /**
+   * Cut one station's carrier.
+   *
+   * Used when the operator breaks in on that station's reply: its message was
+   * already keyed onto the air, so the phase has to be taken off the air too,
+   * not just muted by half-duplex.
+   */
+  silenceStation(call: string): void {
+    this.synth.silenceStation(call);
   }
 
   /**

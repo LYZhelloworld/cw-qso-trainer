@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { renderRadio } from "./radio.js";
+import { formatDial, renderRadio } from "./radio.js";
 import { BANDS } from "../bands.js";
 import { normalizeSettings, type AppSettings } from "../settingsSchema.js";
 import { QsoSession } from "../session.js";
@@ -69,6 +69,12 @@ function findButton(root: HTMLElement, text: string): HTMLButtonElement {
   return found;
 }
 
+/** The fill width of one S-meter segment, as a percentage. */
+function fillWidth(root: HTMLElement, segment: "s" | "over"): number {
+  const fill = root.querySelector<HTMLElement>(`.smeter-seg.${segment} .smeter-fill`)!;
+  return Number.parseFloat(fill.style.width);
+}
+
 beforeEach(() => {
   document.body.innerHTML = "";
 });
@@ -78,21 +84,49 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("电台页 — 电源", () => {
-  it("关台时显示待机，并提供「开台」按钮，不显示波段内容", () => {
-    const { root, powerLog } = makeHost({}, false);
-
-    expect(root.textContent).toContain("设备已关机");
-    expect(root.querySelector(".band-tabs")).toBeNull();
-
-    findButton(root, "开台").click();
-    expect(powerLog).toEqual([true]);
+describe("频率读数", () => {
+  it("按 MHz.kHz.Hz 分组，kHz 的位置不随波段变化", () => {
+    expect(formatDial(14.025)).toBe("14.025.000");
+    expect(formatDial(7.025)).toBe("7.025.000");
+    expect(formatDial(28.0251)).toBe("28.025.100");
   });
 
-  it("开台后显示波段与调谐，不再显示待机", () => {
-    const { root } = makeHost({}, true);
+  it("画面上频率水平居中，单位是 MHz", () => {
+    const { root } = makeHost({ bandIndex: 1, freqMHz: 14.025 });
+    const dial = root.querySelector(".dial")!;
+    expect(dial.querySelector(".dial-digits")?.textContent).toBe("14.025.000");
+    expect(dial.querySelector(".dial-unit")?.textContent).toBe("MHz");
+    // 居中靠版面而不是靠内容：读数块本身是整行居中的一行。
+    expect(dial.className).toContain("dial");
+  });
+
+  it("S 表在频率左边，和频率在同一行", () => {
+    const { root } = makeHost({ myCall: "BG7XXX" });
+    const line = root.querySelector(".console")!;
+
+    // 同一行、且 S 表排在前面（CSS 把它放在左边那一列，频率居中）。
+    expect(line.children[0].classList.contains("smeter")).toBe(true);
+    expect(line.children[1].classList.contains("dial")).toBe(true);
+  });
+});
+
+describe("电台页 — 电源", () => {
+  it("关台时只剩一块暗屏和拨盘读数，没有波段与发报面板", () => {
+    const { root } = makeHost({}, false);
+
+    expect(root.querySelector(".console.off")).not.toBeNull();
+    expect(root.querySelector(".dial-digits")?.textContent).toBe("14.025.000");
+    expect(root.querySelector(".band-tabs")).toBeNull();
+    expect(root.querySelector(".send-input")).toBeNull();
+    // 开台按钮与待机窗都在机头/瀑布图那边，不在这一页里重复。
     expect(root.textContent).not.toContain("设备已关机");
-    expect(root.textContent).toContain("波段与调谐");
+  });
+
+  it("开台后出现波段与发报面板", () => {
+    const { root } = makeHost({}, true);
+
+    expect(root.querySelector(".console.off")).toBeNull();
+    expect(root.querySelector(".band-tabs")).not.toBeNull();
   });
 
   it("关台时不再赘述本频段有多少台在活动", () => {
@@ -102,11 +136,12 @@ describe("电台页 — 电源", () => {
         { ham: { call: "JA1ABC", report: "599" }, state: "cqing" },
         { ham: { call: "DL1XYZ", report: "589" }, state: "listening" },
       ],
+      sMeter: () => null,
     } as unknown as QsoSession;
     host.refresh();
 
-    expect(root.textContent).toContain("设备已关机");
     expect(root.textContent).not.toContain("个电台在活动");
+    expect(root.textContent).not.toContain("JA1ABC");
   });
 });
 
@@ -115,48 +150,27 @@ describe("电台页 — 波段与调谐", () => {
     const { root } = makeHost({ bandIndex: 1 });
     const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".band-tabs button"));
 
-    expect(tabs.map((b) => b.textContent)).toEqual(BANDS.map((b) => b.label));
+    expect(tabs.map((b) => b.textContent)).toEqual(BANDS.map((b) => b.name));
     const active = tabs.filter((b) => b.classList.contains("active"));
     expect(active.length).toBe(1);
-    expect(active[0].textContent).toBe(BANDS[1].label);
+    expect(active[0].textContent).toBe(BANDS[1].name);
   });
 
   it("点击别的频段会切换 bandIndex 与默认频率", () => {
     const { root, host } = makeHost({ bandIndex: 1 });
 
-    findButton(root, BANDS[0].label).click();
+    findButton(root, BANDS[0].name).click();
 
     expect(host.settings.bandIndex).toBe(0);
     expect(host.settings.freqMHz).toBe(BANDS[0].defaultMHz);
   });
 
-  it("±1 kHz 步进会改变频率且不越界", () => {
-    const { root, host } = makeHost({ bandIndex: 1, freqMHz: 14.025 });
+  it("不再提供 ±1 kHz / ±100 Hz 的步进按键：调谐在瀑布图上做", () => {
+    const { root } = makeHost({ bandIndex: 1 });
 
-    findButton(root, "+ 1 kHz").click();
-    expect(host.settings.freqMHz).toBe(14.026);
-
-    findButton(root, "− 1 kHz").click();
-    findButton(root, "− 1 kHz").click();
-    expect(host.settings.freqMHz).toBe(14.024);
-  });
-
-  it("调谐到下边界时不再继续下降", () => {
-    const { root, host } = makeHost({ bandIndex: 1, freqMHz: BANDS[1].minMHz });
-
-    findButton(root, "− 1 kHz").click();
-    expect(host.settings.freqMHz).toBe(BANDS[1].minMHz);
-  });
-
-  it("±100 Hz 微调用来对准通带", () => {
-    const { root, host } = makeHost({ bandIndex: 1, freqMHz: 14.025 });
-
-    findButton(root, "+ 100 Hz").click();
-    expect(host.settings.freqMHz).toBe(14.0251);
-
-    findButton(root, "− 100 Hz").click();
-    findButton(root, "− 100 Hz").click();
-    expect(host.settings.freqMHz).toBe(14.0249);
+    const labels = Array.from(root.querySelectorAll("button")).map((b) => b.textContent ?? "");
+    expect(labels.some((l) => l.includes("kHz") || l.includes("Hz"))).toBe(false);
+    expect(root.querySelector(".tune-steps")).toBeNull();
   });
 
   it("不在页面上写通带宽度与台站分布——靠自己调、自己听", () => {
@@ -167,15 +181,26 @@ describe("电台页 — 波段与调谐", () => {
 });
 
 describe("电台页 — S 表", () => {
-  it("刻度是九段，没有信号时读数为空", () => {
+  it("是一条横条，分成 S 段与 S9 之后的红段", () => {
     const { root } = makeHost({ myCall: "BG7XXX" });
 
-    expect(root.querySelectorAll(".signal i").length).toBe(9);
-    expect(root.querySelectorAll(".signal i.on").length).toBe(0);
-    expect(root.querySelector(".smeter-read")?.textContent).toBe("—");
+    expect(root.querySelector(".smeter-track")).not.toBeNull();
+    expect(root.querySelector(".smeter-seg.s")).not.toBeNull();
+    expect(root.querySelector(".smeter-seg.over")).not.toBeNull();
+    const ticks = Array.from(root.querySelectorAll(".smeter-tick")).map((t) => t.textContent);
+    expect(ticks).toEqual(["S1", "S3", "S5", "S7", "S9", "+20", "+40", "+60"]);
   });
 
-  it("读数与点亮格数跟着会话的 S 表走", () => {
+  it("没有信号时横条是空的，读数为一横", () => {
+    const { root } = makeHost({ myCall: "BG7XXX" });
+
+    expect(root.querySelector(".smeter-read")?.textContent).toBe("—");
+    expect(fillWidth(root, "s")).toBe(0);
+    expect(fillWidth(root, "over")).toBe(0);
+    expect(root.querySelector(".smeter")?.classList.contains("quiet")).toBe(true);
+  });
+
+  it("S 段是蓝色，S9 之后才点亮红色段", () => {
     const { root, host } = makeHost({ myCall: "BG7XXX" });
     (host.session as unknown as { sMeter: () => unknown }).sMeter = () => ({
       dbm: -85,
@@ -186,10 +211,11 @@ describe("电台页 — S 表", () => {
     host.refresh();
 
     expect(root.querySelector(".smeter-read")?.textContent).toBe("S7");
-    expect(root.querySelectorAll(".signal i.on").length).toBe(7);
+    expect(fillWidth(root, "s")).toBeCloseTo(75, 1);
+    expect(fillWidth(root, "over")).toBe(0);
   });
 
-  it("超过 S9 时读数带 dB，并且九格全亮", () => {
+  it("超过 S9 时读数带 dB，红段按 60 dB 满格", () => {
     const { root, host } = makeHost({ myCall: "BG7XXX" });
     (host.session as unknown as { sMeter: () => unknown }).sMeter = () => ({
       dbm: -53,
@@ -200,7 +226,8 @@ describe("电台页 — S 表", () => {
     host.refresh();
 
     expect(root.querySelector(".smeter-read")?.textContent).toBe("S9+20");
-    expect(root.querySelectorAll(".signal i.on").length).toBe(9);
+    expect(fillWidth(root, "s")).toBeCloseTo(100, 1);
+    expect(fillWidth(root, "over")).toBeCloseTo(33.3, 1);
   });
 });
 
@@ -230,7 +257,6 @@ describe("电台页 — 信号与通联", () => {
     // 谁在哪、叫什么，正是要靠调谐和抄收得到的，页面不该先说出来。
     expect(root.textContent).not.toContain("JA1ABC");
     expect(root.textContent).not.toContain("BG7ZZZ");
-    expect(root.textContent).not.toContain("MHz ·");
     // S 表还在：那是接收机自己的读数，不是波段名册。
     expect(root.querySelector(".smeter")).not.toBeNull();
   });
@@ -245,9 +271,9 @@ describe("电台页 — 信号与通联", () => {
   });
 
   it("发送面板一直可用，不需要先「开始通联」", () => {
-    const { root } = makeHost({ myCall: "BG7XXX" });
+    const { root } = makeHost({ myCall: "BG7XXX", keyMode: "text" });
     // 还没进任何通联：发送框与发送按钮就已经在了。
-    expect(root.querySelector("textarea")).not.toBeNull();
+    expect(root.querySelector(".send-input")).not.toBeNull();
     expect(findButton(root, "发送")).toBeDefined();
     expect(root.textContent).not.toContain("开始通联");
     expect(root.textContent).not.toContain("监听");
@@ -259,12 +285,12 @@ describe("电台页 — 信号与通联", () => {
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq(); // enters PEER_CQ
-    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    const { root, host } = makeHost({ myCall: "BG7XXX", keyMode: "text" });
     host.session = session;
     host.refresh();
 
-    expect(root.textContent).toContain("电键输入");
-    expect(root.querySelector("textarea")).not.toBeNull();
+    expect(root.textContent).toContain("发送");
+    expect(root.querySelector(".send-input")).not.toBeNull();
     // 状态行与收发记录都不显示：报文只在空中，屏幕上没有回放。
     expect(root.textContent).not.toContain("通联状态");
     expect(root.textContent).not.toContain("收报 / 发报记录");

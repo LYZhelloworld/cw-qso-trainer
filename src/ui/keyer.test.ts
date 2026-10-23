@@ -160,19 +160,20 @@ describe("IambicKeyerInput", () => {
     expect(texts).toEqual(["E"]);
   });
 
-  it("wordBreak 后下一个字符前补一个空格", () => {
+  it("停久一点（距上一元素 7d）自动补一个空格", () => {
     const { input, texts, tick } = manualIambic();
     input.press("dot");
     tick(60);
     input.release("dot");
-    tick(240);
+    tick(240); // 3d 字符间隔结束，E 收尾
     expect(texts).toEqual(["E"]);
 
-    input.wordBreak();
+    // 再停 4d（相对收尾时刻）= 距上一元素 7d：下一个字符算新词。
+    tick(240 + 4 * 60);
     input.press("dot");
-    tick(300);
+    tick(540);
     input.release("dot");
-    tick(480);
+    tick(720);
 
     expect(texts).toEqual(["E", " ", "E"]);
   });

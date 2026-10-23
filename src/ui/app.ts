@@ -40,6 +40,12 @@ export interface AppHost {
   refresh(): void;
   /** Register a cleanup (e.g. remove key listeners) run before the next render. */
   onLeave(fn: () => void): void;
+  /**
+   * Where the text-mode send bar is mounted — the App keeps one under the
+   * panadapter, so the box you type an over into is as wide as the display.
+   * Optional: pages render the bar inside themselves when there is no shell.
+   */
+  readonly sendBar?: HTMLElement;
 }
 
 type PageRenderer = (host: AppHost, root: HTMLElement) => void;
@@ -100,14 +106,24 @@ export class App implements AppHost {
   /** Radio power. Off by default so the band is silent until the user opens up. */
   private powerOn = false;
   private settingsOverlay: HTMLElement | null = null;
-  /** The radio face (header + panadapter). Owns its own DOM and its canvas. */
+  /** The radio face (head + panadapter). Owns its own DOM and its canvas. */
   private readonly rig = new RigFace({
     onPower: (on) => this.setPower(on),
     onOpenSettings: () => this.openSettings(),
     onToggleSideband: (sideband) => this.toggleSideband(sideband),
+    // Read by the badge on its own clock: a send starts and ends without a
+    // re-render, so there is no render to hang "TX" on.
+    isTransmitting: () => this.session.isTransmitting,
   });
   private readonly navRoot = el("nav", { class: "nav" });
-  private readonly pageRoot = el("div");
+  /** The operating screen. Scrolls on its own; the rig stays put. */
+  private readonly pageRoot = el("div", { class: "page-area" });
+  /**
+   * The send bar, under the panadapter. Its own element rather than part of the
+   * page, so it keeps the display's full width and never scrolls away with the
+   * operating screen. Pages fill it (see `renderQsoPanel`); empty = hidden.
+   */
+  private readonly sendRoot = el("div", { class: "send-bar" });
   private waterfall: Waterfall | null = null;
   private cleanups: Array<() => void> = [];
 
@@ -122,6 +138,11 @@ export class App implements AppHost {
   /** The session for the band the operator is currently tuned to. */
   get session(): QsoSession {
     return this.sessions[this.activeBand];
+  }
+
+  /** Where the text-mode send bar goes: directly under the panadapter. */
+  get sendBar(): HTMLElement {
+    return this.sendRoot;
   }
 
   /**
@@ -177,10 +198,17 @@ export class App implements AppHost {
 
   start(): void {
     clear(this.root);
+    // The console, top to bottom: the head, the page, the panadapter, and the
+    // disclaimer. The nav lives in the head's middle slot, so the whole thing
+    // reads as one radio rather than an app with a toolbar.
     this.rig.mount(this.root);
+    this.rig.center.append(this.navRoot);
     this.root.append(
-      this.navRoot,
       this.pageRoot,
+      this.rig.scopeRoot,
+      // Order matters: the bar sits *under* the panadapter, the way a message
+      // keyer sits under the display it is keying onto.
+      this.sendRoot,
       el("div", { class: "footer", text: DISCLAIMER_TEXT }),
     );
     // F12 console: only print what the operator can actually hear on the band
@@ -219,9 +247,9 @@ export class App implements AppHost {
   }
 
   /**
-   * Tune the dial to an absolute frequency (Hz). Wired to the waterfall's
-   * click-to-tune; clamped to the current band, and refused while powered down
-   * (you cannot tune a radio that is switched off).
+   * Tune the dial to an absolute frequency (Hz). Wired to the waterfall's wheel;
+   * clamped to the current band, and refused while powered down (you cannot
+   * tune a radio that is switched off).
    */
   tuneTo(hz: number): void {
     if (!this.powerOn || !Number.isFinite(hz)) return;
@@ -310,6 +338,7 @@ export class App implements AppHost {
     for (const s of this.sessions) s.dispose();
     this.waterfall?.dispose();
     this.waterfall = null;
+    this.rig.dispose();
     this.settingsOverlay?.remove();
     this.settingsOverlay = null;
   }
@@ -390,12 +419,24 @@ export class App implements AppHost {
   private renderPage(): void {
     this.runCleanups();
     clear(this.pageRoot);
+    clear(this.sendRoot);
+    // The panadapter belongs to the receiver, not to any one page: it stays for
+    // the operating screen and steps aside for the log and the credits, which
+    // want the height. The send bar follows the same rule.
+    this.rig.scopeRoot.hidden = this.page !== "radio";
+    // On the operating screen the page is content-sized so the panadapter can
+    // take the rest of the window; everywhere else the page takes the room the
+    // display gives back (see `.page-area` in the stylesheet).
+    this.root.classList.toggle("radio-view", this.page === "radio");
     const def = PAGES.find((p) => p.id === this.page) ?? PAGES[0];
     safeRenderPage(def.render, this, this.pageRoot, (err) => {
       // A broken page must not take down the nav, other pages, or the live QSO.
       console.error(`[App] 渲染页面 ${def.id} 出错：`, err);
       renderErrorPanel(this.pageRoot, def.id, err, () => this.refresh());
     });
+    // Nothing was put in it (key mode, powered down, or another page): collapse
+    // the strip instead of leaving an empty gap under the display.
+    this.sendRoot.hidden = this.sendRoot.childElementCount === 0;
   }
 
   private runCleanups(): void {
