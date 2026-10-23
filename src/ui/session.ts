@@ -958,7 +958,7 @@ export class QsoSession implements SessionContext {
       }
 
       // Everything else is addressed to whoever is inside the passband now.
-      const machine = this.machineForAudible();
+      const machine = this.machineForAudible(line);
       await this.transmit(line);
       // Nobody out there: the message went out and nothing came back.
       if (!machine) {
@@ -1012,23 +1012,47 @@ export class QsoSession implements SessionContext {
    * An exchange already under way keeps it — tuning to the edge of the filter
    * makes the partner hard to hear, not gone, and the station you are working
    * stays yours until one of you signs off (or you call CQ and start over).
-   * Otherwise the target is whichever station is calling inside the passband:
-   * the one the operator is listening to. Null when nobody is calling there, in
+   * Otherwise the target is whichever station is being *addressed*: if the line
+   * names a callsign, that station (when it is calling CQ inside the passband)
+   * is the one we answer — even if some *other* station's CQ had auto-opened
+   * `this.machine`. When the line names nobody (a bare "R BK"), the machine we
+   * already have (an overheard CQ) is kept. Null when nobody is calling there, in
    * which case the line goes out and nobody answers.
+   *
+   * This is what makes "hear a CQ, send `<call> DE <me> K`" produce a reply
+   * instead of being swallowed by a machine opened for some other station.
    */
-  private machineForAudible(): QsoMachine | null {
+  private machineForAudible(line: string): QsoMachine | null {
     // A machine sitting in `USER_CQ` is waiting for an answer to *our* call; it
-    // is not a partner. Keying a reply to somebody else's CQ means abandoning
-    // our own, and reusing that machine would hand the message to its
-    // `USER_CQ` branch, which returns nothing — the operator would hear their
-    // own transmission and then silence, with no explanation.
+    // is not a partner. Replying to somebody else's CQ abandons it.
     if (this.machine?.state === "USER_CQ") this.endExchange();
-    if (this.machine) {
-      // Speaking up starts the QSO as far as the band is concerned: the station
-      // stops its own CQ rhythm while we are working it.
-      if (this.ham && this.machine.state === "PEER_CQ") {
-        this.band.markInQso(this.ham.call);
+    // A genuine exchange in progress (we have answered and are trading reports)
+    // keeps the partner we are working — background CQs must not hijack it.
+    if (this.machine && this.machine.state !== "PEER_CQ") return this.machine;
+
+    // The line names a station: if that station is calling CQ inside the
+    // passband, it is the one we are answering. This re-targets away from a
+    // `this.machine` that background CQs had opened for a *different* station.
+    const named = this.namedCallsigns(line);
+    if (named.length > 0) {
+      const target = this.band
+        .activityState()
+        .find(
+          (e) =>
+            e.state === "cqing" && this.canHear(e.ham) && named.includes(e.ham.call),
+        )?.ham;
+      if (target && this.ham?.call !== target.call) {
+        const machine = this.startMachine(target);
+        machine.hamCq(); // the exchange begins with the CQ we just heard
+        this.band.markInQso(target.call);
+        return machine;
       }
+    }
+
+    // Keep the machine we already hold (the overheard-CQ / same-station case), or
+    // fall back to any station calling inside the passband.
+    if (this.machine) {
+      if (this.ham && this.machine.state === "PEER_CQ") this.band.markInQso(this.ham.call);
       return this.machine;
     }
     const target = this.band
@@ -1039,6 +1063,16 @@ export class QsoSession implements SessionContext {
     machine.hamCq(); // the exchange begins with the CQ we just heard
     this.band.markInQso(target.call);
     return machine;
+  }
+
+  /** Callsigns named in a line (excluding our own) — used to pick the addressee. */
+  private namedCallsigns(line: string): string[] {
+    const mine = this.myCall();
+    const out: string[] = [];
+    for (const tok of line.split(/\s+/)) {
+      if (CALL_RE.test(tok) && tok !== mine && !out.includes(tok)) out.push(tok);
+    }
+    return out;
   }
 
   /**

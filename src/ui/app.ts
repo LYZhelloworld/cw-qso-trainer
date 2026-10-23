@@ -164,8 +164,13 @@ export class App implements AppHost {
         return;
       }
       s.setActivityListener(() => {
-        if (s.draft) return;
-        if (this.page === "radio") this.refresh();
+        // No page rebuild on band activity. The radio view shows no live band
+        // state on screen (no transcript; the roster is by-ear only), and its
+        // dynamic pieces — panadapter, S-meter — redraw on their own timers.
+        // Rebuilding it here would tear down the send box and key panel on every
+        // scheduler tick, stealing focus from the textarea and dropping any
+        // in-progress key gesture. Explicit actions (send / tune / power) call
+        // `refresh()` themselves, which is enough.
       });
     });
   }
