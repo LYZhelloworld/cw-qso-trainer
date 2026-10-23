@@ -1,4 +1,5 @@
 import { difficultyToEnvironment } from "../audio/environment.js";
+import type { BandSynth } from "../audio/bandSynth.js";
 import type { AudioPlayer, EngineRenderOptions } from "../audio/engine.js";
 import { textToTiming } from "../cw/encode.js";
 import type { KeyElement } from "../cw/decoder.js";
@@ -32,10 +33,43 @@ export interface AudioView {
 }
 
 export class SessionAudio {
+  /**
+   * Realtime band synth, when one is supplied. With it the session **keys** a
+   * transmission instead of rendering a recording; without it the old PCM path
+   * is used. Both are kept side by side while the model is migrated, so the
+   * sound can be compared and either one switched off in a single place.
+   */
+  private synthOn = false;
+
   constructor(
     private readonly engine: AudioPlayer,
     private readonly view: () => AudioView,
+    private readonly synth?: BandSynth,
   ) {}
+
+  /** True when the realtime path is actually in use (no synth, no switch). */
+  get live(): boolean {
+    return this.synthOn && this.synth !== undefined && this.synth.available;
+  }
+
+  /** Turn the realtime band synth on or off (see `live`). */
+  useSynth(on: boolean): void {
+    this.synthOn = on;
+    if (on) this.wireSynth();
+  }
+
+  /** Push the current receiver position and volume into the synth. */
+  wireSynth(): void {
+    if (!this.synth) return;
+    const { settings, dialHz, sideband, passbandHz } = this.view();
+    this.synth.setReceiver({
+      dialHz,
+      sideband,
+      passbandHz,
+      toneHz: settings.toneHz,
+    });
+    this.synth.setEnvironment(difficultyToEnvironment(settings.difficulty));
+  }
 
   /** False where there is no AudioContext (Node, jsdom, blocked autoplay). */
   get available(): boolean {
@@ -79,6 +113,29 @@ export class SessionAudio {
    * still being sent.
    */
   async playTx(tx: Tx, ham: VirtualHam | null | undefined, at: number): Promise<void> {
+    if (this.live && ham) {
+      // Realtime: the station's carrier is already running on the bus, so this
+      // only keys the dots and dashes onto it — no rendering, no buffer.
+      this.wireSynth();
+      this.synth!.ensureStation({
+        call: ham.call,
+        freqHz: ham.freqHz,
+        strength: ham.strength,
+        difficulty: ham.difficulty,
+      });
+      // Key from the message's own start time, not from `at`: the carrier is
+      // live, so a message that began before the operator tuned in is already
+      // part-way through — and that is exactly what should be heard.
+      this.synth!.key(tx, ham.call, tx.startedAt);
+      // Nothing to play back, but callers still pace themselves on how long a
+      // transmission takes (replies follow each other at keying speed), so
+      // resolve when this over would have finished.
+      const remainingMs = tx.startedAt + tx.durationMs - at;
+      if (remainingMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, remainingMs));
+      }
+      return;
+    }
     await this.playStation(tx.text, ham ?? undefined, txOffsetSec(tx, at));
   }
 
@@ -114,6 +171,7 @@ export class SessionAudio {
   /** Cut any in-flight playback (the operator breaks in on a HAM's CQ). */
   stop(): void {
     this.engine.stop();
+    this.synth?.silenceAll();
   }
 
   /**

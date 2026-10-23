@@ -113,6 +113,16 @@ function mergeDefined<T extends object>(defaults: T, override?: Partial<T>): T {
 const QRM_OFFSETS = [250, -600, 900, -1200, 1800, -2000];
 
 /**
+ * Fading factor at `tSec` into a transmission: 1 at the crest, `1 - depth` at
+ * the trough. Shared with the realtime band synth so the slow fade sounds the
+ * same whether the message is rendered in one go or keyed live.
+ */
+export function qsbFactorAt(qsb: QsbOptions, tSec: number): number {
+  if (!qsb.enabled || qsb.depth <= 0) return 1;
+  return 1 - qsb.depth * (0.5 - 0.5 * Math.cos((2 * Math.PI * tSec) / qsb.periodSec));
+}
+
+/**
  * Render a CW message to mono PCM samples.
  */
 export function renderCwAudio(opts: CwRenderOptions): RenderResult {
@@ -154,8 +164,7 @@ export function renderCwAudio(opts: CwRenderOptions): RenderResult {
     // level, so a station on the skirt sinks into the noise floor.
     let v = signalGain * gate * Math.sin(twoPiTone * t);
     if (qsb.enabled && qsb.depth > 0) {
-      const f = 1 - qsb.depth * (0.5 - 0.5 * Math.cos((2 * Math.PI * t) / qsb.periodSec));
-      v *= f;
+      v *= qsbFactorAt(qsb, t);
     }
     for (let j = 0; j < twoPiQrm.length; j++) {
       v += qrm.level * Math.sin(twoPiQrm[j] * t);
