@@ -18,7 +18,13 @@ import type { KeyElement } from "./decoder.js";
  * - dot = 1d, dash = 3d
  * - element gap = 1d (mandatory after every element)
  * - character gap = 3d total (auto-inserted when no paddle is held)
- * - word gap = 7d (inserted on an explicit word break)
+ * - **word gap = a longer pause**, not a key: a character that starts 5d or more
+ *   after the previous element begins a new word. Words are separated by silence,
+ *   the way they are on the air.
+ *
+ * Fast paddling is buffered: a press that arrives while an element is still being
+ * sent is queued and played after it, so a quick tap is never dropped just
+ * because the keyer was not ready for it.
  */
 export type Paddle = "dot" | "dash";
 
@@ -35,7 +41,13 @@ export interface KeyerOptions {
   /** Called once an element is complete and its trailing gap length is known. */
   onElement?: (el: KeyElement) => void;
   /** Called when a character ends (after the 3d gap elapses, or on finish). */
-  onCharacter?: (ev: { text: string; symbol: string; unknown: boolean }) => void;
+  onCharacter?: (ev: {
+    text: string;
+    symbol: string;
+    unknown: boolean;
+    /** True when this character starts a new word (a long pause preceded it). */
+    newWord: boolean;
+  }) => void;
 }
 
 export interface IambicKeyerSnapshot {
@@ -56,17 +68,35 @@ type Phase = "idle" | "element" | "gap";
 
 const DEFAULT_WPM = 20;
 
+/**
+ * How many taps may wait behind the element being sent. Far more than a hand can
+ * put in during one element; the cap only stops a stuck key from growing an
+ * unbounded backlog.
+ */
+const MAX_QUEUED_ELEMENTS = 8;
+
 export class IambicKeyer {
   private d: number;
   private mode: IambicMode;
   private readonly onElement?: (el: KeyElement) => void;
-  private readonly onCharacter?: (ev: { text: string; symbol: string; unknown: boolean }) => void;
+  private readonly onCharacter?: (ev: {
+    text: string;
+    symbol: string;
+    unknown: boolean;
+    newWord: boolean;
+  }) => void;
 
   private dotDown = false;
   private dashDown = false;
   /** Element remembered while both paddles were squeezed (iambic memory). */
   private latched: Paddle | null = null;
   private lastPaddle: Paddle | null = null;
+  /**
+   * Taps that arrived while an element was already being sent, in the order they
+   * came. Played after that element, so a fast sequence is "recorded" rather than
+   * half of it dropped.
+   */
+  private readonly queue: Paddle[] = [];
 
   private phase: Phase = "idle";
   /** Time the current phase ends. */
@@ -74,11 +104,15 @@ export class IambicKeyer {
   private elementKind: Paddle | null = null;
   private elementStart = 0;
   private elementEnd = 0;
+  /** End of the most recently finished element, for measuring the word pause. */
+  private lastElementEndAt = 0;
+  /** When the previous character was flushed (3d after its last element). */
+  private lastCharAt = 0;
+  /** Set when the character being built starts a new word. */
+  private newWord = false;
   /** Duration of the element awaiting its trailing gap. */
   private pendingOn = 0;
   private gapIsCharGap = false;
-  private gapIsWordGap = false;
-  private wordPending = false;
 
   private symbol = "";
   private currentWord = "";
@@ -115,13 +149,20 @@ export class IambicKeyer {
   press(paddle: Paddle, now: number): void {
     this.advance(now);
     const other: Paddle = paddle === "dot" ? "dash" : "dot";
-    if (other === "dot" ? this.dotDown : this.dashDown) {
+    const otherDown = other === "dot" ? this.dotDown : this.dashDown;
+    if (otherDown) {
       this.latched = other; // squeezing: remember the other paddle
     }
     if (paddle === "dot") this.dotDown = true;
     else this.dashDown = true;
 
-    if (this.phase === "idle") this.startElement(paddle, now);
+    if (this.phase === "idle") {
+      this.startElement(paddle, now);
+    } else if (!otherDown) {
+      // A tap that lands while an element is still being sent is not a squeeze —
+      // it is the next element, so remember it and play it when the keyer is free.
+      if (this.queue.length < MAX_QUEUED_ELEMENTS) this.queue.push(paddle);
+    }
   }
 
   /** Release a paddle at `now`. */
@@ -136,20 +177,6 @@ export class IambicKeyer {
   releaseAll(now: number): void {
     this.release("dot", now);
     this.release("dash", now);
-  }
-
-  /** Insert a 7d word gap at `now` (the "space" action while sending). */
-  wordBreak(now: number): void {
-    this.advance(now);
-    if (this.phase === "idle") {
-      // The character already closed with a 3d gap; widen it retroactively.
-      this.endWord();
-      const last = this.els[this.els.length - 1];
-      if (last && last.off < 7 * this.d) last.off = 7 * this.d;
-      return;
-    }
-    // Element or gap still in flight: the gap will stretch to 7d before ending.
-    this.wordPending = true;
   }
 
   /** Advance the keyer to `now`, emitting whatever becomes due. */
@@ -172,6 +199,7 @@ export class IambicKeyer {
       // emit it at full length instead of truncating it to whatever elapsed.
       this.pendingOn = this.elementKind === "dot" ? this.d : 3 * this.d;
       this.elementEnd = this.elementStart + this.pendingOn;
+      this.lastElementEndAt = this.elementEnd;
       this.symbol += this.elementKind === "dot" ? "." : "-";
       this.commit(0);
     } else if (this.phase === "gap") {
@@ -179,8 +207,8 @@ export class IambicKeyer {
     }
     this.phase = "idle";
     this.latched = null;
-    this.wordPending = false;
-    this.flushChar();
+    this.queue.length = 0;
+    this.flushChar(t);
     this.endWord();
   }
 
@@ -195,10 +223,12 @@ export class IambicKeyer {
     this.elementKind = null;
     this.elementStart = 0;
     this.elementEnd = 0;
+    this.lastElementEndAt = 0;
+    this.lastCharAt = 0;
+    this.newWord = false;
     this.pendingOn = 0;
     this.gapIsCharGap = false;
-    this.gapIsWordGap = false;
-    this.wordPending = false;
+    this.queue.length = 0;
     this.symbol = "";
     this.currentWord = "";
     this.words.length = 0;
@@ -229,13 +259,24 @@ export class IambicKeyer {
   // --- internals -----------------------------------------------------------
 
   private startElement(kind: Paddle, t: number): void {
+    // A character that starts a long pause after the previous element begins a
+    // new word. 7d is the standard word gap; the character was flushed 3d after
+    // the last element, so the check is 4d after the flush.
+    if (this.symbol === "" && this.lastCharAt > 0 && t - this.lastCharAt >= 4 * this.d) {
+      this.endWord();
+      this.newWord = true;
+      // Keep the element stream honest for the receiver-side decoder: the last
+      // element's trailing gap really was this long.
+      const last = this.els[this.els.length - 1];
+      if (last) last.off = Math.max(last.off, t - this.lastElementEndAt);
+    }
+
     this.phase = "element";
     this.elementKind = kind;
     this.elementStart = t;
     this.phaseEnd = t + (kind === "dot" ? this.d : 3 * this.d);
     this.lastPaddle = kind;
     this.gapIsCharGap = false;
-    this.gapIsWordGap = false;
   }
 
   /** Called when the current phase (element or gap) ends at time `t`. */
@@ -243,10 +284,10 @@ export class IambicKeyer {
     if (this.phase === "element") {
       this.pendingOn = t - this.elementStart;
       this.elementEnd = t;
+      this.lastElementEndAt = t;
       this.symbol += this.elementKind === "dot" ? "." : "-";
       this.phase = "gap";
       this.gapIsCharGap = false;
-      this.gapIsWordGap = false;
       this.phaseEnd = t + this.d; // mandatory 1d element gap
       return;
     }
@@ -258,30 +299,29 @@ export class IambicKeyer {
       return;
     }
 
-    // Nothing held: stretch the gap — first to 3d (character), then to 7d (word).
+    // Nothing held and nothing queued: stretch the gap from 1d to 3d, which is
+    // where the character ends.
     if (!this.gapIsCharGap) {
       this.gapIsCharGap = true;
       this.phaseEnd = t + 2 * this.d;
       return;
     }
-    if (this.wordPending && !this.gapIsWordGap) {
-      this.gapIsWordGap = true;
-      this.phaseEnd = t + 4 * this.d;
-      return;
-    }
-
     this.commit(t - this.elementEnd);
-    this.flushChar();
-    if (this.gapIsWordGap) this.endWord();
-    this.wordPending = false;
+    this.flushChar(t);
     this.phase = "idle";
   }
 
   /**
-   * Pick the next element when a gap ends. Squeeze alternates; a single paddle
-   * repeats; with both released, Mode B sends the latched element once.
+   * Pick the next element when a gap ends.
+   *
+   * Queued taps first (a fast sequence is played in the order it was keyed),
+   * then squeeze alternation, then a held paddle repeating, then — Mode B — the
+   * element latched by a squeeze that has since been released.
    */
   private decideNext(): Paddle | null {
+    const queued = this.queue.shift();
+    if (queued) return queued;
+
     if (this.dotDown && this.dashDown) {
       const next: Paddle = this.lastPaddle === "dot" ? "dash" : "dot";
       this.latched = next === "dot" ? "dash" : "dot";
@@ -305,14 +345,17 @@ export class IambicKeyer {
     this.onElement?.(el);
   }
 
-  private flushChar(): void {
+  private flushChar(at = this.clock): void {
     if (!this.symbol) return;
     const ch = FROM_MORSE.get(this.symbol);
     const text = ch ?? "?";
     this.currentWord += text;
     const symbol = this.symbol;
     this.symbol = "";
-    this.onCharacter?.({ text, symbol, unknown: ch === undefined });
+    this.lastCharAt = at;
+    const newWord = this.newWord;
+    this.newWord = false;
+    this.onCharacter?.({ text, symbol, unknown: ch === undefined, newWord });
   }
 
   private endWord(): void {

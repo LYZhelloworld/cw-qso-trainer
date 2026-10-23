@@ -139,15 +139,30 @@ describe("IambicKeyer squeeze 与点划记忆", () => {
 });
 
 describe("IambicKeyer 单词间隔与往返解码", () => {
-  it("wordBreak 把字符间隔加宽到 7d 并分词", () => {
+  it("长停顿后自动分词：下一个字符算新词，元素间隔反映实际沉默", () => {
     const k = new IambicKeyer({ unit: D });
-    let t = 0;
-    t = sendSymbol(k, ".", t); // E
-    k.wordBreak(t);
-    t = sendSymbol(k, ".", t); // E
+    let t = sendSymbol(k, ".", 0); // E，字符在 3d 后收尾
+    t = sendSymbol(k, ".", t + 4 * D); // 再停 4d（距上一元素 7d）→ 新词
+    k.finish(t);
 
     expect(k.text()).toBe("E E");
+    // 最后一个点的尾巴按真实停顿时长记，接收侧解码器才会在这里断词。
     expect(k.elements()[0]?.off).toBe(7 * D);
+  });
+
+  it("快速连按会排队播放，不会因为元素在途而丢键", () => {
+    const k = new IambicKeyer({ unit: D });
+    k.press("dot", 0);
+    k.release("dot", 10);
+    k.press("dash", 20); // 点的元素还没发完
+    k.release("dash", 30);
+    k.press("dot", 40);
+    k.release("dot", 50);
+    k.advance(2000);
+
+    // .-. => R：三次按键全部按顺序发出，没有被吞掉。
+    expect(k.text()).toBe("R");
+    expect(k.elements().map((e) => e.on)).toEqual([D, 3 * D, D]);
   });
 
   it("敲出的元素流能被既有解码器还原（CQ 往返）", () => {
@@ -163,13 +178,12 @@ describe("IambicKeyer 单词间隔与往返解码", () => {
     expect(k.text()).toBe("CQ");
   });
 
-  it("7d 单词间隔在往返解码中确实产生空格", () => {
+  it("长停顿在往返解码中确实产生空格", () => {
     const k = new IambicKeyer({ unit: D, mode: "B" });
     let t = 0;
     t = sendSymbol(k, "-.-.", t); // C
     t = sendSymbol(k, "--.-", t); // Q
-    k.wordBreak(t);
-    t = sendSymbol(k, ".-.", t); // R
+    t = sendSymbol(k, ".-.", t + 4 * D); // R：停 4d（距上一元素 7d）
     k.finish(t);
 
     expect(decodeKeying(k.elements(), { unit: D }).text).toBe("CQ R");

@@ -929,6 +929,31 @@ export class QsoSession implements SessionContext {
   }
 
   /**
+   * Put every station on this frequency on standby for the operator's over.
+   *
+   * While the operator is on the air, nothing else transmits here: a message
+   * that was already keying is cut, and its station keeps its place in the
+   * rotation (it calls again after a listening gap). This is what makes the
+   * silence after the over real — nobody is left half-way through a CQ, waiting
+   * to be joined in the middle when the receiver opens.
+   */
+  private standByBand(): void {
+    const now = this.clock();
+    for (const entry of this.band.activityState()) {
+      if (!this.canHear(entry.ham)) continue;
+      const call = entry.ham.call;
+      const tx = this.txs.get(call);
+      if (!tx || !txOnAir(tx, now)) continue;
+      this.audio.silenceStation(call);
+      this.txs.delete(call);
+      this.keyingUntil.delete(call);
+      if (entry.state === "cqing") {
+        this.band.scheduleNextCq(call, nextCqGapMs(this.rng));
+      }
+    }
+  }
+
+  /**
    * Put the operator's own message on the air.
    *
    * Half-duplex: from the first dit the receiver is deaf, and it stays deaf for
@@ -939,6 +964,8 @@ export class QsoSession implements SessionContext {
   private async transmit(text: string): Promise<void> {
     const epoch = this.epoch;
     this.audio.stop(); // our key comes down on top of whatever was playing
+    // The band stands by while this message is on the air.
+    this.standByBand();
     // The operator is answering: the partner's patience starts over from
     // scratch once this over has been answered.
     this.clearPartnerWait();
@@ -975,10 +1002,25 @@ export class QsoSession implements SessionContext {
    * sending), in which case the key panel must not swallow the key press.
    */
   beginLiveKeying(): boolean {
-    if (this.sending || !this.receiving) return false;
+    // Already keying, or the rig is off: there is no carrier to open.
+    if (this.transmitting || !this.receiving) return false;
+
+    // **Break-in.** The previous over may still be handing its reply back and
+    // forth (`sending` is held until that cycle ends). The key takes over
+    // anyway — a transmitter can always transmit. That old cycle belongs to a
+    // message already on the air, so it is abandoned (the epoch stops it at its
+    // next wake-up) and the station that was still keying into it is silenced,
+    // so it cannot talk over the new over.
+    if (this.sending) {
+      this.epoch += 1;
+      if (this.ham) this.audio.silenceStation(this.ham.call);
+    }
+
     this.sending = true;
     // Our key comes down on top of whatever was playing.
     this.audio.stop();
+    // The band stands by while this over is on the air.
+    this.standByBand();
     // The operator is answering: the partner's patience starts over.
     this.clearPartnerWait();
     this.transmitting = true;
@@ -1582,6 +1624,13 @@ export class QsoSession implements SessionContext {
       // contact: the CQ is still keyed onto its carrier. The audio layer
       // decides what reaches the speaker (filter, mute, half-duplex) and the
       // band keeps its own rhythm either way.
+      // The operator's carrier is up: the band stands by rather than keying a
+      // CQ that would only be cut a moment later. The station keeps its place
+      // and calls again after a listening gap.
+      if (this.transmitting) {
+        this.band.scheduleNextCq(e.ham.call, nextCqGapMs(this.rng));
+        continue;
+      }
       if (
         !this.receiving ||
         this.transmitting ||

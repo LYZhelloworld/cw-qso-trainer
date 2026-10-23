@@ -38,6 +38,12 @@ export interface KeyPanelOptions {
    * the over.
    */
   onCancel?(): void;
+  /**
+   * Live echo of the over being keyed: the decoded text so far. The page puts
+   * it in the same bar text mode uses, so all three modes show the operator's
+   * message in the same place. An empty string means "nothing is being sent".
+   */
+  onEcho?(text: string): void;
 }
 
 export interface KeyPanelView {
@@ -57,10 +63,6 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
   const { settings, onLeave } = opts;
   const useIambic = settings.keyMode === "iambic";
 
-  // The echo line keeps its height whether or not there is anything to echo:
-  // an empty div collapses, and a page that shrinks by one line pops the
-  // panadapter taller — see `.key-status` in the stylesheet.
-  const keySymbols = el("div", { class: "hint key-status", text: "" });
   const keyArea = el("div", { class: "key-area" });
 
   // Sidetone: the operator's own monitor tone while keying. It follows the key
@@ -117,7 +119,8 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     if (!live) return;
     live = false;
     disarm();
-    keySymbols.textContent = text ? `已发：${text}` : "";
+    // The message has gone to the band: the echo box goes back to empty.
+    opts.onEcho?.("");
     // Even an over that decoded to nothing has to be handed back: the carrier
     // is still up, and only the session can drop it and reopen the receiver.
     opts.onOver(text);
@@ -141,17 +144,14 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       mode: settings.iambicMode,
       onText: (text) => {
         over += text;
-        keySymbols.textContent = text.trim() ? `正在发：${over}` : `已发：${over}`;
-        armIdle();
-      },
-      onSymbols: (s) => {
-        if (s) keySymbols.textContent = `正在发：${over}${s}`;
-        if (s) armIdle();
+        opts.onEcho?.(over);
       },
       onKeying: (on) => {
         driveKeying(on);
-        if (!on) armIdle();
       },
+      // The over ends after the keyer has played everything (including taps it
+      // queued), and then stayed silent for a beat.
+      onIdle: () => armIdle(),
     });
     flush = () => {
       if (!live) return;
@@ -160,13 +160,14 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       const text = over.trim();
       over = "";
       endOver(text);
+      // Start the next over from a clean keyer (no stale words or word gaps).
+      iambic.clear();
     };
 
     keyArea.append(
       el("div", {
-        text: `点键「${settings.dotCode}」/ 划键「${settings.dashCode}」，同时按下为 squeeze；空格分词（焦点在输入框时不生效）`,
+        text: `点键「${settings.dotCode}」/ 划键「${settings.dashCode}」，同时按下为 squeeze；词与词之间停久一点就是空格`,
       }),
-      keySymbols,
       sidetoneHint,
     );
 
@@ -176,19 +177,13 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.repeat || isTextField(e.target)) return;
       const paddle = paddleFor(e.code);
-      if (paddle) {
-        e.preventDefault();
-        if (!beginOver()) return;
-        iambic.press(paddle);
-        keyArea.classList.add("active");
-        armIdle();
-        return;
-      }
-      if (e.code === "Space") {
-        e.preventDefault();
-        iambic.wordBreak();
-        armIdle();
-      }
+      if (!paddle) return;
+      e.preventDefault();
+      if (!beginOver()) return;
+      // A new key cancels any pending "the operator stopped" countdown.
+      disarm();
+      iambic.press(paddle);
+      keyArea.classList.add("active");
     };
     const onKeyUp = (e: KeyboardEvent): void => {
       if (isTextField(e.target)) return;
@@ -197,7 +192,6 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       e.preventDefault();
       iambic.release(paddle);
       keyArea.classList.remove("active");
-      armIdle();
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
@@ -213,18 +207,20 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     return { title: "发报（iambic 双桨，实时）", node: keyArea };
   }
 
-  // Straight key: the keyer decodes a run of elements and flushes it after the
-  // same silence, which is what ends the over.
+  // Straight key: the keyer decodes a run of elements, echoes each character
+  // into the bottom bar as it completes, and flushes the over after the same
+  // silence.
   const keyer = new StraightKeyer(
     (text) => endOver(text),
     OVER_IDLE_MS,
     driveKeying,
+    1200 / settings.wpm,
   );
+  keyer.onChar = (text) => opts.onEcho?.(text);
   flush = () => keyer.finish();
 
   keyArea.append(
     el("div", { text: `按住「${settings.keyCode}」实时发报（焦点在输入框时不生效）` }),
-    keySymbols,
     sidetoneHint,
   );
 
@@ -234,14 +230,12 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     if (!beginOver()) return;
     keyer.keyDown();
     keyArea.classList.add("active");
-    keySymbols.textContent = keyer.currentSymbols();
   };
   const onKeyUp = (e: KeyboardEvent): void => {
     if (e.code !== settings.keyCode || isTextField(e.target)) return;
     e.preventDefault();
     keyer.keyUp();
     keyArea.classList.remove("active");
-    keySymbols.textContent = keyer.currentSymbols();
   };
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);

@@ -1,6 +1,7 @@
 import {
   MorseDecoder,
   classifyElement,
+  decodeKeying,
   estimateUnit,
   type KeyElement,
 } from "../cw/decoder.js";
@@ -22,12 +23,24 @@ export class StraightKeyer {
   private lastUpAt: number | null = null;
   private els: KeyElement[] = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** Character-boundary timer: decodes the over so far for the live echo. */
+  private charTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Text already handed to `onChar` (so only growth is reported). */
+  private emitted = "";
+
+  /**
+   * Live echo of the decoded over, updated as each character boundary passes.
+   * The text is the whole over so far, not a delta.
+   */
+  onChar?: (text: string) => void;
 
   constructor(
     private readonly onDecode: (text: string) => void,
     private readonly idleMs: number = DEFAULT_IDLE_MS,
     /** Tone on/off, for the sidetone. Fires only on an actual change. */
     private readonly onKeying?: (on: boolean) => void,
+    /** Dot unit in ms — how long a character gap is, for the live echo. */
+    private readonly unit: number = 60,
   ) {}
 
   get isDown(): boolean {
@@ -41,6 +54,7 @@ export class StraightKeyer {
   keyDown(now: number = Date.now()): void {
     if (this.downAt !== null) return; // ignore keyboard auto-repeat
     this.cancelTimer();
+    this.cancelCharTimer();
     // Close the gap on the previous element now that we know its length.
     if (this.lastUpAt !== null && this.els.length > 0) {
       this.els[this.els.length - 1].off = now - this.lastUpAt;
@@ -57,13 +71,21 @@ export class StraightKeyer {
     this.els.push({ on, off: 0 });
     this.onKeying?.(false);
     this.timer = setTimeout(() => this.finish(), this.idleMs);
+    // A character ends after 3d of silence. Decode what is there so the echo
+    // in the send bar fills in as the operator keys, not only at the end.
+    this.charTimer = setTimeout(() => {
+      this.charTimer = null;
+      this.flushChars(Date.now());
+    }, 3 * this.unit);
   }
 
   /** Decode what has been keyed so far and hand the text to the callback. */
   finish(): void {
     this.cancelTimer();
+    this.cancelCharTimer();
     this.stopTone();
     if (this.els.length === 0) return;
+    this.flushChars(Date.now());
     // A fresh decoder per utterance: MorseDecoder accumulates elements and is
     // never cleared, so reusing one would replay earlier characters.
     const decoder = new MorseDecoder();
@@ -71,15 +93,37 @@ export class StraightKeyer {
     const result = decoder.finish();
     this.els = [];
     this.lastUpAt = null;
+    this.emitted = "";
     if (result.text) this.onDecode(result.text);
   }
 
   clear(): void {
     this.cancelTimer();
+    this.cancelCharTimer();
     this.stopTone();
     this.els = [];
     this.downAt = null;
     this.lastUpAt = null;
+    this.emitted = "";
+  }
+
+  /**
+   * Decode the over so far and report it if it grew by a prefix of itself.
+   *
+   * The last element's gap is closed at `at` (the boundary time) rather than
+   * left at 0, or the decoder would see the character as still open.
+   */
+  private flushChars(at: number): void {
+    if (this.els.length === 0) return;
+    const copy = this.els.map((e) => ({ on: e.on, off: e.off }));
+    if (this.lastUpAt !== null) {
+      copy[copy.length - 1].off = Math.max(0, at - this.lastUpAt);
+    }
+    const text = decodeKeying(copy).text;
+    if (text.length > this.emitted.length && text.startsWith(this.emitted)) {
+      this.emitted = text;
+      this.onChar?.(text);
+    }
   }
 
   /** Dot/dash echo shown while keying, so the user sees what they sent. */
@@ -101,17 +145,26 @@ export class StraightKeyer {
       this.timer = null;
     }
   }
+
+  private cancelCharTimer(): void {
+    if (this.charTimer !== null) {
+      clearTimeout(this.charTimer);
+      this.charTimer = null;
+    }
+  }
 }
 
 export interface IambicInputOptions {
   wpm: number;
   mode: IambicMode;
-  /** Called with each finished character, and with " " on a word break. */
+  /** Called with each finished character, and with " " before a new word. */
   onText: (text: string) => void;
   /** Echo of the dot-dash symbols of the character being sent. */
   onSymbols?: (symbols: string) => void;
   /** Tone on/off, for the sidetone. Fires only when the element phase changes. */
   onKeying?: (on: boolean) => void;
+  /** Called when the keyer has nothing left to send (no element, no queue). */
+  onIdle?: () => void;
   /** Injectable clock (tests) — defaults to `Date.now`. */
   now?: () => number;
   /**
@@ -135,8 +188,8 @@ export class IambicKeyerInput {
   private readonly onText: (text: string) => void;
   private readonly onSymbols?: (symbols: string) => void;
   private readonly onKeying?: (on: boolean) => void;
+  private readonly onIdle?: () => void;
   private stopTicking: (() => void) | null = null;
-  private pendingSpace = false;
   private keyingOn = false;
 
   constructor(opts: IambicInputOptions) {
@@ -150,14 +203,14 @@ export class IambicKeyerInput {
     this.onText = opts.onText;
     this.onSymbols = opts.onSymbols;
     this.onKeying = opts.onKeying;
+    this.onIdle = opts.onIdle;
     this.keyer = new IambicKeyer({
       wpm: opts.wpm,
       mode: opts.mode,
       onCharacter: (ev) => {
-        if (this.pendingSpace) {
-          this.pendingSpace = false;
-          this.onText(" ");
-        }
+        // A word is separated by silence, not by a key: the keyer reports when a
+        // character starts a new word, and the text gets its space here.
+        if (ev.newWord) this.onText(" ");
         this.onText(ev.text);
         this.onSymbols?.("");
       },
@@ -179,19 +232,16 @@ export class IambicKeyerInput {
     this.syncKeying();
   }
 
-  /** Insert a 7d word gap (bound to the space key in the UI). */
-  wordBreak(): void {
-    this.keyer.wordBreak(this.now());
-    this.pendingSpace = true;
-  }
-
   /** Advance the keyer manually; also called by the driver. */
   tick(): void {
     this.keyer.advance(this.now());
     const snap = this.keyer.snapshot();
     this.onSymbols?.(snap.pendingSymbol);
     this.syncKeying();
-    if (!snap.busy) this.stop();
+    if (snap.busy) return;
+    // Everything keyed (including anything that was queued) has gone out.
+    this.stop();
+    this.onIdle?.();
   }
 
   finish(): void {
@@ -204,9 +254,13 @@ export class IambicKeyerInput {
   clear(): void {
     this.stop();
     this.keyer.reset();
-    this.pendingSpace = false;
     this.onSymbols?.("");
     this.syncKeying();
+  }
+
+  /** True while an element, its gap, or a queued tap is still being sent. */
+  isBusy(): boolean {
+    return this.keyer.snapshot().busy;
   }
 
   setSpeed(wpm: number): void {

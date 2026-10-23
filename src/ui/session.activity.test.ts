@@ -72,6 +72,30 @@ describe("HAM 自主发 CQ", () => {
     expect(h.session.state).toBe("PEER_CQ");
   });
 
+  it("用户发报时本频段的台全部待机，发完才恢复呼叫", async () => {
+    const h = makeSession();
+    h.session.seedHams(1); // rng=0 -> 首呼延迟 5 s
+    tuneOntoFirstHam(h.session);
+    h.session.start();
+
+    const calls = (): number => h.session.lines.filter((l) => l.who === "ham").length;
+
+    await h.tickTo(5_000);
+    expect(calls()).toBe(1);
+
+    // 按下电键：正在发的台被掐断，而且在用户发完之前不再有 CQ 上机。
+    expect(h.session.beginLiveKeying()).toBe(true);
+    h.session.liveKeyDown();
+    await h.tickTo(20_000); // 15 秒，远超过下一次 CQ 的间隔
+    h.session.liveKeyUp();
+    expect(calls()).toBe(1);
+
+    // 收工后恢复：台按自己的节奏重新呼叫。
+    h.session.cancelLiveKeying();
+    await h.tickTo(40_000);
+    expect(calls()).toBeGreaterThan(1);
+  });
+
   it("无人应答时反复重呼，且不重置已建立的状态", async () => {
     const h = makeSession();
     h.session.seedHams(1);

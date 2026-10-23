@@ -227,7 +227,7 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
             iambicField,
             el("div", {
               class: "hint",
-              text: "同时按下点键与划键为 squeeze（点划交替），空格键插入单词间隔。",
+              text: "同时按下点键与划键为 squeeze（点划交替）；词与词之间停久一点（约 7 个点长）就是空格。",
             }),
           ]
         : s.keyMode === "straight"

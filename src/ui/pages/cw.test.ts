@@ -67,10 +67,12 @@ afterEach(() => {
 });
 
 describe("三种发报模式", () => {
-  it("默认直键模式只有电键面板，没有文本框", () => {
+  it("默认直键模式有电键面板，底部是只读回显框，没有发送按钮", () => {
     const { root } = makeHarness();
     expect(root.textContent).toContain("发报（直键，实时）");
-    expect(root.querySelector<HTMLInputElement>(".send-input")).toBeNull();
+    const input = root.querySelector<HTMLInputElement>(".send-input");
+    expect(input).not.toBeNull();
+    expect(input!.readOnly).toBe(true);
     // 也没有「发送」按钮：直键模式不需要再按一次。
     expect(
       Array.from(root.querySelectorAll("button")).map((b) => b.textContent),
@@ -85,10 +87,12 @@ describe("三种发报模式", () => {
     expect(root.textContent).not.toContain("发报（iambic");
   });
 
-  it("iambic 模式只显示双桨面板", () => {
+  it("iambic 模式显示双桨面板和只读回显框", () => {
     const { root } = makeHarness({ keyMode: "iambic" });
     expect(root.textContent).toContain("发报（iambic 双桨，实时）");
-    expect(root.querySelector<HTMLInputElement>(".send-input")).toBeNull();
+    const input = root.querySelector<HTMLInputElement>(".send-input");
+    expect(input).not.toBeNull();
+    expect(input!.readOnly).toBe(true);
   });
 });
 
@@ -296,19 +300,20 @@ describe("CW 页 iambic 双桨输入", () => {
     });
   });
 
-  it("空格键插入单词间隔，后续字符被分开", async () => {
+  it("停久一点自动分词，不需要按空格", async () => {
     const { root, session } = makeHarness(IAMBIC);
 
     press("KeyZ");
     await sleep(70);
     release("KeyZ");
-    // 等第一个字符真的解出来，再分词；否则两个点会被并成一个 I。
-    await vi.waitFor(() => expect(root.textContent).toContain("正在发：E"), {
-      timeout: 2000,
-      interval: 20,
-    });
+    // 等第一个字符真的解出来，再停；否则两个点会被并成一个 I。
+    await vi.waitFor(
+      () => expect(root.querySelector<HTMLInputElement>(".send-input")!.value).toBe("E"),
+      { timeout: 2000, interval: 20 },
+    );
 
-    press("Space"); // 分词
+    // 距上一个元素 7d 以上（20 WPM 下 420 ms，这里停 500 ms）。
+    await sleep(500);
     press("KeyZ");
     await sleep(70);
     release("KeyZ");
@@ -347,6 +352,24 @@ describe("CW 页 iambic 双桨输入", () => {
       timeout: 3000,
       interval: 20,
     });
+  });
+
+  it("直键敲出的字符先出现在只读框里，发出后清空", async () => {
+    const { root, session } = makeHarness({ keyMode: "straight", keyCode: "KeyC", wpm: 20 });
+    const input = root.querySelector<HTMLInputElement>(".send-input")!;
+
+    press("KeyC");
+    await sleep(70); // 一个点
+    release("KeyC");
+
+    // 点之后过一个字符间隔（3d = 180 ms），框里应该已经解出 E。
+    await vi.waitFor(() => expect(input.value).toBe("E"), { timeout: 2000, interval: 20 });
+    // 停手 1.5 秒自动发出：报文上机，框清空。
+    await vi.waitFor(() => expect(sent(session)).toContain("E"), {
+      timeout: 3000,
+      interval: 20,
+    });
+    expect(input.value).toBe("");
   });
 
   it("直键模式下 iambic 键位不生效", async () => {

@@ -428,10 +428,11 @@ describe("发送框（文本框模式）", () => {
     expect(root.querySelector(".send-bar textarea")).toBeNull();
   });
 
-  it("电键模式与别的页面都不留空条", () => {
+  it("文本框模式与电键模式都留发送条，别的页面不留空条", () => {
     const { app, root } = mountApp();
     app.setPower(true);
-    expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(true);
+    // 默认直键：底部是只读回显框，和文本框模式占同一条位置。
+    expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(false);
 
     app.updateSettings({ keyMode: "text" });
     expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(false);

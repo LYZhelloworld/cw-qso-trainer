@@ -8,9 +8,10 @@ import { renderKeyPanel } from "./keyPanel.js";
  *
  *  - **text**: type the message, press Enter, the rig keys it out at the
  *    operator's speed (the message goes out all at once);
- *  - **straight** / **iambic**: key the over live. There is no send box and no
- *    "send" step: the rig is on the air from the first element, and the over is
- *    handed to the band when the operator stops keying.
+ *  - **straight** / **iambic**: key the over live. The same bar is there, but as
+ *    a read-only echo: there is nothing to type and no "send" step — the rig is
+ *    on the air from the first element, and the over is handed to the band when
+ *    the operator stops keying.
  *
  * Which one appears is a setting (`keyMode`), not a control on this page.
  * There is deliberately no transcript, no station named, no status readout and
@@ -163,7 +164,36 @@ function renderSendBar(
   bar.append(input, sendBtn);
 }
 
-/** Straight key / paddles: key the over live, no send box. */
+/**
+ * Key modes: the same bar, same place, but not an editor.
+ *
+ * There is nothing to type and nothing to send by hand — the key is the input
+ * and the over goes out when the operator stops — so the box is read-only and
+ * has no button. It is here so the operator's message is in one predictable
+ * place in all three modes.
+ */
+function renderEchoBar(bar: HTMLElement): { set(text: string): void } {
+  const input = el("input", {
+    class: "send-input",
+    attrs: {
+      type: "text",
+      readonly: "",
+      tabindex: "-1",
+      placeholder: "敲键发报，停手后自动发出",
+      "aria-label": "正在发出的报文",
+      autocomplete: "off",
+      spellcheck: "false",
+    },
+  });
+  bar.append(input);
+  return {
+    set(text: string): void {
+      if (input.value !== text) input.value = text;
+    },
+  };
+}
+
+/** Straight key / paddles: key the over live, no send box — only its echo. */
 function renderLiveKeyPanel(
   host: AppHost,
   root: HTMLElement,
@@ -172,16 +202,26 @@ function renderLiveKeyPanel(
 ): void {
   const session = host.session;
 
+  // The same bar text mode uses, in the same place, but read-only: the operator
+  // is not typing the message, the key is. It fills in as characters decode and
+  // empties once the over has gone to the band.
+  const echo = renderEchoBar(host.sendBar ?? root);
+
   const keyPanel = renderKeyPanel({
     settings: host.settings,
     onLeave: (fn) => host.onLeave(fn),
     onBegin: () => session.beginLiveKeying(),
     onKeying: (on) => (on ? session.liveKeyDown() : session.liveKeyUp()),
+    onEcho: (text) => echo.set(text),
     onOver: (text) => {
       void (async () => {
         await session.finishLiveKeying(text);
         await flushLog();
-        host.refresh();
+        // A new over may have started while this one's reply was still being
+        // played (break-in). Rebuilding the page now would tear down the key
+        // panel the operator is using, so leave it alone: the new over's own
+        // `onOver` will refresh when it finishes.
+        if (!session.isSending) host.refresh();
       })();
     },
     // Leaving the page (or rebuilding it) with an over still open: the carrier

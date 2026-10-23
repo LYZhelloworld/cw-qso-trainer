@@ -12,7 +12,24 @@ import { mulberry32 } from "../ham/spectrum.js";
  * key-down, the S-meter follows the key, and the decoded over is handed to the
  * band once the operator stops keying.
  */
-function makeSession() {
+/** Holds `pace` open so a test can look at a reply while it is being played. */
+class Gate {
+  private open = true;
+  private pending: Array<() => void> = [];
+
+  wait = (): Promise<void> =>
+    this.open ? Promise.resolve() : new Promise<void>((resolve) => this.pending.push(resolve));
+
+  hold(): void {
+    this.open = false;
+  }
+  release(): void {
+    this.open = true;
+    for (const resolve of this.pending.splice(0)) resolve();
+  }
+}
+
+function makeSession(pace: (ms: number) => Promise<void> = async () => {}) {
   let t = 0;
   const band = new SpyBand();
   const settings = normalizeSettings({ freqMHz: 14.05, myCall: "BG7XXX", wpm: 20 });
@@ -22,7 +39,7 @@ function makeSession() {
     referenceHz: 14_050_000,
     startTicking: () => () => {},
     delay: async () => {},
-    pace: async () => {},
+    pace,
     synth: band,
   });
   session.setReceiving(true);
@@ -162,5 +179,40 @@ describe("实时键控（直键 / 双桨）", () => {
     expect(session.isReceiving).toBe(true);
     expect(band.transmitting.at(-1)).toBe(false);
     expect(session.beginLiveKeying()).toBe(true);
+  });
+
+  it("对方回复还没播完就按键：打断它、开始新的一轮，而不是被锁住", async () => {
+    const gate = new Gate();
+    const { session, band } = makeSession(() => gate.wait());
+
+    // 先把会话放进一个"对方刚报完、正在等我们"的通联里。
+    session.seedHams(1);
+    const peer = session.listHams()[0];
+    (peer as unknown as { freqHz: number }).freqHz = session.dialHz;
+    session.ham = peer;
+    session.machine = new QsoMachine({ myCall: "BG7XXX", ham: peer, db: dxccDatabase });
+    session.machine.hamCq();
+
+    // 发一帧。回复会在 pace 上卡住（gate），这时 sending 仍然为真。
+    session.beginLiveKeying();
+    const over = session.finishLiveKeying(`R UR RST 599 BK`);
+    gate.hold();
+    await Promise.resolve(); // 让 dispatch 走到播放回复那一步
+    expect(session.isSending).toBe(true);
+    expect(session.isTransmitting).toBe(false);
+
+    // 再按键：必须能上机，而不是返回 false。
+    expect(session.beginLiveKeying()).toBe(true);
+    expect(session.isTransmitting).toBe(true);
+    // 对方那一路载波被掐断，不能盖在新的一帧上。
+    expect(band.silenced).toContain(peer.call);
+
+    // 旧的那一帧醒来后发现已经过时，不应把新的状态清掉。
+    gate.release();
+    await over;
+    expect(session.isTransmitting).toBe(true);
+    expect(session.isSending).toBe(true);
+
+    session.cancelLiveKeying();
   });
 });
