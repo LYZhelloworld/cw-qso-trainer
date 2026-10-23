@@ -158,6 +158,27 @@ describe("通联面板", () => {
     expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
   });
 
+  it("输入自动转成大写：草稿、日志、解析看到的是同一种拼法", () => {
+    const { root, session } = makeHarness({ keyMode: "text" });
+    const input = root.querySelector("textarea")!;
+    input.value = "bg7xxx de bd4vqk k";
+    input.dispatchEvent(new Event("input"));
+
+    expect(input.value).toBe("BG7XXX DE BD4VQK K");
+    expect(session.draft).toBe("BG7XXX DE BD4VQK K");
+  });
+
+  it("转大写不把光标甩到末尾", () => {
+    const { root } = makeHarness({ keyMode: "text" });
+    const input = root.querySelector("textarea")!;
+    input.value = "rah";
+    input.setSelectionRange(1, 1); // 光标在 r 后面
+    input.dispatchEvent(new Event("input"));
+
+    expect(input.value).toBe("RAH");
+    expect(input.selectionStart).toBe(1);
+  });
+
   it("Enter 直接发送，不必按 Ctrl", async () => {
     const instant = { delay: async () => {}, pace: async () => {} };
     const { root, session } = makeHarness({ keyMode: "text" }, instant);

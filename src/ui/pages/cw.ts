@@ -54,10 +54,45 @@ function renderTextPanel(
   const session = host.session;
 
   const input = el("textarea", {
-    attrs: { placeholder: "把你抄到的内容发出去，例如 R UR RST 599 BK" },
+    attrs: {
+      placeholder: "把你抄到的内容发出去，例如 R UR RST 599 BK",
+      // Morse has no lowercase, and neither does the log: let the on-screen
+      // keyboard open in caps where that hint is honoured.
+      autocapitalize: "characters",
+      autocomplete: "off",
+      spellcheck: "false",
+    },
   });
   input.value = session.draft;
+
+  // Caps, not just the *look* of caps: `text-transform: uppercase` would leave
+  // the value lowercase, so the draft, the log and the parser would all see
+  // lower-case callsigns. Converting the value keeps one spelling everywhere.
+  //
+  // Translating in an `input` handler means writing to the box while the
+  // browser is mid-edit, so the caret is put back where it was (1:1 for ASCII)
+  // and IME composition is left alone until it commits — rewriting the value
+  // mid-composition cancels the candidate list.
+  let composing = false;
+  const uppercase = (): void => {
+    const before = input.value;
+    const next = before.toUpperCase();
+    if (next === before) return;
+    const caret = input.selectionStart ?? before.length;
+    input.value = next;
+    const at = next.length === before.length ? caret : next.length;
+    input.setSelectionRange(at, at);
+  };
+  input.addEventListener("compositionstart", () => {
+    composing = true;
+  });
+  input.addEventListener("compositionend", () => {
+    composing = false;
+    uppercase();
+    session.setDraft(input.value);
+  });
   input.addEventListener("input", () => {
+    if (!composing) uppercase();
     session.setDraft(input.value);
   });
 
@@ -115,7 +150,7 @@ function renderTextPanel(
       el("div", { class: "row" }, [sendBtn]),
       el("div", {
         class: "hint",
-        text: "Enter 发送，发完光标仍在框内。发送时接收中断；发完稍等片刻恢复收听。",
+        text: "Enter 发送，输入自动转大写，发完光标仍在框内。发送时接收中断；发完稍等片刻恢复收听。",
       }),
     ),
   );
