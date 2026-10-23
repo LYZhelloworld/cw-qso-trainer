@@ -242,6 +242,25 @@ describe("CW 页 iambic 双桨输入", () => {
     expect(root.textContent).toContain("发报（iambic 双桨，实时）");
   });
 
+  it("发报途中页面被重绘（离开 / 换页）：载波落下，不会卡在发射状态", async () => {
+    const { host, session } = makeHarness(IAMBIC);
+
+    press("KeyZ");
+    await vi.waitFor(() => expect(session.isTransmitting).toBe(true), { interval: 10 });
+    expect(session.isSending).toBe(true);
+
+    // 重绘会拆掉电键面板：没有面板来发 key-up 了，载波必须由这里放下。
+    host.refresh();
+
+    expect(session.isTransmitting).toBe(false);
+    expect(session.isSending).toBe(false);
+    // 不会把下一次发报挡在门外。
+    expect(session.beginLiveKeying()).toBe(true);
+    session.cancelLiveKeying();
+
+    release("KeyZ");
+  });
+
   it("敲一个点键，停手后自动结束发射，报文上机", async () => {
     const { session } = makeHarness(IAMBIC);
 

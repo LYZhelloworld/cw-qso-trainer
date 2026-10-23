@@ -184,6 +184,9 @@ function renderLiveKeyPanel(
         host.refresh();
       })();
     },
+    // Leaving the page (or rebuilding it) with an over still open: the carrier
+    // must come down even though this panel will not be here to end it.
+    onCancel: () => session.cancelLiveKeying(),
   });
 
   if (warnings.length) root.append(panel("提示", ...warnings));

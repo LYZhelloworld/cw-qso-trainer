@@ -236,3 +236,32 @@ describe("随时发报", () => {
     expect(session.state).not.toBe("IDLE");
   });
 });
+
+describe("发报途中换波段", () => {
+  it("reset 放下载波、恢复半双工、清掉发送锁，旧的一条不会在新波段上继续", async () => {
+    const band = new SpyBand();
+    const { session, gate } = makeSession(band);
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6);
+
+    gate.hold();
+    const sending = session.userSend("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    expect(session.isTransmitting).toBe(true);
+    expect(session.isSending).toBe(true);
+
+    session.reset(); // App 在换波段时调的就是这个
+
+    // 接收机重新打开，而不是停在"发射中"的静音里
+    expect(session.isTransmitting).toBe(false);
+    expect(session.isReceiving).toBe(true);
+    // 发送锁也清了：不然后来这一波段再也发不出报文
+    expect(session.isSending).toBe(false);
+    expect(band.transmitting.at(-1)).toBe(false);
+
+    // 旧的那一条走完时，不能再把新状态改回去
+    gate.release();
+    await sending;
+    expect(session.isTransmitting).toBe(false);
+    expect(session.isSending).toBe(false);
+  });
+});

@@ -31,6 +31,13 @@ export interface KeyPanelOptions {
   onKeying(on: boolean): void;
   /** One finished over: the text that was keyed, ready to go to the band. */
   onOver(text: string): void;
+  /**
+   * The panel is going away while an over is still open (the operator left the
+   * page mid-key, or the page is being rebuilt). The carrier has to be dropped
+   * by whoever owns the session — this panel is not going to be around to end
+   * the over.
+   */
+  onCancel?(): void;
 }
 
 export interface KeyPanelView {
@@ -115,6 +122,16 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     // is still up, and only the session can drop it and reopen the receiver.
     opts.onOver(text);
   };
+  /**
+   * The panel is being torn down with an over still open: nobody is left to
+   * send the key-up, so the carrier has to be dropped from here.
+   */
+  const abandon = (): void => {
+    if (!live) return;
+    live = false;
+    disarm();
+    opts.onCancel?.();
+  };
 
   if (useIambic) {
     // Characters arrive one by one; the over ends on the operator's silence.
@@ -190,6 +207,8 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       disarm();
       iambic.clear();
       sidetone.dispose();
+      // After the keyer is silenced: an open over still needs its carrier down.
+      abandon();
     });
     return { title: "发报（iambic 双桨，实时）", node: keyArea };
   }
@@ -232,6 +251,8 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     disarm();
     keyer.clear();
     sidetone.dispose();
+    // After the keyer is silenced: an open over still needs its carrier down.
+    abandon();
   });
   return { title: "发报（直键，实时）", node: keyArea };
 }

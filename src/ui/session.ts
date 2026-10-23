@@ -287,6 +287,17 @@ export class QsoSession implements SessionContext {
   /** True while a transmission is in flight; guards against interleaved sends. */
   private sending = false;
   /**
+   * Bumped whenever this session is reset or disposed.
+   *
+   * An over is asynchronous (it waits out its keying, then a reply, then
+   * another), so a band switch in the middle of one leaves work in flight that
+   * belongs to a world that no longer exists. Each over remembers the epoch it
+   * started in; anything that comes back after the epoch moved hangs up instead
+   * of dropping a carrier on the new one, or clearing a flag that a newer over
+   * now owns.
+   */
+  private epoch = 0;
+  /**
    * True from the moment the operator's carrier goes on the air until the
    * receiver opens again: a station cannot transmit and listen at once
    * (half-duplex). While it is set, nothing is received, the spectrum shows
@@ -383,6 +394,8 @@ export class QsoSession implements SessionContext {
 
   /** Stop the scheduler. Call before dropping a session (e.g. on band change). */
   dispose(): void {
+    // Nothing an in-flight over is waiting on may touch this session again.
+    this.epoch += 1;
     if (this.stopTicking) {
       this.stopTicking();
       this.stopTicking = null;
@@ -903,6 +916,19 @@ export class QsoSession implements SessionContext {
   // --- operator actions ----------------------------------------------------
 
   /**
+   * Drop the operator's carrier and reopen the receiver.
+   *
+   * Idempotent, and the only place that lowers `transmitting`: the audio layer's
+   * half-duplex gate belongs to the same fact, so the two can never disagree
+   * about whether the receiver is open.
+   */
+  private stopTransmitting(): void {
+    this.transmitting = false;
+    this.txTiming = null;
+    this.audio.setTransmitting(false);
+  }
+
+  /**
    * Put the operator's own message on the air.
    *
    * Half-duplex: from the first dit the receiver is deaf, and it stays deaf for
@@ -911,6 +937,7 @@ export class QsoSession implements SessionContext {
    * `spectrum`). The S-meter follows the key while it lasts.
    */
   private async transmit(text: string): Promise<void> {
+    const epoch = this.epoch;
     this.audio.stop(); // our key comes down on top of whatever was playing
     // The operator is answering: the partner's patience starts over from
     // scratch once this over has been answered.
@@ -927,9 +954,10 @@ export class QsoSession implements SessionContext {
       await this.audio.playMine(tx, this.txStartedAt);
     } finally {
       await this.wait(TX_TAIL_MS);
-      this.transmitting = false;
-      this.audio.setTransmitting(false);
-      this.txTiming = null;
+      // The band may have been switched away from under this over: `reset()`
+      // already lowered the carrier, and a newer over may own it by now. The
+      // epoch says whether this one still has the right to touch it.
+      if (epoch === this.epoch) this.stopTransmitting();
     }
   }
 
@@ -1008,15 +1036,16 @@ export class QsoSession implements SessionContext {
   async finishLiveKeying(text: string): Promise<void> {
     if (this.liveDownAt !== null) this.liveKeyUp();
     if (!this.sending) return;
+    const epoch = this.epoch;
     const line = text.trim().toUpperCase();
     this.liveDownAt = null;
     this.liveUpAt = null;
 
     try {
       if (line) this.push("me", line);
-      this.transmitting = false;
-      this.audio.setTransmitting(false);
-      this.txTiming = null;
+      // No tail: the key panel has already waited out the silence that ends an
+      // over, and that silence *is* the turn-around.
+      this.stopTransmitting();
 
       if (!line) return;
       if (/\bCQ\b/.test(line)) {
@@ -1024,12 +1053,34 @@ export class QsoSession implements SessionContext {
         this.beginPileup();
         return;
       }
-      await this.dispatchSent(line);
+      await this.dispatchSent(line, epoch);
     } finally {
-      this.sending = false;
-      // The receiver opens again: whatever is on the air now starts playing.
-      this.rejoinOnAir();
+      // Reset under us (band switch): `reset()` already cleared `sending`, and a
+      // newer over may own it now.
+      if (epoch === this.epoch) {
+        this.sending = false;
+        // The receiver opens again: whatever is on the air now starts playing.
+        this.rejoinOnAir();
+      }
     }
+  }
+
+  /**
+   * Abandon an over that is still open because the panel that owned it is gone
+   * (the operator left the page mid-key).
+   *
+   * The half-keyed text is not sent — the operator never finished it — but the
+   * carrier has to come down and the receiver has to open, or the rig stays
+   * stuck in TX for a panel that no longer exists.
+   */
+  cancelLiveKeying(): void {
+    if (!this.sending && !this.transmitting) return;
+    this.epoch += 1;
+    this.audio.stop();
+    this.stopTransmitting();
+    this.sending = false;
+    this.liveDownAt = null;
+    this.liveUpAt = null;
   }
 
   /**
@@ -1111,21 +1162,29 @@ export class QsoSession implements SessionContext {
     if (!this.receiving) return; // cannot transmit with the rig off
 
     this.sending = true;
+    const epoch = this.epoch;
     try {
       // A CQ is not addressed to anybody — it invites the band to answer, and
       // it is a fresh call whatever was going on before.
       if (/\bCQ\b/.test(line)) {
         if (this.machine) this.endExchange();
         await this.transmit(line);
+        if (epoch !== this.epoch) return;
         this.beginPileup();
         return;
       }
       await this.transmit(line);
-      await this.dispatchSent(line);
+      if (epoch !== this.epoch) return;
+      await this.dispatchSent(line, epoch);
     } finally {
-      this.sending = false;
-      // The receiver opens again: whatever is on the air now starts playing.
-      this.rejoinOnAir();
+      // A band switch reset this session while the over was in flight: `reset()`
+      // already dropped the carrier and cleared `sending`, and a newer over may
+      // own that flag now. Only the epoch that started this send may clear it.
+      if (epoch === this.epoch) {
+        this.sending = false;
+        // The receiver opens again: whatever is on the air now starts playing.
+        this.rejoinOnAir();
+      }
     }
   }
 
@@ -1135,8 +1194,13 @@ export class QsoSession implements SessionContext {
    * Split out of `userSend` because the two key modes key the message live and
    * only get here once the over has ended. The line is on the air either way,
    * and the band's reaction must not depend on how it was keyed.
+   *
+   * `epoch` is the session generation this over belongs to. Resetting the
+   * session (a band switch, say) bumps it; anything that wakes up after a wait
+   * and finds a different one has been overtaken and must not play a reply into
+   * a band the operator has already left.
    */
-  private async dispatchSent(line: string): Promise<void> {
+  private async dispatchSent(line: string, epoch: number): Promise<void> {
     // A pile-up: the line's job is to name one of the stations answering.
     // But naming somebody who is *not* in the pile-up means the operator has
     // moved on — it is an answer to whatever else is on the frequency, not a
@@ -1146,7 +1210,7 @@ export class QsoSession implements SessionContext {
     let namedElsewhere = false;
     if (this.pileup.active) {
       if (this.pileup.match(line) || !namesACall(line)) {
-        await this.answerPileup(line);
+        await this.answerPileup(line, epoch);
         return;
       }
       this.pileup.clear();
@@ -1166,9 +1230,11 @@ export class QsoSession implements SessionContext {
       const agn = machine.hamMissed();
       if (agn) {
         await this.wait(replyDelayMs(this.rng));
+        if (epoch !== this.epoch) return;
         this.push("ham", agn);
         const tx = this.notePlaying(this.ham, agn);
         if (tx) await this.audio.playTx(tx, this.ham, this.now());
+        if (epoch !== this.epoch) return;
         // The partner has asked for a repeat and is waiting for one.
         this.armPartnerWait();
         return;
@@ -1179,9 +1245,11 @@ export class QsoSession implements SessionContext {
     for (const reply of replies) {
       // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
       await this.wait(replyDelayMs(this.rng));
+      if (epoch !== this.epoch) return;
       this.push("ham", reply);
       const tx = this.notePlaying(this.ham, reply);
       if (tx) await this.audio.playTx(tx, this.ham, this.now());
+      if (epoch !== this.epoch) return;
     }
 
     // The station has said its piece and is listening for the operator's next
@@ -1277,7 +1345,7 @@ export class QsoSession implements SessionContext {
    * silent and tries again later (see `PileupDriver.drive`). This is
    * deliberately unforgiving — naming the station is the skill it teaches.
    */
-  private async answerPileup(line: string): Promise<void> {
+  private async answerPileup(line: string, epoch: number): Promise<void> {
     const chosen = this.pileup.match(line);
     if (!chosen) {
       this.pileup.reschedule();
@@ -1293,10 +1361,12 @@ export class QsoSession implements SessionContext {
     // yet), so put it in the state it would have been in.
     machine.beginUserCq();
     await this.wait(replyDelayMs(this.rng));
+    if (epoch !== this.epoch) return;
     const reply = machine.hamAcceptedSelection();
     this.push("ham", reply);
     const tx = this.notePlaying(this.ham ?? chosen.ham, reply);
     if (tx) await this.audio.playTx(tx, this.ham ?? chosen.ham, this.now());
+    if (epoch !== this.epoch) return;
     // The named station has sent its report and is waiting for ours.
     this.armPartnerWait();
   }
@@ -1348,9 +1418,18 @@ export class QsoSession implements SessionContext {
 
   /** Abandon the current QSO and clear the transcript. */
   reset(): void {
+    // Anything an over had queued (a reply, a repeat, a tail) belongs to the
+    // world this reset is ending: the epoch makes those wake-ups hang up
+    // instead of keying onto the band that replaces it.
+    this.epoch += 1;
     this.audio.stop(); // cut any in-flight audio along with the QSO
-    this.transmitting = false;
-    this.txTiming = null;
+    // Half-duplex ends here too. Without this the receiver stays muted if the
+    // band was switched in the middle of an over — and the live-key path never
+    // runs its `finishLiveKeying` when its panel has already been torn down.
+    this.stopTransmitting();
+    this.sending = false;
+    this.liveDownAt = null;
+    this.liveUpAt = null;
     this.endExchange();
     this.lines = [];
     this.draft = "";

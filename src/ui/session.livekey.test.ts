@@ -132,4 +132,35 @@ describe("实时键控（直键 / 双桨）", () => {
     expect(session.beginLiveKeying()).toBe(false);
     expect(session.isTransmitting).toBe(false);
   });
+
+  it("面板在半途被拆掉（离开页面）：载波落下、可以重新上机", () => {
+    const { session, band } = makeSession();
+    session.beginLiveKeying();
+    session.liveKeyDown();
+    expect(session.isSending).toBe(true);
+    expect(session.isTransmitting).toBe(true);
+
+    session.cancelLiveKeying();
+
+    expect(session.isSending).toBe(false);
+    expect(session.isTransmitting).toBe(false);
+    expect(session.isReceiving).toBe(true);
+    expect(band.transmitting.at(-1)).toBe(false);
+    // 没有留下"永远在发"的锁：再敲一次仍然能上机
+    expect(session.beginLiveKeying()).toBe(true);
+  });
+
+  it("发报途中切波段（reset）不会把那个波段卡在发射状态", () => {
+    const { session, band } = makeSession();
+    session.beginLiveKeying();
+    session.liveKeyDown();
+
+    session.reset(); // App 在换波段时调的就是这个
+
+    expect(session.isSending).toBe(false);
+    expect(session.isTransmitting).toBe(false);
+    expect(session.isReceiving).toBe(true);
+    expect(band.transmitting.at(-1)).toBe(false);
+    expect(session.beginLiveKeying()).toBe(true);
+  });
 });
