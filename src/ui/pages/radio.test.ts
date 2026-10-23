@@ -245,7 +245,7 @@ describe("电台页 — 信号与通联", () => {
   });
 
   it("发送面板一直可用，不需要先「开始通联」", () => {
-    const { root } = makeHost({ myCall: "BG7XXX" });
+    const { root } = makeHost({ myCall: "BG7XXX", keyMode: "text" });
     // 还没进任何通联：发送框与发送按钮就已经在了。
     expect(root.querySelector("textarea")).not.toBeNull();
     expect(findButton(root, "发送")).toBeDefined();
@@ -259,11 +259,11 @@ describe("电台页 — 信号与通联", () => {
     session.seedHams(1);
     session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq(); // enters PEER_CQ
-    const { root, host } = makeHost({ myCall: "BG7XXX" });
+    const { root, host } = makeHost({ myCall: "BG7XXX", keyMode: "text" });
     host.session = session;
     host.refresh();
 
-    expect(root.textContent).toContain("电键输入");
+    expect(root.textContent).toContain("发送");
     expect(root.querySelector("textarea")).not.toBeNull();
     // 状态行与收发记录都不显示：报文只在空中，屏幕上没有回放。
     expect(root.textContent).not.toContain("通联状态");

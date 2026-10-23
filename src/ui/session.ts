@@ -285,6 +285,13 @@ export class QsoSession implements SessionContext {
   private txTiming: KeyElement[] | null = null;
   private txStartedAt = 0;
   /**
+   * Live keying (straight key / paddles): when the key went down and when it
+   * last came up, so the envelope can be appended element by element as the
+   * operator keys instead of being known in advance.
+   */
+  private liveDownAt: number | null = null;
+  private liveUpAt: number | null = null;
+  /**
    * When the operator's own CQ stopped drawing any answer (the pile-up emptied,
    * or there never was one). `null` means the operator is not sitting on a call
    * that nobody answered. See `expireOwnCq`.
@@ -856,6 +863,95 @@ export class QsoSession implements SessionContext {
     }
   }
 
+  // --- live keying (straight key / paddles) --------------------------------
+  //
+  // In the two key modes the operator keys in real time: the rig goes on the
+  // air on the first key-down, the receiver is deaf for as long as they key,
+  // and the envelope is built up element by element from what actually went
+  // out. Nothing is replayed at the end — the message has already been sent.
+
+  /**
+   * Open the operator's carrier for live keying.
+   *
+   * Returns false when the rig cannot transmit right now (off, or already
+   * sending), in which case the key panel must not swallow the key press.
+   */
+  beginLiveKeying(): boolean {
+    if (this.sending || !this.receiving) return false;
+    this.sending = true;
+    // Our key comes down on top of whatever was playing.
+    this.audio.stop();
+    this.transmitting = true;
+    this.txStartedAt = this.clock();
+    this.txTiming = [];
+    this.liveDownAt = null;
+    this.liveUpAt = null;
+    this.audio.setTransmitting(true);
+    return true;
+  }
+
+  /** The operator's key went down (live keying). */
+  liveKeyDown(): void {
+    if (!this.transmitting || !this.txTiming) return;
+    if (this.liveDownAt !== null || !this.sending) return;
+    const at = this.clock();
+    // Close the gap on the previous element now that its length is known.
+    if (this.liveUpAt !== null && this.txTiming.length > 0) {
+      this.txTiming[this.txTiming.length - 1].off = at - this.liveUpAt;
+    }
+    // An element of unknown length, open until the key goes up: the S-meter
+    // reads "keyed" for as long as the operator holds it.
+    this.txTiming.push({ on: Number.MAX_SAFE_INTEGER, off: 0 });
+    this.liveDownAt = at;
+    this.liveUpAt = null;
+  }
+
+  /** The operator's key came up (live keying). */
+  liveKeyUp(): void {
+    if (!this.transmitting || !this.txTiming) return;
+    if (this.liveDownAt === null) return;
+    const at = this.clock();
+    const last = this.txTiming[this.txTiming.length - 1];
+    if (last) last.on = Math.max(1, at - this.liveDownAt);
+    this.liveDownAt = null;
+    this.liveUpAt = at;
+  }
+
+  /**
+   * End one over keyed live and let the band react to it.
+   *
+   * The text is what the keyer decoded from the operator's own keying; the
+   * audio has already gone out, so this only records the line and runs the
+   * same decision the text mode runs after `transmit`.
+   */
+  async finishLiveKeying(text: string): Promise<void> {
+    if (this.liveDownAt !== null) this.liveKeyUp();
+    if (!this.sending) return;
+    const line = text.trim().toUpperCase();
+    this.liveDownAt = null;
+    this.liveUpAt = null;
+
+    try {
+      if (line) this.push("me", line);
+      await this.wait(TX_TAIL_MS);
+      this.transmitting = false;
+      this.audio.setTransmitting(false);
+      this.txTiming = null;
+
+      if (!line) return;
+      if (/\bCQ\b/.test(line)) {
+        if (this.machine) this.endExchange();
+        this.beginPileup();
+        return;
+      }
+      await this.dispatchSent(line);
+    } finally {
+      this.sending = false;
+      // The receiver opens again: whatever is on the air now starts playing.
+      this.rejoinOnAir();
+    }
+  }
+
   /**
    * A virtual HAM calls CQ on this frequency. Fire-and-forget: the audio plays
    * in the background and is *not* guarded by `sending`, so the operator can
@@ -939,61 +1035,70 @@ export class QsoSession implements SessionContext {
         this.beginPileup();
         return;
       }
-
-      // A pile-up: the line's job is to name one of the stations answering.
-      // But naming somebody who is *not* in the pile-up means the operator has
-      // moved on — it is an answer to whatever else is on the frequency, not a
-      // failed attempt at picking a caller. Dropping that into the pile-up's
-      // "nobody was named" path is how a perfectly good reply disappeared into
-      // a call the operator had already left behind.
-      let namedElsewhere = false;
-      if (this.pileup.active) {
-        if (this.pileup.match(line) || !namesACall(line)) {
-          await this.transmit(line);
-          await this.answerPileup(line);
-          return;
-        }
-        this.pileup.clear();
-        namedElsewhere = true;
-      }
-
-      // Everything else is addressed to whoever is inside the passband now.
-      const machine = this.machineForAudible(line);
       await this.transmit(line);
-      // Nobody out there: the message went out and nothing came back.
-      if (!machine) {
-        if (namedElsewhere) this.note("没有点名应答的台，也没有别的台在呼叫");
-        return;
-      }
-
-      // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
-      if (this.ham && this.rng() < this.ham.missProbability) {
-        const agn = machine.hamMissed();
-        if (agn) {
-          await this.wait(replyDelayMs(this.rng));
-          this.push("ham", agn);
-          const tx = this.notePlaying(this.ham, agn);
-          if (tx) await this.audio.playTx(tx, this.ham, this.now());
-          return;
-        }
-      }
-
-      const replies = machine.userSend(line);
-      for (const reply of replies) {
-        // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
-        await this.wait(replyDelayMs(this.rng));
-        this.push("ham", reply);
-        const tx = this.notePlaying(this.ham, reply);
-        if (tx) await this.audio.playTx(tx, this.ham, this.now());
-      }
-
-      // QSO complete: the HAM goes back to its own CQ rhythm.
-      if (machine.state === "LOGGED" && this.ham) this.endStation(this.ham);
+      await this.dispatchSent(line);
     } finally {
       this.sending = false;
       // The receiver opens again: whatever is on the air now starts playing.
       this.rejoinOnAir();
     }
+  }
+
+  /**
+   * What the band does about a line that has already gone out.
+   *
+   * Split out of `userSend` because the two key modes key the message live and
+   * only get here once the over has ended. The line is on the air either way,
+   * and the band's reaction must not depend on how it was keyed.
+   */
+  private async dispatchSent(line: string): Promise<void> {
+    // A pile-up: the line's job is to name one of the stations answering.
+    // But naming somebody who is *not* in the pile-up means the operator has
+    // moved on — it is an answer to whatever else is on the frequency, not a
+    // failed attempt at picking a caller. Dropping that into the pile-up's
+    // "nobody was named" path is how a perfectly good reply disappeared into
+    // a call the operator had already left behind.
+    let namedElsewhere = false;
+    if (this.pileup.active) {
+      if (this.pileup.match(line) || !namesACall(line)) {
+        await this.answerPileup(line);
+        return;
+      }
+      this.pileup.clear();
+      namedElsewhere = true;
+    }
+
+    // Everything else is addressed to whoever is inside the passband now.
+    const machine = this.machineForAudible(line);
+    // Nobody out there: the message went out and nothing came back.
+    if (!machine) {
+      if (namedElsewhere) this.note("没有点名应答的台，也没有别的台在呼叫");
+      return;
+    }
+
+    // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
+    if (this.ham && this.rng() < this.ham.missProbability) {
+      const agn = machine.hamMissed();
+      if (agn) {
+        await this.wait(replyDelayMs(this.rng));
+        this.push("ham", agn);
+        const tx = this.notePlaying(this.ham, agn);
+        if (tx) await this.audio.playTx(tx, this.ham, this.now());
+        return;
+      }
+    }
+
+    const replies = machine.userSend(line);
+    for (const reply of replies) {
+      // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
+      await this.wait(replyDelayMs(this.rng));
+      this.push("ham", reply);
+      const tx = this.notePlaying(this.ham, reply);
+      if (tx) await this.audio.playTx(tx, this.ham, this.now());
+    }
+
+    // QSO complete: the HAM goes back to its own CQ rhythm.
+    if (machine.state === "LOGGED" && this.ham) this.endStation(this.ham);
   }
 
   /** Draw the stations that will answer this CQ and start their schedule. */

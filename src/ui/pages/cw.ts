@@ -4,30 +4,21 @@ import type { AppHost } from "../app.js";
 import { renderKeyPanel } from "./keyPanel.js";
 
 /**
- * The operating panel: a send box and a key. Nothing else.
+ * The operating panel — one of three mutually exclusive ways to transmit:
  *
- * There is deliberately no transcript, no station named, no status readout, no
- * "start a QSO" button and no list of who is answering. The operator transmits
- * whenever they want to; what the band does about it is up to the band. A real
- * station shows none of that either — you find out by listening.
+ *  - **text**: type the message, press send, the rig keys it out at the
+ *    operator's speed (the message goes out all at once);
+ *  - **straight** / **iambic**: key the over live. There is no send box and no
+ *    "send" step: the rig is on the air from the first element, and the over is
+ *    handed to the band when the operator stops keying.
+ *
+ * Which one appears is a setting (`keyMode`), not a control on this page.
+ * There is deliberately no transcript, no station named, no status readout and
+ * no "start a QSO" button: you find out what the band did by listening.
  */
 export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
   const session = host.session;
   const settings = host.settings;
-
-  // --- send box ------------------------------------------------------------
-  const input = el("textarea", {
-    attrs: { placeholder: "把你抄到的内容发出去，例如 R UR RST 599 BK" },
-  });
-  input.value = session.draft;
-  input.addEventListener("input", () => {
-    session.setDraft(input.value);
-  });
-  /** Keep both sides in sync so a re-render restores what the user was typing. */
-  const setDraft = (text: string): void => {
-    session.setDraft(text);
-    input.value = text;
-  };
 
   const flushLog = async (): Promise<void> => {
     const record = session.pendingLog();
@@ -37,11 +28,45 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     session.note("通联完成，已写入日志");
   };
 
+  // Without a callsign your own CQ is not your callsign, and the log would lie.
+  const warnings: HTMLElement[] = [];
+  if (!settings.myCall) {
+    const warn = el("div", { class: "hint" });
+    warn.append(document.createTextNode("请先填写本方呼号："));
+    warn.append(button("打开设置", () => host.openSettings?.(), "btn small"));
+    warnings.push(warn);
+  }
+
+  if (settings.keyMode === "text") {
+    renderTextPanel(host, root, warnings, flushLog);
+    return;
+  }
+  renderLiveKeyPanel(host, root, warnings, flushLog);
+}
+
+/** Text mode: type the message, the rig keys it out. */
+function renderTextPanel(
+  host: AppHost,
+  root: HTMLElement,
+  warnings: HTMLElement[],
+  flushLog: () => Promise<void>,
+): void {
+  const session = host.session;
+
+  const input = el("textarea", {
+    attrs: { placeholder: "把你抄到的内容发出去，例如 R UR RST 599 BK" },
+  });
+  input.value = session.draft;
+  input.addEventListener("input", () => {
+    session.setDraft(input.value);
+  });
+
   const sendBtn = button("发送", () => send(), "btn primary");
   const send = (): void => {
     const text = input.value.trim();
     if (!text || session.isSending) return;
-    setDraft("");
+    session.setDraft("");
+    input.value = "";
     sendBtn.disabled = true;
     void (async () => {
       try {
@@ -61,32 +86,48 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     }
   });
 
-  // --- key input: straight key or iambic paddles ---------------------------
-  // The key itself (listeners, keyer, sidetone) is a device of its own — see
-  // `keyPanel`. All it gives back is text.
+  root.append(
+    panel(
+      "发送",
+      ...warnings,
+      input,
+      el("div", { class: "row" }, [sendBtn]),
+      el("div", {
+        class: "hint",
+        text: "Ctrl+Enter 也可发送。发送时接收中断；发完稍等片刻恢复收听。",
+      }),
+    ),
+  );
+}
+
+/** Straight key / paddles: key the over live, no send box. */
+function renderLiveKeyPanel(
+  host: AppHost,
+  root: HTMLElement,
+  warnings: HTMLElement[],
+  flushLog: () => Promise<void>,
+): void {
+  const session = host.session;
+
   const keyPanel = renderKeyPanel({
-    settings,
+    settings: host.settings,
     onLeave: (fn) => host.onLeave(fn),
-    onCharacter: (text) => setDraft(input.value + text),
-    onPhrase: (text) => setDraft(input.value ? `${input.value} ${text}` : text),
+    onBegin: () => session.beginLiveKeying(),
+    onKeying: (on) => (on ? session.liveKeyDown() : session.liveKeyUp()),
+    onOver: (text) => {
+      void (async () => {
+        await session.finishLiveKeying(text);
+        await flushLog();
+        host.refresh();
+      })();
+    },
   });
 
-  const body: HTMLElement[] = [];
-  // Without a callsign your own CQ is not your callsign, and the log would lie.
-  if (!settings.myCall) {
-    const warn = el("div", { class: "hint" });
-    warn.append(document.createTextNode("请先填写本方呼号："));
-    warn.append(button("打开设置", () => host.openSettings?.(), "btn small"));
-    body.push(warn);
-  }
-  body.push(
-    input,
-    el("div", { class: "row" }, [sendBtn]),
+  root.append(
+    panel(keyPanel.title, ...warnings, keyPanel.node),
     el("div", {
       class: "hint",
-      text: "Ctrl+Enter 也可发送。发送时接收中断；发完稍等片刻恢复收听。",
+      text: "按键即上机：发射期间接收中断，松键、停顿后恢复收听。",
     }),
   );
-
-  root.append(panel("发送", ...body), panel(keyPanel.title, keyPanel.node));
 }

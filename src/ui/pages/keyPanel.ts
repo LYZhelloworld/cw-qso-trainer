@@ -5,23 +5,26 @@ import type { Paddle } from "../../cw/keyer.js";
 import type { AppSettings } from "../settingsSchema.js";
 
 /**
- * The keying panel: straight key or iambic paddles, plus the operator's own
- * sidetone.
+ * The keying panel: straight key or iambic paddles, keyed in real time.
  *
- * Split out of the QSO panel (`cw.ts`) because it is a self-contained input
- * device — it owns document-level key listeners, a keyer, an oscillator and an
- * element echo, and it talks to the rest of the page through two callbacks. The
- * QSO panel above it is about the conversation; this is about the key.
+ * This is not a text-entry widget. In the two key modes the operator is on the
+ * air from the first element: the panel asks the session to open the carrier
+ * (`onBegin`), reports every key phase (`onKeying`, which makes the receiver go
+ * deaf), and when the over is finished hands the decoded text back (`onOver`)
+ * so the band can answer it. The audio has already gone out by then — there is
+ * no second transmission.
  */
 
 export interface KeyPanelOptions {
   settings: AppSettings;
   /** Register a cleanup run before the next render (listeners, oscillator). */
   onLeave(fn: () => void): void;
-  /** Iambic: one finished character, or `" "` on a word break. Appended as-is. */
-  onCharacter(text: string): void;
-  /** Straight key: everything keyed since the last pause, decoded at once. */
-  onPhrase(text: string): void;
+  /** Open the operator's carrier; false when the rig cannot transmit now. */
+  onBegin(): boolean;
+  /** The key went down or up — half-duplex follows this. */
+  onKeying(on: boolean): void;
+  /** One finished over: the text that was keyed, ready to go to the band. */
+  onOver(text: string): void;
 }
 
 export interface KeyPanelView {
@@ -37,9 +40,6 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
   const keySymbols = el("div", { class: "hint", text: "" });
   const keyArea = el("div", { class: "key-area" });
 
-  // Characters arrive one by one when keying, so they are appended as-is.
-  const appendKeyed = (text: string): void => opts.onCharacter(text);
-
   // Sidetone: the operator's own monitor tone while keying. It follows the key
   // (straight) or the element phase (iambic) and is never affected by QSB/QRM.
   const sidetone = new Sidetone({
@@ -47,9 +47,11 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     volume: settings.sidetoneVolume / 100,
     freqHz: settings.toneHz,
   });
-  const driveSidetone = (on: boolean): void => {
+  /** Mirror the key phase into both the monitor tone and the rig. */
+  const driveKeying = (on: boolean): void => {
     if (on) sidetone.keyDown();
     else sidetone.keyUp();
+    opts.onKeying(on);
   };
   const sidetoneHint = el("div", {
     class: "hint",
@@ -60,15 +62,35 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
         : "侧音：开，但当前环境没有可用的音频输出（仅影响发声，不影响发报）",
   });
 
+  // One over is in progress from the first key-down until it is handed over to
+  // the band. A second `onBegin` must not be issued while it lasts.
+  let live = false;
+  const beginOver = (): boolean => {
+    if (live) return true;
+    if (!opts.onBegin()) return false;
+    live = true;
+    return true;
+  };
+  const endOver = (text: string): void => {
+    live = false;
+    keySymbols.textContent = text ? `已发：${text}` : "";
+    if (text) opts.onOver(text);
+  };
+
   if (useIambic) {
+    // Characters arrive one by one; the over ends when the operator says so.
+    let over = "";
     const iambic = new IambicKeyerInput({
       wpm: settings.wpm,
       mode: settings.iambicMode,
-      onText: appendKeyed,
-      onSymbols: (s) => {
-        keySymbols.textContent = s ? `正在发：${s}` : "";
+      onText: (text) => {
+        over += text;
+        keySymbols.textContent = text.trim() ? `正在发：${over}` : `已发：${over}`;
       },
-      onKeying: driveSidetone,
+      onSymbols: (s) => {
+        if (s) keySymbols.textContent = `正在发：${over}${s}`;
+      },
+      onKeying: driveKeying,
     });
 
     keyArea.append(
@@ -77,7 +99,16 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       }),
       keySymbols,
       sidetoneHint,
-      button("结束电键输入", () => { iambic.finish(); keySymbols.textContent = ""; }, "btn small"),
+      button(
+        "发送完毕",
+        () => {
+          iambic.finish();
+          const text = over.trim();
+          over = "";
+          endOver(text);
+        },
+        "btn small",
+      ),
     );
 
     const paddleFor = (code: string): Paddle | null =>
@@ -88,6 +119,7 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       const paddle = paddleFor(e.code);
       if (paddle) {
         e.preventDefault();
+        if (!beginOver()) return;
         iambic.press(paddle);
         keyArea.classList.add("active");
         return;
@@ -113,28 +145,36 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       iambic.clear();
       sidetone.dispose();
     });
-    return { title: "电键输入（iambic 双桨）", node: keyArea };
+    return { title: "发报（iambic 双桨，实时）", node: keyArea };
   }
 
+  // Straight key: a pause flushes the utterance, which is one over.
   const keyer = new StraightKeyer(
     (text) => {
-      opts.onPhrase(text);
-      keySymbols.textContent = `已解码：${text}`;
+      endOver(text);
     },
     1500,
-    driveSidetone,
+    driveKeying,
   );
 
   keyArea.append(
-    el("div", { text: `按住「${settings.keyCode}」发报（焦点在输入框时不生效）` }),
+    el("div", { text: `按住「${settings.keyCode}」实时发报（焦点在输入框时不生效）` }),
     keySymbols,
     sidetoneHint,
-    button("结束电键输入", () => { keyer.finish(); keySymbols.textContent = ""; }, "btn small"),
+    button(
+      "结束本句",
+      () => {
+        keyer.finish();
+        keySymbols.textContent = "";
+      },
+      "btn small",
+    ),
   );
 
   const onKeyDown = (e: KeyboardEvent): void => {
     if (e.code !== settings.keyCode || e.repeat || isTextField(e.target)) return;
     e.preventDefault();
+    if (!beginOver()) return;
     keyer.keyDown();
     keyArea.classList.add("active");
     keySymbols.textContent = keyer.currentSymbols();
@@ -154,7 +194,7 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     keyer.clear();
     sidetone.dispose();
   });
-  return { title: "电键输入（直键）", node: keyArea };
+  return { title: "发报（直键，实时）", node: keyArea };
 }
 
 /** Keys pressed inside a text field belong to the field, not to the rig. */

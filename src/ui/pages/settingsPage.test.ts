@@ -195,23 +195,32 @@ describe("设置页", () => {
     expect(host.settings.farnsworthEnabled).toBe(true);
   });
 
-  it("电键类型默认直键，切到 iambic 后出现点键/划键与模式选择", () => {
+  it("发报模式默认直键，可切到 iambic 或文本模式", () => {
     const { root, host } = makeHost();
     // 默认直键：只显示一个直键按键，不暴露 iambic 专属控件
-    expect(fieldByLabel(root, "电键类型").querySelector("select")!.value).toBe("straight");
+    expect(fieldByLabel(root, "发报模式").querySelector("select")!.value).toBe("straight");
     expect(root.textContent).toContain("直键按键");
     expect(root.textContent).not.toContain("点键：");
 
-    const mode = fieldByLabel(root, "电键类型").querySelector("select")!;
+    const mode = fieldByLabel(root, "发报模式").querySelector("select")!;
     mode.value = "iambic";
     mode.dispatchEvent(new Event("change"));
 
     expect(host.settings.keyMode).toBe("iambic");
-    const after = fieldByLabel(root, "电键类型").querySelector("select")!.value;
+    const after = fieldByLabel(root, "发报模式").querySelector("select")!.value;
     expect(after).toBe("iambic");
     expect(root.textContent).toContain("点键：");
     expect(root.textContent).toContain("划键：");
     expect(root.textContent).toContain("squeeze");
+
+    // 第三种模式：文本框发报，不绑电键。
+    fieldByLabel(root, "发报模式").querySelector("select")!.value = "text";
+    fieldByLabel(root, "发报模式")
+      .querySelector("select")!
+      .dispatchEvent(new Event("change"));
+
+    expect(host.settings.keyMode).toBe("text");
+    expect(root.textContent).toContain("文本框模式不使用电键");
   });
 
   it("iambic 模式 A/B 可切换并持久化到设置", () => {

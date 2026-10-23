@@ -124,12 +124,15 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
     (difficulty) => host.updateSettings({ difficulty }),
   );
 
-  // --- key mode ------------------------------------------------------------
+  // --- send mode -----------------------------------------------------------
+  // Three mutually exclusive ways to put a message on the air. The operating
+  // panel shows only the one that is selected (see `pages/cw`).
   const keyModeField = selectRow<KeyMode>(
-    "电键类型",
+    "发报模式",
     [
-      ["straight", "直键（手键，手动控制点划）"],
-      ["iambic", "iambic 双桨（自动键）"],
+      ["straight", "直键（手键，实时发报）"],
+      ["iambic", "iambic 双桨（自动键，实时发报）"],
+      ["text", "文本框（输入报文，按发送键发出）"],
     ],
     s.keyMode,
     (keyMode) => host.updateSettings({ keyMode }),
@@ -227,13 +230,20 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
               text: "同时按下点键与划键为 squeeze（点划交替），空格键插入单词间隔。",
             }),
           ]
-        : [
-            straightBtn,
-            el("div", {
-              class: "hint",
-              text: "按住该键发报、松开停止，点划时长完全由你控制。",
-            }),
-          ]),
+        : s.keyMode === "straight"
+          ? [
+              straightBtn,
+              el("div", {
+                class: "hint",
+                text: "按住该键实时发报、松开停止，点划时长完全由你控制。",
+              }),
+            ]
+          : [
+              el("div", {
+                class: "hint",
+                text: "文本框模式不使用电键：在操作面板输入报文，按「发送」由电台按当前速度自动拍发。",
+              }),
+            ]),
     ),
     panel("其他", button("恢复默认设置", () => host.updateSettings(DEFAULT_SETTINGS), "btn danger")),
   );
