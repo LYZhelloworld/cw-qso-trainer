@@ -56,7 +56,8 @@ export interface LiveBand {
   dispose(): void;
 }
 
-export class SessionAudio {  /** Calls currently on the band, so `syncStations` can spot the gaps. */
+export class SessionAudio {
+  /** Calls currently on the band, so `syncStations` can spot the gaps. */
   private stationCalls = new Set<string>();
 
   constructor(
