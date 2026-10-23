@@ -29,6 +29,7 @@ import {
   type Sideband,
 } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
+import { CALL_RE } from "../message/parse.js";
 import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging } from "./storage/qsoStaging.js";
 import { SessionAudio } from "./sessionAudio.js";
@@ -86,6 +87,24 @@ const TICK_MS = 1_000;
  * and their ears both need a moment before the band comes back.
  */
 const TX_TAIL_MS = 1_500;
+
+/**
+ * How long the operator waits for an answer to their own CQ once the band has
+ * gone quiet. Mirrors the machine's `timeoutFirstCall`: a caller who draws no
+ * reply gives up and goes back to listening, so that tuning across somebody
+ * else's CQ is an answer to *it* rather than a message into the void.
+ */
+const CALL_ANSWER_WAIT_MS = 15_000;
+
+/**
+ * Does this line name a station? "R UR RST 599 BK" does not, "BT9BYA DE BG7XXX"
+ * does. It separates the two things an operator can mean while a pile-up is
+ * running: answering without picking a caller (keep the pile-up going), and
+ * calling somebody else entirely (leave it).
+ */
+function namesACall(line: string): boolean {
+  return line.split(/[^A-Z0-9/]+/).some((token) => CALL_RE.test(token));
+}
 
 export interface QsoSessionOptions {
   /** Injected RNG (tests): drives CQ intervals, answer delays and band size. */
@@ -232,6 +251,12 @@ export class QsoSession implements SessionContext {
   /** Keying envelope of the current transmission, for the S-meter. */
   private txTiming: KeyElement[] | null = null;
   private txStartedAt = 0;
+  /**
+   * When the operator's own CQ stopped drawing any answer (the pile-up emptied,
+   * or there never was one). `null` means the operator is not sitting on a call
+   * that nobody answered. See `expireOwnCq`.
+   */
+  private ownCqSilentSince: number | null = null;
   /**
    * Whether the operator's receiver is open. Off = the rig is powered down.
    * Defaults to on so a session used on its own (tests, embedding) behaves like
@@ -845,17 +870,30 @@ export class QsoSession implements SessionContext {
       }
 
       // A pile-up: the line's job is to name one of the stations answering.
+      // But naming somebody who is *not* in the pile-up means the operator has
+      // moved on — it is an answer to whatever else is on the frequency, not a
+      // failed attempt at picking a caller. Dropping that into the pile-up's
+      // "nobody was named" path is how a perfectly good reply disappeared into
+      // a call the operator had already left behind.
+      let namedElsewhere = false;
       if (this.pileup.active) {
-        await this.transmit(line);
-        await this.answerPileup(line);
-        return;
+        if (this.pileup.match(line) || !namesACall(line)) {
+          await this.transmit(line);
+          await this.answerPileup(line);
+          return;
+        }
+        this.pileup.clear();
+        namedElsewhere = true;
       }
 
       // Everything else is addressed to whoever is inside the passband now.
       const machine = this.machineForAudible();
       await this.transmit(line);
       // Nobody out there: the message went out and nothing came back.
-      if (!machine) return;
+      if (!machine) {
+        if (namedElsewhere) this.note("没有点名应答的台，也没有别的台在呼叫");
+        return;
+      }
 
       // Difficulty-driven "receiver did not copy" (novice 0%, hardcore 5%).
       if (this.ham && this.rng() < this.ham.missProbability) {
@@ -908,6 +946,12 @@ export class QsoSession implements SessionContext {
    * which case the line goes out and nobody answers.
    */
   private machineForAudible(): QsoMachine | null {
+    // A machine sitting in `USER_CQ` is waiting for an answer to *our* call; it
+    // is not a partner. Keying a reply to somebody else's CQ means abandoning
+    // our own, and reusing that machine would hand the message to its
+    // `USER_CQ` branch, which returns nothing — the operator would hear their
+    // own transmission and then silence, with no explanation.
+    if (this.machine?.state === "USER_CQ") this.endExchange();
     if (this.machine) {
       // Speaking up starts the QSO as far as the band is concerned: the station
       // stops its own CQ rhythm while we are working it.
@@ -1045,6 +1089,36 @@ export class QsoSession implements SessionContext {
     if (events.length > 0) this.handleActivity(events);
     this.pileup.drive();
     this.hamQso.drive();
+    this.expireOwnCq();
+  }
+
+  /**
+   * The operator's own CQ gets a limited amount of patience.
+   *
+   * Without this the machine sits in `USER_CQ` forever: nobody answered, the
+   * pile-up emptied, and every later call the operator made — including a
+   * perfectly good answer to somebody else's CQ — was swallowed by a machine
+   * still waiting for a reply to a question asked minutes ago. The band is not
+   * paused while that happens, so the state has to expire the way it does in
+   * `QsoMachine.timeoutFirstCall`.
+   *
+   * The clock only starts once the band has actually gone quiet: a pile-up that
+   * is still calling means somebody *is* answering, however long they take.
+   */
+  private expireOwnCq(): void {
+    if (this.machine?.state !== "USER_CQ" || this.pileup.active) {
+      this.ownCqSilentSince = null;
+      return;
+    }
+    const now = this.clock();
+    if (this.ownCqSilentSince === null) {
+      this.ownCqSilentSince = now;
+      return;
+    }
+    if (now - this.ownCqSilentSince < CALL_ANSWER_WAIT_MS) return;
+    this.ownCqSilentSince = null;
+    this.endExchange();
+    this.note("没有人回应你的呼叫，已回到守听");
   }
 
   private handleActivity(events: HamActivityEvent[]): void {
