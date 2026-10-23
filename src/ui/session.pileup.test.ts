@@ -27,6 +27,7 @@ function makeSession(seed = 7) {
       ticks.push(cb);
       return () => {};
     },
+    pace: async () => {},
     delay: async (ms: number) => {
       waits.push(ms);
     },

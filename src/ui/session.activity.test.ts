@@ -36,6 +36,7 @@ function makeSession(rng: () => number = () => 0) {
         stopped = true;
       };
     },
+    pace: async () => {},
     delay: async (ms: number) => {
       waits.push(ms);
     },

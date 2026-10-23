@@ -223,6 +223,7 @@ describe("堆叠", () => {
         return () => {};
       },
       delay: async () => {},
+    pace: async () => {},
     });
     const host = {
       settings,

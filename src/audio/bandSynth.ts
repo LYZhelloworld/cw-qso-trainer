@@ -1,5 +1,5 @@
 import { difficultyToEnvironment, type Difficulty, type Environment } from "./environment.js";
-import type { AudioBufferLike, AudioBufferSourceLike } from "./player.js";
+import type { AudioBufferLike, AudioBufferSourceLike } from "./types.js";
 import { audioAvailable, sharedAudioContext } from "./context.js";
 import { qsbFactorAt } from "./render.js";
 import { receiveStation, type Sideband } from "../ham/tuning.js";

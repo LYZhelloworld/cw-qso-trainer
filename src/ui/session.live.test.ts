@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { QsoSession } from "./session.js";
 import { normalizeSettings } from "./settingsSchema.js";
-import type { LiveBand } from "./sessionAudio.js";
-import type { SynthReceiver, SynthStation } from "../audio/bandSynth.js";
-import type { Environment } from "../audio/environment.js";
+import { SpyBand } from "./bandSpy.js";
 import { mulberry32 } from "../ham/spectrum.js";
-import type { Tx } from "../ham/tx.js";
 
 /** 20 m CW reference — where this band's stations live. */
 const REF = 14_025_000;
@@ -16,62 +13,6 @@ const REF = 14_025_000;
  * on it, key messages onto them, go deaf while sending. That conversation is
  * what these tests assert; the nodes themselves are `bandSynth.test.ts`.
  */
-class SpyBand implements LiveBand {
-  readonly available = true;
-  calls: Array<{ what: string; [key: string]: unknown }> = [];
-  stations = new Set<string>();
-  receiver: SynthReceiver | null = null;
-
-  private log(what: string, extra: Record<string, unknown> = {}): void {
-    this.calls.push({ what, ...extra });
-  }
-  setReceiver(rx: SynthReceiver): void {
-    this.receiver = rx;
-    this.log("receiver", { dialHz: rx.dialHz, passbandHz: rx.passbandHz });
-  }
-  setEnvironment(environment: Environment): void {
-    this.log("environment", { qrm: environment.qrm.enabled });
-  }
-  ensureStation(station: SynthStation): void {
-    this.stations.add(station.call);
-    this.log("station", { call: station.call });
-  }
-  removeStation(call: string): void {
-    this.stations.delete(call);
-    this.log("remove", { call });
-  }
-  key(tx: Tx, call: string, atMs: number): void {
-    this.log("key", { call, atMs, text: tx.text });
-  }
-  keyFrom(tx: Tx, call: string, atMs: number, elapsedMs: number): void {
-    this.log("keyFrom", { call, atMs, elapsedMs, text: tx.text });
-  }
-  keyMine(tx: Tx, atMs: number): void {
-    this.log("keyMine", { atMs, text: tx.text });
-  }
-  silenceMine(): void {
-    this.log("silenceMine");
-  }
-  setTransmitting(on: boolean): void {
-    this.log("transmitting", { on });
-  }
-  setMuted(on: boolean): void {
-    this.log("muted", { on });
-  }
-  dispose(): void {
-    this.stations.clear();
-    this.log("dispose");
-  }
-
-  /** The last call of a kind, or undefined. */
-  last(what: string) {
-    return [...this.calls].reverse().find((c) => c.what === what);
-  }
-  all(what: string) {
-    return this.calls.filter((c) => c.what === what);
-  }
-}
-
 function makeSession() {
   let t = 0;
   const ticks: Array<() => void> = [];
@@ -86,6 +27,7 @@ function makeSession() {
       return () => {};
     },
     delay: async () => {},
+    pace: async () => {},
     synth: band,
   });
   return {

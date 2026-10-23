@@ -9,7 +9,6 @@ export * from "./cw/keyer.js";
 export * from "./audio/render.js";
 export * from "./audio/wav.js";
 export * from "./audio/environment.js";
-export * from "./audio/engine.js";
 export { VirtualHam, MISS_PROBABILITY } from "./ham/virtualHam.js";
 export type { VirtualHamOptions } from "./ham/virtualHam.js";
 export * from "./ham/generate.js";

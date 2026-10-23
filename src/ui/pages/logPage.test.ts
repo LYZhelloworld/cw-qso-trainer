@@ -157,7 +157,7 @@ describe("日志页（IndexedDB 可用）", () => {
     // No real waiting: this case is about the log record, not the HAM's answer
     // timing. Leaving the 1–3 s reply delays real would push it past the
     // default test timeout and make it flaky.
-    const session = new QsoSession(14.025, settings, { delay: async () => {} });
+    const session = new QsoSession(14.025, settings, { delay: async () => {}, pace: async () => {} });
 
     session.seedHams(1);
     const station = session.listHams()[0];

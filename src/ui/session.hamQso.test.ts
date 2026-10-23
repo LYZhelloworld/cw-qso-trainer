@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { QsoSession } from "./session.js";
 import { normalizeSettings } from "./settingsSchema.js";
-import type { AudioPlayer, PlaybackHandle } from "../audio/engine.js";
+import { SpyBand } from "./bandSpy.js";
 import type { VirtualHam } from "../ham/virtualHam.js";
 
 /** Small LCG: a constant rng would generate the same callsign forever. */
@@ -11,16 +11,6 @@ function seeded(seed: number): () => number {
     a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
     return a / 4294967296;
   };
-}
-
-class FakeAudio implements AudioPlayer {
-  calls: string[] = [];
-  readonly playbackAvailable = true;
-  play(text: string): PlaybackHandle {
-    this.calls.push(text);
-    return { done: Promise.resolve(), stop() {} };
-  }
-  stop(): void {}
 }
 
 /**
@@ -38,7 +28,7 @@ class FakeAudio implements AudioPlayer {
 function makeSession(seed = 11) {
   let t = 0;
   const ticks: Array<() => void> = [];
-  const audio = new FakeAudio();
+  const band = new SpyBand();
   const settings = normalizeSettings({ freqMHz: 14.05, myCall: "BG7XXX" });
   const session = new QsoSession(14.05, settings, {
     rng: seeded(seed),
@@ -48,7 +38,8 @@ function makeSession(seed = 11) {
       return () => {};
     },
     delay: async () => {},
-    engine: audio,
+    pace: async () => {},
+    synth: band,
     referenceHz: 14_050_000,
   });
 
@@ -78,7 +69,7 @@ function makeSession(seed = 11) {
 
   return {
     session,
-    audio,
+    band,
     tickTo,
     busy,
     now: () => t,
@@ -123,16 +114,16 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
     const caller = await h.untilExchange();
 
     // 之前不在通带内，一个字也没播出；现在把拨轮对准它。
-    expect(h.audio.calls).toHaveLength(0);
+    expect(h.band.texts).toHaveLength(0);
     h.session.retune(caller.freqHz / 1e6);
     const endedAt = await h.runToEnd();
     expect(endedAt).not.toBeNull();
 
     // 呼叫方先开口，应答方从第二行里认出来。
-    expect(h.audio.calls).toHaveLength(6);
-    expect(h.audio.calls[0]).toBe(`CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`);
-    const answerer = h.audio.calls[1].split(" ")[2];
-    expect(h.audio.calls).toEqual([
+    expect(h.band.texts).toHaveLength(6);
+    expect(h.band.texts[0]).toBe(`CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`);
+    const answerer = h.band.texts[1].split(" ")[2];
+    expect(h.band.texts).toEqual([
       `CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`,
       `${caller.call} DE ${answerer} K`,
       "R UR RST 599 599 BK",
@@ -151,11 +142,11 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
     const caller = await h.untilExchange();
     h.session.retune(caller.freqHz / 1e6);
 
-    h.audio.calls = [];
+    h.band.clear();
     await h.session.userCallsCq();
 
     // 自己的 CQ 发出去了，但没有任何台应答：没有堆叠、没有解释、也没有提示。
-    expect(h.audio.calls).toEqual(["CQ CQ CQ DE BG7XXX BG7XXX PSE K"]);
+    expect(h.band.texts).toEqual(["CQ CQ CQ DE BG7XXX BG7XXX PSE K"]);
     expect(h.session.pileupCallers()).toHaveLength(0);
     expect(h.session.state).toBe("IDLE");
     expect(h.session.lines.some((l) => l.text.includes("通联"))).toBe(false);
@@ -166,7 +157,7 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
     for (let at = from + 1_000; at <= from + 20_000; at += 1_000) {
       await h.tickTo(at);
     }
-    expect(h.audio.calls.length).toBeGreaterThan(1);
+    expect(h.band.texts.length).toBeGreaterThan(1);
   });
 
   it("通联结束后，原来那个呼叫方接着呼叫 CQ", async () => {
@@ -178,7 +169,7 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
 
     expect(await h.runToEnd()).not.toBeNull();
     const ownCq = `CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`;
-    expect(h.audio.calls.filter((c) => c === ownCq)).toHaveLength(1);
+    expect(h.band.texts.filter((c) => c === ownCq)).toHaveLength(1);
 
     // 签完 73 后几秒内重新开口（2–6 s），而不是等 30–60 s 的常规间隔。
     let seenCqing = false;
@@ -190,7 +181,7 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
       }
     }
     expect(seenCqing).toBe(true);
-    expect(h.audio.calls.filter((c) => c === ownCq).length).toBeGreaterThanOrEqual(2);
+    expect(h.band.texts.filter((c) => c === ownCq).length).toBeGreaterThanOrEqual(2);
   });
 
   it("应答方不被当成可通联对象：它根本不在名单上", async () => {

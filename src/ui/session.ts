@@ -2,7 +2,6 @@ import { QsoMachine, type QsoState } from "../qso/stateMachine.js";
 import { Frequency } from "../ham/frequency.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
-import { CwAudioEngine, type AudioPlayer } from "../audio/engine.js";
 import { BandSynth } from "../audio/bandSynth.js";
 import type { LiveBand } from "../ui/sessionAudio.js";
 import type { KeyElement } from "../cw/decoder.js";
@@ -100,8 +99,13 @@ export interface QsoSessionOptions {
   startTicking?: (cb: () => void) => () => void;
   /** Injected wait (tests), used for the HAM's answer/reply delays. */
   delay?: (ms: number) => Promise<void>;
-  /** Injected audio player (tests); defaults to a real `CwAudioEngine`. */
-  engine?: AudioPlayer;
+  /**
+   * Injected pacing for keying time (tests): the realtime path has no buffer to
+   * await, so an over "ends" when its last element would have been keyed. Kept
+   * separate from `delay` because one is the band's rhythm and the other is how
+   * long a transmission takes — a test usually wants to control them differently.
+   */
+  pace?: (ms: number) => Promise<void>;
   /**
    * Injected realtime band synth (tests). Defaults to a `BandSynth` on the
    * shared `AudioContext`; under Node / jsdom that one finds no device and
@@ -203,6 +207,7 @@ export class QsoSession implements SessionContext {
   private readonly clock: () => number;
   private readonly startTicking: (cb: () => void) => () => void;
   private readonly wait: (ms: number) => Promise<void>;
+  private readonly pace: (ms: number) => Promise<void>;
   private readonly audio: SessionAudio;
   private readonly pileup: PileupDriver;
   private readonly hamQso: HamQsoDriver;
@@ -251,6 +256,7 @@ export class QsoSession implements SessionContext {
     this.rng = opts.rng ?? Math.random;
     this.clock = opts.now ?? (() => Date.now());
     this.wait = opts.delay ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.pace = opts.pace ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.startTicking =
       opts.startTicking ??
       ((cb) => {
@@ -264,14 +270,12 @@ export class QsoSession implements SessionContext {
       referenceHz: this.referenceHz,
     });
     this.audio = new SessionAudio(
-      opts.engine ?? new CwAudioEngine(),
       () => this.audioView(),
       // Same clock the keying is scheduled on: a `Tx` is recorded on the
       // session's wall clock and turned into audio-clock automation here.
       opts.synth ?? new BandSynth({ now: this.clock }),
-      this.wait,
+      this.pace,
     );
-    this.audio.useSynth(true);
     this.audio.wireSynth();
     this.pileup = new PileupDriver(this);
     this.hamQso = new HamQsoDriver(this);
@@ -412,7 +416,7 @@ export class QsoSession implements SessionContext {
   }
 
   get playbackAvailable(): boolean {
-    return this.audio.available;
+    return this.audio.live;
   }
 
   // --- tuning --------------------------------------------------------------
@@ -1169,12 +1173,15 @@ export class QsoSession implements SessionContext {
     return this.audio.callDurationMs(text);
   }
 
-  /** Play a station's transmission (the driver side of `audio.playTx`). */
+  /** Put a station's transmission on the air (the driver side of `audio`). */
   playHam(text: string, ham?: VirtualHam): Promise<void> {
     const tx = this.notePlaying(ham, text);
     // A line with no station behind it (the operator's own, or a driver without
-    // one) has nothing to key on the band, so it is played straight.
-    return tx ? this.audio.playTx(tx, ham, this.now()) : this.audio.playHam(text, ham);
+    // one) has nothing to key on the band, so it goes out on the monitor only.
+    return tx ? this.audio.playTx(tx, ham, this.now()) : this.audio.playMine(
+      makeTx(text, this.audio.keyElements(text), this.now()),
+      this.now(),
+    );
   }
 
   /** The snapshot `SessionAudio` reads on every call (see `sessionAudio`). */

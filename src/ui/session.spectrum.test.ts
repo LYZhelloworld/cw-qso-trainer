@@ -23,6 +23,7 @@ function makeSession(rng: () => number = mulberry32(11)) {
       return () => {};
     },
     delay: async () => {},
+    pace: async () => {},
   });
   return {
     session,

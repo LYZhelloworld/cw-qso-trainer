@@ -1,4 +1,4 @@
-import type { AudioContextLike } from "./player.js";
+import type { AudioContextLike } from "./types.js";
 
 /**
  * The one `AudioContext` the audio layer shares.

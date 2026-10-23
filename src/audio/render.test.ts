@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { renderCwAudio, type Segment } from "./render.js";
 import { encodeWav, decodeWav } from "./wav.js";
 import { difficultyToEnvironment } from "./environment.js";
-import { CwAudioEngine } from "./engine.js";
 import { QsoMachine } from "../qso/stateMachine.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
@@ -217,11 +216,10 @@ describe("difficultyToEnvironment", () => {
   });
 });
 
-describe("CwAudioEngine + integration (HAM voice)", () => {
+describe("整条链路：HAM 的报文渲染成可听的 PCM", () => {
   it("renders the virtual HAM's replies to audible PCM", () => {
     const ham = new VirtualHam({ call: "JA1ABC", difficulty: "novice" });
     const m = new QsoMachine({ myCall: "BG7XXX", ham, db: dxccDatabase });
-    const engine = new CwAudioEngine();
     const replies: string[] = [];
     m.userSend("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
     replies.push(m.hamAnswerCq());
@@ -230,15 +228,15 @@ describe("CwAudioEngine + integration (HAM voice)", () => {
     expect(replies.length).toBeGreaterThan(0);
     for (const text of replies) {
       if (!text) continue;
-      const r = engine.render(text, { sampleRate: SR });
+      const r = renderCwAudio({ text, sampleRate: SR });
       expect(r.samples.length).toBeGreaterThan(0);
       expect(r.durationSec).toBeGreaterThan(0);
     }
   });
 
   it("renderToWav yields a playable buffer", () => {
-    const engine = new CwAudioEngine();
-    const wav = engine.renderToWav("CQ DE BG7XXX", { sampleRate: SR });
+    const r = renderCwAudio({ text: "CQ DE BG7XXX", sampleRate: SR });
+    const wav = encodeWav(r.samples, r.sampleRate);
     const { samples } = decodeWav(wav);
     expect(samples.length).toBeGreaterThan(0);
   });

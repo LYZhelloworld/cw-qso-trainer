@@ -55,7 +55,7 @@
 
 > 侧音仍是独立的实时节点（见下方「发报侧音」）：它属于操作者自己，不走总线、不受滤波器与难度影响。
 
-实现：`src/audio/bandSynth.ts`（发射机、总线、接收机），共享一个 `AudioContext`（`src/audio/context.ts`）。旧路径（`src/audio/render.ts` 整段渲染 + `player.ts` 前瞻调度）在没有音频设备时作为兜底保留——那里本来就听不到声音，两条路径都只会安静。
+实现：`src/audio/bandSynth.ts`（发射机、总线、接收机），共享一个 `AudioContext`（`src/audio/context.ts`）。**在线声音只有这一条路**——没有"整段渲染再播放"的兜底了。`src/audio/render.ts` 仍在，但只用于离线把报文渲染成 WAV（`scripts/gen-sample-wav.ts`），与浏览器里的声音无关；它的 QSB 曲线（`qsbFactorAt`）与实时引擎共用，免得两边听感分叉。
 
 ---
 

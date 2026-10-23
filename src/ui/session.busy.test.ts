@@ -15,6 +15,7 @@ function makeSession() {
     now: () => 0,
     startTicking: () => () => {},
     delay: async () => {},
+    pace: async () => {},
   });
 }
 
