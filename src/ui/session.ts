@@ -106,6 +106,32 @@ function namesACall(line: string): boolean {
   return line.split(/[^A-Z0-9/]+/).some((token) => CALL_RE.test(token));
 }
 
+/**
+ * One HAM transmission placed on the air, as seen by the debug console.
+ *
+ * `path` is the single fact that explains "the waterfall / S-meter show it but I
+ * hear nothing": `audible` means the speaker should have it; anything else means
+ * the audio layer is (correctly or otherwise) suppressing it — `offband` (outside
+ * the receiver's filter), `muted` (the rig is powered down / half-duplex deaf
+ * while we transmit), or `transmitting` (our own key is down, so nobody is heard).
+ */
+export interface AiredMessage {
+  /** The band this station lives on, e.g. "14.050". */
+  band: string;
+  /** The station's callsign. */
+  call: string;
+  /** The full text keyed out, e.g. "CQ CQ CQ DE BA1XYZ BA1XYZ PSE K". */
+  text: string;
+  /** When the over started, in ms (session wall clock). */
+  at: number;
+  /** How long the over takes to key, in ms. */
+  durationMs: number;
+  /** Whether the operator can actually hear it right now. */
+  path: "audible" | "offband" | "muted" | "transmitting";
+  /** Convenience mirror of `path === "audible"` for filtering. */
+  inPassband: boolean;
+}
+
 export interface QsoSessionOptions {
   /** Injected RNG (tests): drives CQ intervals, answer delays and band size. */
   rng?: () => number;
@@ -222,6 +248,13 @@ export class QsoSession implements SessionContext {
    * disagree; one table cannot.
    */
   private readonly txs = new Map<string, Tx>();
+  /**
+   * Debug listeners (the F12 console). Every HAM transmission fires them with an
+   * `AiredMessage` — the single place the debugger learns what a station is
+   * keying and whether the operator can hear it. Kept separate from the activity
+   * listener so enabling the console never perturbs the band.
+   */
+  private readonly airListeners: Array<(m: AiredMessage) => void> = [];
 
   private readonly clock: () => number;
   private readonly startTicking: (cb: () => void) => () => void;
@@ -334,6 +367,19 @@ export class QsoSession implements SessionContext {
    */
   setActivityListener(fn: ((events: HamActivityEvent[]) => void) | null): void {
     this.activityListener = fn;
+  }
+
+  /**
+   * Register a debug listener fired whenever a HAM transmission is placed on the
+   * air (see `AiredMessage`). The F12 console uses this to print what the station
+   * currently being listened to is sending. Pass null to detach.
+   */
+  onAir(fn: ((m: AiredMessage) => void) | null): void {
+    if (fn === null) {
+      this.airListeners.length = 0;
+      return;
+    }
+    this.airListeners.push(fn);
   }
 
   updateSettings(settings: AppSettings): void {
@@ -653,7 +699,32 @@ export class QsoSession implements SessionContext {
     const tx = makeTx(text, this.audio.keyElements(text), this.clock());
     this.txs.set(ham.call, tx);
     this.audio.keyStation(tx, ham);
+    // Debug hook: what this station is keying, and whether the operator can
+    // actually hear it. `path` is the fact the F12 console prints to explain a
+    // signal that shows on the waterfall / S-meter but reaches no speaker.
+    const path: AiredMessage["path"] = this.transmitting
+      ? "transmitting"
+      : !this.receiving
+        ? "muted"
+        : !this.canHear(ham)
+          ? "offband"
+          : "audible";
+    const msg: AiredMessage = {
+      band: this.bandLabel(),
+      call: ham.call,
+      text,
+      at: tx.startedAt,
+      durationMs: tx.durationMs,
+      path,
+      inPassband: this.canHear(ham),
+    };
+    for (const fn of this.airListeners) fn(msg);
     return tx;
+  }
+
+  /** Human-readable band label for the debug console, e.g. "14.050". */
+  private bandLabel(): string {
+    return this.freqMHz.toFixed(3);
   }
 
   /**

@@ -5,6 +5,7 @@ import {
   hasAcknowledgedDisclaimer,
 } from "./disclaimer.js";
 import { QsoSession } from "./session.js";
+import { installDebugConsole } from "./debugConsole.js";
 import { loadSettings, saveSettings } from "./storage/settingsStore.js";
 import { normalizeSettings, type AppSettings } from "./settingsSchema.js";
 import { renderAbout } from "./pages/about.js";
@@ -177,6 +178,10 @@ export class App implements AppHost {
       this.pageRoot,
       el("div", { class: "footer", text: DISCLAIMER_TEXT }),
     );
+    // F12 console: only print what the operator can actually hear on the band
+    // being monitored — every band is wired so `window.cw` reflects the active
+    // one, but the streaming console is filtered to audible + active band.
+    installDebugConsole(this.sessions, { getActive: () => this.session });
     // The band exists whether or not anyone is listening: populate every band
     // and start its CQ rhythm now, so the air is already alive (and evolving)
     // by the time the operator flips the power switch.
