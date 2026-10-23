@@ -1,133 +1,102 @@
-import { button, el, panel } from "../dom.js";
-import {
-  BANDS,
-  FREQ_FINE_STEP_MHZ,
-  FREQ_STEP_MHZ,
-  clampToBand,
-  roundFreq,
-} from "../bands.js";
+import { button, el } from "../dom.js";
+import { BANDS } from "../bands.js";
 import { renderQsoPanel } from "./cw.js";
+import { renderSMeter } from "../smeter.js";
 import type { AppHost } from "../app.js";
 
 /**
- * How often the S-meter redraws. Fast enough to follow the key — the needle is
- * supposed to agree with what is coming out of the speaker, including the gaps
- * between dits — and slow enough not to burn a frame on it.
+ * The dial, written the way a rig writes it: MHz . kHz . Hz, so the digits you
+ * actually work with (the kHz) keep the same place in the number whether you
+ * are on 7 MHz or 28 MHz.
+ *
+ * `14.025` → `14.025.000`
  */
-const SMETER_TICK_MS = 60;
-
-/**
- * The receiver's S-meter: nine units plus a dB-over-S9 readout, following the
- * strongest signal the filter is passing (see `ham/smeter`). It redraws on its
- * own timer — the needle drifts with each signal's slow QSB, which has nothing
- * to do with when the band's stations happen to call CQ — and the page-level
- * cleanup stops the timer whenever this view is thrown away.
- */
-function renderSMeter(host: AppHost): HTMLElement {
-  const row = el("div", { class: "row smeter" });
-  row.append(el("span", { class: "hint smeter-label", text: "信号强度" }));
-
-  const bar = el("div", { class: "signal" });
-  const cells: HTMLElement[] = [];
-  for (let unit = 1; unit <= 9; unit += 1) {
-    // A stepped ladder, not equal bars: the scale rises towards S9 the way a
-    // real meter's does, so a reading one unit higher is visibly higher.
-    const cell = el("i", {});
-    cell.style.height = `${5 + unit * 1.7}px`;
-    cells.push(cell);
-    bar.append(cell);
-  }
-  const readout = el("span", { class: "smeter-read", text: "—" });
-  row.append(readout, bar);
-
-  const draw = (): void => {
-    const reading = host.session.sMeter();
-    readout.textContent = reading?.label ?? "—";
-    row.classList.toggle("quiet", reading === null);
-    for (const [i, cell] of cells.entries()) {
-      cell.classList.toggle("on", reading !== null && i < reading.s);
-    }
-    row.title =
-      reading === null
-        ? "滤波器里没有信号"
-        : `信号 ${Math.round(reading.dbm)} dBm · ${reading.label}`;
-  };
-  draw();
-  const timer = setInterval(draw, SMETER_TICK_MS);
-  host.onLeave(() => clearInterval(timer));
-  return row;
+export function formatDial(freqMHz: number): string {
+  const digits = String(Math.round(freqMHz * 1e6)).padStart(7, "0");
+  const hz = digits.slice(-3);
+  const khz = digits.slice(-6, -3);
+  const mhz = digits.slice(0, -6);
+  return `${mhz}.${khz}.${hz}`;
 }
 
 /**
- * The main "radio" screen: band tuning and the receiver's own readouts, plus the
- * QSO operating panel (status / send / keying) once the user has a partner. The
- * frequency readout itself lives in the persistent rig header, so it is not
- * repeated here.
+ * The operating screen: the receiver's meter and dial on one line, the band
+ * selector under it, and — in the key modes — the panel you transmit from.
+ *
+ * The dial is the anchor of the layout — centred across the screen, big enough
+ * to read from a step back — because on a rig the frequency is the one number
+ * that is always being looked at. The meter sits immediately to its left, on
+ * the same line, the way it does on a rig: signal strength is read out of the
+ * corner of the eye while you watch the dial.
+ *
+ * The panadapter is *not* here: it belongs to the App and sits under the page,
+ * so it keeps its picture when you switch to the log and back. The send bar of
+ * the text mode lives down there too (see `App.sendBar`).
  */
 export function renderRadio(host: AppHost, root: HTMLElement): void {
-  // Powered off: nothing to hear. Offer the power switch (also in the rig).
-  if (host.powered === false) {
-    const standby = el("div", { class: "standby" });
-    standby.append(el("div", { class: "standby-icon", text: "⏻" }));
-    standby.append(el("div", { class: "standby-title", text: "设备已关机" }));
-    standby.append(
-      el("div", { class: "hint", text: "开着电台就会开始接收这个频段上的信号。" }),
-    );
-    standby.append(
-      button("开台", () => host.setPower?.(true), "btn primary"),
-    );
-    root.append(panel("待机", standby));
-    return;
-  }
+  const powered = host.powered !== false;
 
-  // --- band tuning ---------------------------------------------------------
+  const page = el("div", { class: "radio-page" });
+  root.append(page);
+
+  // A switched-off rig still has a dial — it is just not lit, and it hears
+  // nothing. The meter stays, empty, so the screen does not read as broken.
+  const stage = el("div", { class: powered ? "console" : "console off" });
+  stage.append(
+    renderSMeter({
+      reading: () => host.session.sMeter(),
+      onLeave: (fn) => host.onLeave(fn),
+    }),
+    dial(host),
+  );
+  page.append(stage);
+
+  if (!powered) return;
+
+  page.append(controls(host));
+  // Always there, from the moment the rig is on: an operator transmits whenever
+  // they want to, not after clicking "start a QSO". Whether anybody answers is
+  // up to what the message says and who is listening (see `userSend`).
+  renderQsoPanel(host, page);
+}
+
+/** The frequency readout: centred in the page, MHz as its unit. */
+function dial(host: AppHost): HTMLElement {
+  // The unit hangs off the number rather than sitting in the flex row with it,
+  // so the *number* — the thing you read — is dead centre, not the pair.
+  const value = el("span", { class: "dial-value" });
+  value.append(
+    el("span", { class: "dial-digits", text: formatDial(host.settings.freqMHz) }),
+    el("span", { class: "dial-unit", text: "MHz" }),
+  );
+  const box = el("div", { class: "dial" });
+  box.append(value);
+  return box;
+}
+
+/**
+ * The band selector, as a slim strip under the dial.
+ *
+ * Nothing else is here on purpose. Tuning is done where the band is visible —
+ * the wheel over the panadapter (see `Waterfall`) — so the strip carries no
+ * knobs: a row of ±1 kHz / ±100 Hz buttons only put a second, worse way to
+ * tune next to the one you already have.
+ */
+function controls(host: AppHost): HTMLElement {
   const bandIndex = Math.min(Math.max(host.settings.bandIndex, 0), BANDS.length - 1);
-  const band = BANDS[bandIndex];
 
   const tabs = el("div", { class: "band-tabs" });
   BANDS.forEach((b, i) => {
     tabs.append(
       button(
-        b.label,
+        b.name,
         () => host.updateSettings({ bandIndex: i, freqMHz: b.defaultMHz }),
-        i === bandIndex ? "btn active" : "btn",
+        i === bandIndex ? "btn chip active" : "btn chip",
       ),
     );
   });
 
-  const step = (delta: number): void => {
-    const next = roundFreq(clampToBand(host.settings.freqMHz + delta, band));
-    host.updateSettings({ freqMHz: next });
-  };
-  const tuning = el("div", { class: "row" });
-  tuning.append(
-    button("− 1 kHz", () => step(-FREQ_STEP_MHZ)),
-    button("+ 1 kHz", () => step(FREQ_STEP_MHZ)),
-  );
-  // Stations sit on a 1 kHz grid, so the coarse buttons land exactly on one.
-  // The fine buttons are for working the passband edges — they are how the
-  // pitch offset (and its 500 Hz limit) becomes something you can hear.
-  const fineTuning = el("div", { class: "row" });
-  fineTuning.append(
-    button("− 100 Hz", () => step(-FREQ_FINE_STEP_MHZ), "btn small"),
-    button("+ 100 Hz", () => step(FREQ_FINE_STEP_MHZ), "btn small"),
-  );
-
-  // The receiver's filter width is an operator choice (500 / 250 / 100 Hz),
-  // set in the settings dialog. Nothing is spelled out on the page: the band
-  // is something to be worked by ear, not read off a caption.
-  root.append(panel("波段与调谐", tabs, tuning, fineTuning));
-
-  // --- receiver ------------------------------------------------------------
-  // The roster is deliberately not shown. Which station sits where, and what it
-  // is called, is exactly what the operator has to find by tuning and copy by
-  // ear — a list would turn the exercise into reading. The S-meter stays: it is
-  // what the receiver itself reports, not a directory of the band.
-  root.append(panel("接收机", renderSMeter(host)));
-
-  // --- operating panel ------------------------------------------------------
-  // Always there, from the moment the rig is on: an operator transmits whenever
-  // they want to, not after clicking "start a QSO". Whether anybody answers is
-  // up to what the message says and who is listening (see `userSend`).
-  renderQsoPanel(host, root);
+  const strip = el("div", { class: "rig-controls" });
+  strip.append(tabs);
+  return strip;
 }

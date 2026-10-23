@@ -1,12 +1,21 @@
 import { button, clear, el } from "./dom.js";
 import { BANDS } from "./bands.js";
-import { formatFreqMHz } from "./logRecord.js";
+import { SPECTRUM_SPAN_HZ } from "../ham/spectrum.js";
 import { sidebandLabel, type Sideband } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
 
 /**
- * The radio face: the persistent header (frequency, band, mode, power switch,
- * settings gear) plus the panadapter that sits under it.
+ * The radio's body, in two pieces that the App places separately:
+ *
+ *  - the **head** (`root`): what the operator is doing and with what —
+ *    RX/TX · band · mode on the left, settings and the power switch on the
+ *    right. Its middle slot is left empty for the App's page nav.
+ *  - the **scope** (`scopeRoot`): the panadapter at the bottom of the screen,
+ *    with a kHz scale under it and the standby shutter that covers the picture
+ *    while the rig is off.
+ *
+ * They are separate elements because the operating page sits *between* them;
+ * the App mounts the head first, then the page, then the scope.
  *
  * Extracted from the App shell because the App is about *navigation* — which
  * band, which page, which settings — while this file is about drawing a radio.
@@ -21,9 +30,20 @@ export interface RigFaceOptions {
   onOpenSettings(): void;
   /** The mode label was clicked: pin the other sideband. */
   onToggleSideband(current: Sideband): void;
+  /**
+   * Whether our own key is down, for the RX/TX badge.
+   *
+   * Polled rather than pushed: a transmission starts and ends without a
+   * re-render (the send box keeps its focus and the scope keeps scrolling), so
+   * there is no render to hang the badge on.
+   */
+  isTransmitting?(): boolean;
 }
 
-/** What the face needs to draw the header. */
+/** How often the RX/TX badge is re-read. Cheap enough to feel immediate. */
+const TX_POLL_MS = 120;
+
+/** What the head needs to draw itself. */
 export interface RigView {
   settings: AppSettings;
   powered: boolean;
@@ -34,23 +54,64 @@ export interface RigView {
   sideband: Sideband;
 }
 
-/**
- * What the panadapter's overlay says, gathered by the App from the session.
- *
- * Deliberately almost nothing: the display is a receiver, not a status board.
- * How many signals are in view, whether the filter is passing one, who is
- * calling — all of that is what the operator's ears are for.
- */
+/** What the scope's shutter says. */
 export interface ScopeView {
   powered: boolean;
 }
 
+/** One label on the panadapter's frequency scale. */
+export interface AxisTick {
+  /** Offset from the dial in kHz: negative left, 0 centre, positive right. */
+  khz: number;
+  /** Where it sits across the display, 0..100 %. */
+  pct: number;
+  /** Text to print — a bare signed number, no unit (see `axisTicks`). */
+  label: string;
+}
+
+/**
+ * Ticks for the scale under the waterfall: 0 is the dial, negative to the left,
+ * positive to the right.
+ *
+ * The display is always drawn around the dial (see `Waterfall`), so this scale
+ * is static: the numbers are offsets from wherever you are tuned, not absolute
+ * frequencies — which is exactly what a panadapter's scale means.
+ *
+ * Every label is a bare number. Printing "kHz" on the outer one only made that
+ * label wider than the rest, so it stopped lining up with its tick; the unit is
+ * in the docs and the dial, where it is unambiguous.
+ */
+export function axisTicks(spanHz: number, stepKhz = 5): AxisTick[] {
+  const halfKhz = spanHz / 2000;
+  if (!(halfKhz > 0)) return [];
+  const ticks: AxisTick[] = [];
+  for (let khz = -halfKhz; khz <= halfKhz + 1e-9; khz += stepKhz) {
+    const rounded = Math.round(khz);
+    ticks.push({ khz: rounded, pct: 50 + (khz / halfKhz) * 50, label: formatKhz(rounded) });
+  }
+  return ticks;
+}
+
+function formatKhz(khz: number): string {
+  if (khz === 0) return "0";
+  return khz > 0 ? `+${khz}` : `${khz}`;
+}
+
 export class RigFace {
-  readonly root = el("div", { class: "rig" });
+  /** The head. Mounted at the top of the app. */
+  readonly root = el("header", { class: "rig" });
+  /** Middle slot, left for the App's page nav. */
+  readonly center = el("div", { class: "rig-center" });
+  /** The panadapter. Mounted at the bottom of the app, after the page. */
+  readonly scopeRoot = el("section", { class: "rig-scope" });
   /** The panadapter canvas. Created once; never detached on re-render. */
   readonly canvas = el("canvas", { class: "scope-canvas" });
 
-  private readonly main = el("div", { class: "rig-main" });
+  private readonly txBadge = el("span", { class: "txrx rx", text: "RX" });
+  private readonly band = el("span", { class: "rig-band" });
+  private readonly left = el("div", { class: "rig-left" });
+  private readonly right = el("div", { class: "rig-right" });
+
   /**
    * The dial marker: one vertical line at the tuned frequency, the way a real
    * rig's panadapter shows where the VFO is. It sits in the middle because the
@@ -58,58 +119,60 @@ export class RigFace {
    * not a pair of edges to draw.
    */
   private readonly cursor = el("div", { class: "scope-cursor" });
-  private readonly label = el("span", { class: "scope-label" });
-  private readonly scope = el("div", { class: "rig-scope" }, [
+  private readonly standby = el("div", { class: "standby" });
+  private readonly field = el("div", { class: "scope-field" }, [
     this.canvas,
     this.cursor,
-    this.label,
+    this.standby,
   ]);
+  private readonly axis = el("div", { class: "scope-axis" });
+
   private mounted = false;
+  private tx = false;
+  private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly opts: RigFaceOptions) {}
 
-  /** Put the face into the page. Called once, from the App's `start()`. */
+  /** Build the head and the scope, and start watching the key. */
   mount(parent: HTMLElement): void {
     if (this.mounted) return;
     this.mounted = true;
-    this.root.append(this.main, this.scope);
+    this.root.append(this.left, this.center, this.right);
     parent.append(this.root);
+    this.buildStandby();
+    this.buildAxis();
+    this.scopeRoot.append(this.field, this.axis);
+    this.timer = setInterval(() => this.pollTx(), TX_POLL_MS);
   }
 
-  /** Redraw the header. Only the face is rebuilt — the scope is left alone. */
+  dispose(): void {
+    if (this.timer !== null) clearInterval(this.timer);
+    this.timer = null;
+    this.mounted = false;
+  }
+
+  /** Redraw the head. The scope is left alone, so its history survives. */
   render(view: RigView): void {
     const { settings, powered } = view;
     this.root.classList.toggle("powered", powered);
-    clear(this.main);
 
-    const band = BANDS[Math.min(Math.max(settings.bandIndex, 0), BANDS.length - 1)];
+    clear(this.left);
+    this.band.textContent = BANDS[Math.min(Math.max(settings.bandIndex, 0), BANDS.length - 1)].name;
+    this.left.append(this.txBadge, this.band, this.modeButton(view.sideband));
 
-    const brand = el("div", { class: "rig-brand" });
-    brand.append(el("span", { class: "app-title", text: "CW QSO 练习器" }));
-    brand.append(el("span", { class: "app-sub", text: "离线摩尔斯电码通联练习" }));
-
-    const freq = el("div", { class: "rig-freq" });
-    freq.append(el("span", { class: "freq-value", text: formatFreqMHz(settings.freqMHz) }));
-    freq.append(el("span", { class: "freq-unit", text: "MHz" }));
-
-    const meta = el("div", { class: "rig-meta" });
-    meta.append(el("span", { class: "badge", text: band.name }));
-    meta.append(this.modeButton(view.sideband));
-
-    const right = el("div", { class: "rig-right" });
+    clear(this.right);
     const power = button(
-      powered ? "⏻ 关台" : "⏻ 开台",
+      powered ? "关台" : "开台",
       () => this.opts.onPower(!powered),
       powered ? "btn power on" : "btn power",
     );
     power.setAttribute("aria-pressed", String(powered));
-    right.append(power, button("⚙ 设置", () => this.opts.onOpenSettings(), "btn gear"));
-
-    this.main.append(brand, freq, meta, right);
+    power.title = powered ? "关台（停止接收）" : "开台（开始接收）";
+    this.right.append(button("设置", () => this.opts.onOpenSettings(), "btn gear"), power);
   }
 
   /**
-   * Refresh the overlay text. Deliberately does not touch the canvas, so the
+   * Open or close the shutter. Deliberately does not touch the canvas, so the
    * picture (and its history) is untouched by a re-render.
    *
    * Nothing is written while the rig is on: the display is a receiver, not an
@@ -117,8 +180,8 @@ export class RigFace {
    * that the power is off.
    */
   updateScope(view: ScopeView): void {
-    this.scope.classList.toggle("off", !view.powered);
-    this.label.textContent = view.powered ? "" : "设备已关机";
+    this.scopeRoot.classList.toggle("off", !view.powered);
+    this.standby.hidden = view.powered;
   }
 
   /**
@@ -131,10 +194,52 @@ export class RigFace {
     const btn = button(
       sidebandLabel(sideband),
       () => this.opts.onToggleSideband(sideband),
-      "badge mode sideband-btn",
+      "rig-mode sideband-btn",
     );
     const other = sideband === "USB" ? "CW-L" : "CW-U";
     btn.title = `${sidebandLabel(sideband)}（本波段）· 点击切换到 ${other}`;
     return btn;
+  }
+
+  /** The shutter over the waterfall: what a switched-off rig shows. */
+  private buildStandby(): void {
+    this.standby.append(el("div", { class: "standby-icon", text: "⏻" }));
+    this.standby.append(el("div", { class: "standby-title", text: "设备已关机" }));
+    this.standby.append(
+      el("div", { class: "standby-hint", text: "开着电台就会开始接收这个频段上的信号。" }),
+    );
+    this.standby.append(button("开台", () => this.opts.onPower(true), "btn primary"));
+  }
+
+  private buildAxis(): void {
+    clear(this.axis);
+    for (const tick of axisTicks(SPECTRUM_SPAN_HZ)) {
+      const label = el("span", {
+        class: tick.khz === 0 ? "axis-tick center" : "axis-tick",
+        text: tick.label,
+      });
+      label.style.left = `${tick.pct}%`;
+      // Edge labels would be half cut off if they were centred on their tick.
+      label.style.transform =
+        tick.pct <= 0
+          ? "none"
+          : tick.pct >= 100
+            ? "translateX(-100%)"
+            : "translateX(-50%)";
+      this.axis.append(label);
+    }
+  }
+
+  /**
+   * Flip the badge between RX and TX. Only the class and the two letters
+   * change, so the header is not rebuilt while the operator is keying.
+   */
+  private pollTx(): void {
+    const on = this.opts.isTransmitting?.() ?? false;
+    if (on === this.tx) return;
+    this.tx = on;
+    this.txBadge.className = on ? "txrx tx" : "txrx rx";
+    this.txBadge.textContent = on ? "TX" : "RX";
+    this.root.classList.toggle("transmitting", on);
   }
 }

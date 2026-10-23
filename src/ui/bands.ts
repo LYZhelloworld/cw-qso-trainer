@@ -15,11 +15,6 @@ export const BANDS: readonly Band[] = [
   { name: "10m", label: "10m · 28", minMHz: 28.0, maxMHz: 28.5, defaultMHz: 28.025 },
 ];
 
-/** Main tuning step in MHz (1 kHz) — stations sit on this grid. */
-export const FREQ_STEP_MHZ = 0.001;
-/** Fine tuning step in MHz (100 Hz), for working the CW passband edges. */
-export const FREQ_FINE_STEP_MHZ = 0.0001;
-
 export function clampToBand(freqMHz: number, band: Band): number {
   if (!Number.isFinite(freqMHz)) return band.defaultMHz;
   return Math.min(band.maxMHz, Math.max(band.minMHz, freqMHz));

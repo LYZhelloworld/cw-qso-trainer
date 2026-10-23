@@ -70,7 +70,7 @@ describe("三种发报模式", () => {
   it("默认直键模式只有电键面板，没有文本框", () => {
     const { root } = makeHarness();
     expect(root.textContent).toContain("发报（直键，实时）");
-    expect(root.querySelector("textarea")).toBeNull();
+    expect(root.querySelector<HTMLInputElement>(".send-input")).toBeNull();
     // 也没有「发送」按钮：直键模式不需要再按一次。
     expect(
       Array.from(root.querySelectorAll("button")).map((b) => b.textContent),
@@ -79,7 +79,7 @@ describe("三种发报模式", () => {
 
   it("文本模式只有发送框，没有电键面板", () => {
     const { root } = makeHarness({ keyMode: "text" });
-    expect(root.querySelector("textarea")).not.toBeNull();
+    expect(root.querySelector<HTMLInputElement>(".send-input")).not.toBeNull();
     expect(root.textContent).toContain("发送");
     expect(root.textContent).not.toContain("发报（直键");
     expect(root.textContent).not.toContain("发报（iambic");
@@ -88,7 +88,7 @@ describe("三种发报模式", () => {
   it("iambic 模式只显示双桨面板", () => {
     const { root } = makeHarness({ keyMode: "iambic" });
     expect(root.textContent).toContain("发报（iambic 双桨，实时）");
-    expect(root.querySelector("textarea")).toBeNull();
+    expect(root.querySelector<HTMLInputElement>(".send-input")).toBeNull();
   });
 });
 
@@ -130,7 +130,7 @@ describe("通联面板", () => {
     await session.hamCallsCq();
     render();
 
-    const input = root.querySelector("textarea")!;
+    const input = root.querySelector<HTMLInputElement>(".send-input")!;
     input.value = "R UR RST 599 BK";
     findButton(root, "发送").click();
 
@@ -149,18 +149,18 @@ describe("通联面板", () => {
 
   it("重绘不会弄丢输入框里还没发送的报文", () => {
     const { root, host } = makeHarness({ keyMode: "text" });
-    const first = root.querySelector("textarea")!;
+    const first = root.querySelector<HTMLInputElement>(".send-input")!;
     first.value = "R UR RST 5"; // 输入一半，尚未发送
     first.dispatchEvent(new Event("input"));
 
     host.refresh();
 
-    expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
+    expect(root.querySelector<HTMLInputElement>(".send-input")!.value).toBe("R UR RST 5");
   });
 
   it("输入自动转成大写：草稿、日志、解析看到的是同一种拼法", () => {
     const { root, session } = makeHarness({ keyMode: "text" });
-    const input = root.querySelector("textarea")!;
+    const input = root.querySelector<HTMLInputElement>(".send-input")!;
     input.value = "bg7xxx de bd4vqk k";
     input.dispatchEvent(new Event("input"));
 
@@ -170,7 +170,7 @@ describe("通联面板", () => {
 
   it("转大写不把光标甩到末尾", () => {
     const { root } = makeHarness({ keyMode: "text" });
-    const input = root.querySelector("textarea")!;
+    const input = root.querySelector<HTMLInputElement>(".send-input")!;
     input.value = "rah";
     input.setSelectionRange(1, 1); // 光标在 r 后面
     input.dispatchEvent(new Event("input"));
@@ -182,7 +182,7 @@ describe("通联面板", () => {
   it("Enter 直接发送，不必按 Ctrl", async () => {
     const instant = { delay: async () => {}, pace: async () => {} };
     const { root, session } = makeHarness({ keyMode: "text" }, instant);
-    const input = root.querySelector("textarea")!;
+    const input = root.querySelector<HTMLInputElement>(".send-input")!;
     input.value = "CQ CQ CQ DE BG7XXX PSE K";
     input.dispatchEvent(new Event("input"));
 
@@ -199,7 +199,7 @@ describe("通联面板", () => {
   it("发送完焦点留在输入框里，接着敲下一条不用点鼠标", async () => {
     const instant = { delay: async () => {}, pace: async () => {} };
     const { root } = makeHarness({ keyMode: "text" }, instant);
-    const input = root.querySelector("textarea")!;
+    const input = root.querySelector<HTMLInputElement>(".send-input")!;
     input.value = "R";
     input.dispatchEvent(new Event("input"));
     input.dispatchEvent(
@@ -208,7 +208,7 @@ describe("通联面板", () => {
 
     await vi.waitFor(
       () => {
-        const live = root.querySelector("textarea");
+        const live = root.querySelector<HTMLInputElement>(".send-input");
         expect(live).not.toBeNull();
         expect(document.activeElement).toBe(live);
       },
