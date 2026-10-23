@@ -6,11 +6,14 @@ import { QsoSession } from "../session.js";
 import type { AppHost, PageId } from "../app.js";
 
 /** Mounts the CW page against a real session with a controllable host double. */
-function makeHarness(overrides: Partial<AppSettings> = {}) {
+function makeHarness(
+  overrides: Partial<AppSettings> = {},
+  options: ConstructorParameters<typeof QsoSession>[2] = {},
+) {
   const root = document.createElement("div");
   document.body.append(root);
   const settings = normalizeSettings({ myCall: "BG7XXX", ...overrides });
-  const session = new QsoSession(14.025, settings);
+  const session = new QsoSession(14.025, settings, options);
   let cleanups: Array<() => void> = [];
 
   const host: AppHost = {
@@ -153,6 +156,43 @@ describe("通联面板", () => {
     host.refresh();
 
     expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
+  });
+
+  it("Enter 直接发送，不必按 Ctrl", async () => {
+    const instant = { delay: async () => {}, pace: async () => {} };
+    const { root, session } = makeHarness({ keyMode: "text" }, instant);
+    const input = root.querySelector("textarea")!;
+    input.value = "CQ CQ CQ DE BG7XXX PSE K";
+    input.dispatchEvent(new Event("input"));
+
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => expect(session.lines.some((l) => l.who === "me")).toBe(true), {
+      timeout: 2000,
+      interval: 20,
+    });
+  });
+
+  it("发送完焦点留在输入框里，接着敲下一条不用点鼠标", async () => {
+    const instant = { delay: async () => {}, pace: async () => {} };
+    const { root } = makeHarness({ keyMode: "text" }, instant);
+    const input = root.querySelector("textarea")!;
+    input.value = "R";
+    input.dispatchEvent(new Event("input"));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(
+      () => {
+        const live = root.querySelector("textarea");
+        expect(live).not.toBeNull();
+        expect(document.activeElement).toBe(live);
+      },
+      { timeout: 2000, interval: 20 },
+    );
   });
 });
 
