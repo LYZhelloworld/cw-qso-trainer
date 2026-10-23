@@ -3,7 +3,8 @@ import { Frequency } from "../ham/frequency.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
 import { CwAudioEngine, type AudioPlayer } from "../audio/engine.js";
-import { textToTiming } from "../cw/encode.js";
+import { BandSynth } from "../audio/bandSynth.js";
+import type { LiveBand } from "../ui/sessionAudio.js";
 import type { KeyElement } from "../cw/decoder.js";
 import {
   answerCqDelayMs,
@@ -102,6 +103,12 @@ export interface QsoSessionOptions {
   /** Injected audio player (tests); defaults to a real `CwAudioEngine`. */
   engine?: AudioPlayer;
   /**
+   * Injected realtime band synth (tests). Defaults to a `BandSynth` on the
+   * shared `AudioContext`; under Node / jsdom that one finds no device and
+   * stays silent, which is why the session still owns a `Tx` table either way.
+   */
+  synth?: LiveBand;
+  /**
    * The band's reference frequency in Hz — where this band's stations live.
    * Defaults to the dial frequency the session was built with. The App passes
    * the band's nominal centre so the same band always holds the same stations.
@@ -136,6 +143,9 @@ export class QsoSession implements SessionContext {
   /** Switch this band's mode (the rig's CW-L / CW-U label). */
   setSidebandMode(sideband: Sideband): void {
     this.sidebandMode = sideband;
+    // Sideband is how the receiver interprets the dial: every note shifts, and
+    // the passband flips to the other side. Nothing is retuned or re-keyed.
+    this.audio.wireSynth();
   }
   /** Receiver CW filter width in Hz (500 / 250 / 100), from settings. */
   get passbandHz(): number {
@@ -253,7 +263,16 @@ export class QsoSession implements SessionContext {
       now: this.clock,
       referenceHz: this.referenceHz,
     });
-    this.audio = new SessionAudio(opts.engine ?? new CwAudioEngine(), () => this.audioView());
+    this.audio = new SessionAudio(
+      opts.engine ?? new CwAudioEngine(),
+      () => this.audioView(),
+      // Same clock the keying is scheduled on: a `Tx` is recorded on the
+      // session's wall clock and turned into audio-clock automation here.
+      opts.synth ?? new BandSynth({ now: this.clock }),
+      this.wait,
+    );
+    this.audio.useSynth(true);
+    this.audio.wireSynth();
     this.pileup = new PileupDriver(this);
     this.hamQso = new HamQsoDriver(this);
   }
@@ -276,7 +295,7 @@ export class QsoSession implements SessionContext {
       this.stopTicking = null;
     }
     this.pileup.clear();
-    this.audio.stop(); // cut any in-flight HAM audio when leaving the band
+    this.audio.dispose(); // tear the band down with the session
     this.activityListener = null;
   }
 
@@ -290,6 +309,10 @@ export class QsoSession implements SessionContext {
 
   updateSettings(settings: AppSettings): void {
     this.settings = settings;
+    // Pitch, filter width and difficulty all change what the receiver does, so
+    // the whole band is re-tuned and re-levelled rather than waiting for the
+    // next over.
+    this.audio.wireSynth();
   }
 
   /**
@@ -305,9 +328,13 @@ export class QsoSession implements SessionContext {
     if (on === this.receiving) return;
     this.receiving = on;
     if (!on) {
-      this.audio.stop(); // powering down cuts whatever was being heard
+      // Powering down is deafness, not a stop: the band keeps transmitting and
+      // the keying keeps running, so switching back on lands mid-message.
+      this.audio.setMuted(true);
       return;
     }
+    this.audio.setMuted(false);
+    this.audio.wireSynth();
     // Powering up onto a station that is mid-CQ should put us in the middle of
     // it, exactly like switching a real receiver on.
     this.rejoinOnAir();
@@ -322,8 +349,10 @@ export class QsoSession implements SessionContext {
     if (freqMHz === this.freqMHz) return;
     this.freqMHz = freqMHz;
     if (this.machine) this.persistStaging();
-    // Tuning is also listening: whatever is on the air at the new spot starts
-    // playing straight away, from wherever it has got to.
+    // Tuning is also listening: every station's note and level follow the dial
+    // at once, so whatever is inside the passband at the new spot is heard
+    // straight away, from wherever it has got to.
+    this.audio.wireSynth();
     this.rejoinOnAir();
   }
 
@@ -335,7 +364,10 @@ export class QsoSession implements SessionContext {
   seedHams(count?: number): VirtualHam[] {
     if (count !== undefined) this.targetHams = count;
     while (this.band.hamCount < this.targetHams) this.spawnHam();
-    return this.listHams();
+    const hams = this.listHams();
+    // Every station gets a transmitter the moment it exists on this band.
+    this.audio.syncStations(hams);
+    return hams;
   }
 
   listHams(): VirtualHam[] {
@@ -689,17 +721,17 @@ export class QsoSession implements SessionContext {
     this.push("me", text);
     this.transmitting = true;
     this.txStartedAt = this.clock();
-    this.txTiming = textToTiming(text, {
-      wpm: this.settings.wpm,
-      ...(this.settings.farnsworthEnabled
-        ? { farnsworthWpm: this.settings.farnsworthWpm }
-        : {}),
-    });
+    // One record drives everything: the monitor tone, the S-meter (`txTiming`)
+    // and the waterfall. There is no second copy of the keying to drift.
+    const tx = makeTx(text, this.audio.keyElements(text), this.txStartedAt);
+    this.txTiming = tx.elements;
+    this.audio.setTransmitting(true);
     try {
-      await this.audio.playMine(text);
+      await this.audio.playMine(tx, this.txStartedAt);
     } finally {
       await this.wait(TX_TAIL_MS);
       this.transmitting = false;
+      this.audio.setTransmitting(false);
       this.txTiming = null;
     }
   }
@@ -984,6 +1016,9 @@ export class QsoSession implements SessionContext {
   /** One step of the scheduler (driven by the injected timer). */
   private tick(): void {
     const events = this.band.advance();
+    // The roster changes here too (stations come and go), so the band's
+    // transmitters are brought in line before anything is keyed onto them.
+    this.audio.syncStations(this.band.listHams());
     if (events.length > 0) this.handleActivity(events);
     this.pileup.drive();
     this.hamQso.drive();
@@ -1052,6 +1087,13 @@ export class QsoSession implements SessionContext {
       if (!tx || !txOnAir(tx, now)) continue;
       target = { ham: entry.ham, tx };
       break;
+    }
+    if (this.audio.live) {
+      // Nothing is stopped or restarted: the band has been transmitting all
+      // along. All that is needed is to key the rest of the message that is on
+      // the air right now, so the receiver lands in the middle of it.
+      if (target) this.audio.joinTx(target.tx, target.ham, now);
+      return;
     }
     this.audio.stop();
     if (target) void this.audio.playTx(target.tx, target.ham, now);

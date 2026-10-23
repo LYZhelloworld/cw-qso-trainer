@@ -1,5 +1,6 @@
 import { difficultyToEnvironment, type Difficulty, type Environment } from "./environment.js";
 import type { AudioBufferLike, AudioBufferSourceLike } from "./player.js";
+import { audioAvailable, sharedAudioContext } from "./context.js";
 import { qsbFactorAt } from "./render.js";
 import { receiveStation, type Sideband } from "../ham/tuning.js";
 import type { Tx } from "../ham/tx.js";
@@ -115,17 +116,20 @@ interface Voice {
   lastToneHz: number;
 }
 
-function defaultNow(): number {
-  return typeof performance !== "undefined" && typeof performance.now === "function"
-    ? performance.now()
-    : Date.now();
+/** Does this context have everything the band's graph is built from? */
+function usable(ctx: BandContextLike | null): ctx is BandContextLike {
+  return (
+    ctx !== null &&
+    typeof ctx.createGain === "function" &&
+    typeof ctx.createOscillator === "function" &&
+    typeof ctx.createBuffer === "function" &&
+    typeof ctx.createBufferSource === "function"
+  );
 }
 
-function audioContextCtor(): (new () => BandContextLike) | undefined {
-  const g = globalThis as Record<string, unknown>;
-  return (g.AudioContext ?? g.webkitAudioContext) as
-    | (new () => BandContextLike)
-    | undefined;
+function defaultNow(): number {  return typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
 }
 
 const SILENT: Environment = difficultyToEnvironment("novice");
@@ -134,17 +138,29 @@ export class BandSynth {
   private ctx: BandContextLike | null = null;
   private triedContext = false;
 
-  private readonly master: GainLike | null;
-  private readonly noiseGain: GainLike | null;
-  private readonly noiseSource: AudioBufferSourceLike | null;
-  private readonly qrmGain: GainLike | null;
+  private master: GainLike | null = null;
+  private noiseGain: GainLike | null = null;
+  private noiseSource: AudioBufferSourceLike | null = null;
+  private qrmGain: GainLike | null = null;
   private readonly qrmVoices: Array<{ osc: OscillatorLike; level: GainLike }> = [];
+  /** Built on first use, not in the constructor: see `ensure`. */
+  private built = false;
 
   private readonly voices = new Map<string, Voice>();
+  /**
+   * The operator's own transmitter. It is not one of the band's stations: it
+   * sits exactly on the dial, it is never faded by the filter, and it feeds the
+   * **monitor** bus rather than the receiver's — a rig does not mute your own
+   * keying when it goes deaf on transmit.
+   */
+  private own: Voice | null = null;
+  private monitor: GainLike | null = null;
   private receiver: SynthReceiver | null = null;
   private environment: Environment;
   private volume: number;
   private transmitting = false;
+  /** Receiver muted (rig switched off) while the band carries on. */
+  private muted = false;
   private disposed = false;
 
   private readonly now: () => number;
@@ -153,20 +169,46 @@ export class BandSynth {
     this.now = opts.now ?? defaultNow;
     this.environment = opts.environment ?? SILENT;
     this.volume = opts.volume ?? 1;
+  }
 
-    const ctx = this.context();
-    if (!ctx) {
-      this.master = null;
-      this.noiseGain = null;
-      this.noiseSource = null;
-      this.qrmGain = null;
-      return;
+  /**
+   * True where there is an audio device to key on (Node / jsdom: false).
+   *
+   * Deliberately cheap and side-effect free: it answers from the capability, not
+   * by building the graph, so that merely *constructing* a session (one per
+   * band, at start-up) does not open an audio device before anything is played.
+   */
+  get available(): boolean {
+    if (this.disposed) return false;
+    if (this.built) return this.ctx !== null;
+    // An injected factory is the test's own device: building it is free and it
+    // is the only way to know whether it actually yields a context.
+    if (this.opts.contextFactory) {
+      this.ensure();
+      return this.ctx !== null;
     }
+    // Browser default: answer from the capability without opening a device, so
+    // that constructing a session (one per band) has no side effects.
+    return audioAvailable();
+  }
+
+  /**
+   * Build the bus on first use.
+   *
+   * Everything is wired here rather than in the constructor so a session that
+   * never puts a station on the band never touches the audio device.
+   */
+  private ensure(): BandContextLike | null {
+    if (this.disposed) return null;
+    if (this.built) return this.ctx;
+    this.built = true;
+    const ctx = this.context();
+    if (!ctx) return null;
 
     // Bus: everything the receiver hears passes through the master gain, so
     // half-duplex muting and the volume control have one place to act.
     this.master = ctx.createGain();
-    this.master.gain.value = this.transmitting ? 0 : this.volume;
+    this.master.gain.value = this.transmitting || this.muted ? 0 : this.volume;
     this.master.connect(ctx.destination);
 
     // Noise floor: one looping buffer, so it is continuous across overs. It is
@@ -204,11 +246,18 @@ export class BandSynth {
       osc.start(0);
       this.qrmVoices.push({ osc, level });
     }
-  }
 
-  /** True where there is an audio device to key on (Node / jsdom: false). */
-  get available(): boolean {
-    return this.ctx !== null && !this.disposed;
+    // Monitor bus: the operator's own keying. It follows the volume control but
+    // never the half-duplex mute, because what you are sending is by definition
+    // not something you receive. Built last so the buses keep a stable order.
+    this.monitor = ctx.createGain();
+    this.monitor.gain.value = this.volume;
+    this.monitor.connect(ctx.destination);
+
+    // Whatever the receiver had been told before there was a device.
+    for (const voice of this.voices.values()) this.applyReceiver(voice);
+    this.applyQrmFrequencies();
+    return ctx;
   }
 
   /** The audio clock, in seconds — the axis every keying runs on. */
@@ -218,15 +267,15 @@ export class BandSynth {
 
   /** Put a station on the band (idempotent). Its carrier starts at level 0. */
   ensureStation(station: SynthStation): void {
-    if (this.disposed || station.freqHz <= 0) return;
+    if (station.freqHz <= 0) return;
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
     const existing = this.voices.get(station.call);
     if (existing) {
       existing.station = station;
       this.applyReceiver(existing);
       return;
     }
-    const ctx = this.ctx;
-    if (!ctx || !this.master) return;
 
     const osc = ctx.createOscillator();
     osc.type = "sine";
@@ -261,6 +310,7 @@ export class BandSynth {
   setReceiver(rx: SynthReceiver): void {
     this.receiver = rx;
     for (const voice of this.voices.values()) this.applyReceiver(voice);
+    this.applyOwn();
     this.applyQrmFrequencies();
   }
 
@@ -274,29 +324,36 @@ export class BandSynth {
    */
   key(tx: Tx, call: string, atMs: number): void {
     const voice = this.voices.get(call);
-    if (!voice || this.disposed) return;
-    const ctx = this.ctx;
-    if (!ctx) return;
+    if (!voice || !this.ensure()) return;
+    this.scheduleKeying(voice.keyGain.gain, tx, this.audioTimeOf(atMs), 0);
+  }
 
-    const param = voice.keyGain.gain;
-    const start = this.audioTimeOf(atMs);
-    param.cancelScheduledValues(start);
-    param.setValueAtTime(0, start);
+  /**
+   * Key the *rest* of a transmission: `elapsedMs` of it has already gone out.
+   *
+   * This is what a receiver does when it is switched on (or tuned in) halfway
+   * through a CQ — it hears the tail, from the dot that is being sent right
+   * now. Nothing is replayed, so the sound stays in step with the waterfall,
+   * which has been drawing that message all along.
+   */
+  keyFrom(tx: Tx, call: string, atMs: number, elapsedMs: number): void {
+    const voice = this.voices.get(call);
+    if (!voice || !this.ensure()) return;
+    this.scheduleKeying(voice.keyGain.gain, tx, this.audioTimeOf(atMs), elapsedMs);
+  }
 
-    let t = start;
-    for (const element of tx.elements) {
-      const onSec = element.on / 1000;
-      const atOn = Math.max(t + KEY_RAMP_SEC, t + onSec - KEY_RAMP_SEC);
-      // Level 1 here and the audible level on the voice's own gain: keying says
-      // *when*, `levelGain` says *how loud*, and the two never overwrite.
-      param.linearRampToValueAtTime(1, t + KEY_RAMP_SEC);
-      param.setValueAtTime(1, atOn);
-      param.linearRampToValueAtTime(0, t + onSec);
-      t += onSec + element.off / 1000;
-    }
-    // Belt and braces: a late `key` from a stale driver must not leave a
-    // carrier keyed forever.
-    param.setValueAtTime(0, t);
+  /**
+   * Key the operator's own message onto the monitor bus.
+   *
+   * The carrier sits on the dial, so the note is exactly the pitch the operator
+   * set, at full strength and without fading — it is a local monitor of what is
+   * going out, not a reception.
+   */
+  keyMine(tx: Tx, atMs: number, elapsedMs = 0): void {
+    if (!this.ensure()) return;
+    const voice = this.ownVoice();
+    if (!voice) return;
+    this.scheduleKeying(voice.keyGain.gain, tx, this.audioTimeOf(atMs), elapsedMs);
   }
 
   /** Cut a station's keying now (the operator broke in, or the over was cut). */
@@ -308,16 +365,42 @@ export class BandSynth {
     voice.keyGain.gain.setTargetAtTime(0, now, KEY_RAMP_SEC / 3);
   }
 
+  /** Cut the operator's own keying (their message was interrupted). */
+  silenceMine(): void {
+    if (!this.own || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.own.keyGain.gain.cancelScheduledValues(now);
+    this.own.keyGain.gain.setTargetAtTime(0, now, KEY_RAMP_SEC / 3);
+  }
+
   /** Half-duplex: 0 while the operator transmits, back to the volume after. */
   setTransmitting(on: boolean): void {
     this.transmitting = on;
+    this.applyMasterIfBuilt();
+  }
+
+  private applyMasterIfBuilt(): void {
+    if (!this.ctx) return;
     this.applyMaster();
+  }
+
+  /**
+   * Mute the receiver without touching the band: the stations keep transmitting
+   * and their keying keeps running, the operator just cannot hear them (rig
+   * switched off). Unmuting lands mid-message, exactly like a real receiver.
+   */
+  setMuted(on: boolean): void {
+    this.muted = on;
+    this.applyMasterIfBuilt();
   }
 
   /** Bus gain in [0, 1]. */
   setVolume(volume: number): void {
     this.volume = Math.min(1, Math.max(0, volume));
-    this.applyMaster();
+    if (this.monitor && this.ctx) {
+      this.monitor.gain.setTargetAtTime(this.volume, this.ctx.currentTime, GLIDE_SEC);
+    }
+    this.applyMasterIfBuilt();
   }
 
   /** Swap the noise / interference profile (difficulty changed). */
@@ -349,12 +432,19 @@ export class BandSynth {
   /** Silence everything at once (power off, or the operator starts sending). */
   silenceAll(): void {
     for (const call of this.voices.keys()) this.silenceStation(call);
+    this.silenceMine();
   }
 
   /** Tear the graph down (the session is going away). */
   dispose(): void {
     this.disposed = true;
     for (const call of [...this.voices.keys()]) this.removeStation(call);
+    try {
+      this.own?.osc.stop(this.ctx?.currentTime ?? 0);
+    } catch {
+      /* already stopped */
+    }
+    this.own = null;
     try {
       this.noiseSource?.stop(this.ctx?.currentTime ?? 0);
     } catch {
@@ -377,12 +467,13 @@ export class BandSynth {
     if (this.triedContext) return null;
     this.triedContext = true;
     const factory = this.opts.contextFactory;
-    if (factory) {
-      this.ctx = factory();
-      return this.ctx;
-    }
-    const Ctor = audioContextCtor();
-    this.ctx = Ctor ? new Ctor() : null;
+    // The shared browser context, not one of our own: keying and any rendered
+    // audio have to run on the same clock and reach the same device.
+    const ctx = factory ? factory() : (sharedAudioContext() as unknown as BandContextLike | null);
+    // A context that cannot build a graph is no better than no context at all
+    // (jsdom stubs, or a browser refusing a node): stay silent rather than
+    // throwing halfway through building the band.
+    this.ctx = usable(ctx) ? ctx : null;
     return this.ctx;
   }
 
@@ -404,7 +495,7 @@ export class BandSynth {
 
   private applyMaster(): void {
     if (!this.master || !this.ctx) return;
-    const target = this.transmitting ? 0 : this.volume;
+    const target = this.transmitting || this.muted ? 0 : this.volume;
     this.master.gain.setTargetAtTime(target, this.ctx.currentTime, GLIDE_SEC);
   }
 
@@ -451,5 +542,94 @@ export class BandSynth {
         GLIDE_SEC,
       );
     }
+  }
+
+  /**
+   * Write a message's dots and dashes onto a key gain, as gain automation.
+   *
+   * `startSec` is when the *remaining* part begins on the audio clock, and
+   * `elapsedMs` is how much of the message has already gone out — the two are
+   * how a receiver joins a transmission halfway (see `keyFrom`). Each element
+   * is a 5 ms ramp up, a hold, a 5 ms ramp down, so no edge clicks and no
+   * carrier is left behind in the gap between two dits.
+   */
+  private scheduleKeying(
+    param: AudioParamLike,
+    tx: Tx,
+    startSec: number,
+    elapsedMs: number,
+  ): void {
+    param.cancelScheduledValues(startSec);
+    param.setValueAtTime(0, startSec);
+
+    let t = startSec;
+    let skip = Math.max(0, elapsedMs);
+
+    for (const element of tx.elements) {
+      let on = element.on;
+      let off = element.off;
+
+      // Drop whatever part of this element has already been transmitted.
+      if (skip > 0) {
+        const fromTone = Math.min(skip, on);
+        on -= fromTone;
+        skip -= fromTone;
+        if (skip > 0) {
+          const fromGap = Math.min(skip, off);
+          off -= fromGap;
+          skip -= fromGap;
+        }
+        // Landed inside a tone: the ramp up below is the receiver fading in on
+        // a note that is already sounding, which is what actually happens.
+        if (on <= 0 && off <= 0) continue;
+      }
+
+      if (on > 0) {
+        const onSec = on / 1000;
+        const upSec = Math.min(KEY_RAMP_SEC, onSec);
+        param.linearRampToValueAtTime(1, t + upSec);
+        param.setValueAtTime(1, Math.max(t + upSec, t + onSec - KEY_RAMP_SEC));
+        param.linearRampToValueAtTime(0, t + onSec);
+        t += onSec;
+      }
+      if (off > 0) t += off / 1000;
+    }
+    // Belt and braces: a late `key` from a stale driver must not leave a
+    // carrier keyed forever.
+    param.setValueAtTime(0, t);
+  }
+
+  /** Lazily build the operator's own transmitter on the monitor bus. */
+  private ownVoice(): Voice | null {
+    const ctx = this.ctx;
+    if (!ctx || !this.monitor) return null;
+    if (this.own) return this.own;
+
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.value = this.toneHz;
+    const keyGain = ctx.createGain();
+    keyGain.gain.value = 0;
+    const levelGain = ctx.createGain();
+    levelGain.gain.value = 1; // our own signal: full strength, never faded
+    osc.connect(keyGain);
+    keyGain.connect(levelGain);
+    levelGain.connect(this.monitor);
+    osc.start(ctx.currentTime);
+
+    this.own = {
+      station: { call: "", freqHz: this.receiver?.dialHz ?? 0, strength: 1, difficulty: "novice" },
+      osc,
+      keyGain,
+      levelGain,
+      lastToneHz: this.toneHz,
+    };
+    return this.own;
+  }
+
+  /** The operator's own note follows the dial, and is never filtered. */
+  private applyOwn(): void {
+    if (!this.own || !this.ctx) return;
+    this.own.osc.frequency.setTargetAtTime(this.toneHz, this.ctx.currentTime, GLIDE_SEC);
   }
 }

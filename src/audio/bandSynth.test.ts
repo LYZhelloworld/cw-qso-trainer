@@ -94,6 +94,12 @@ function makeContext() {
 
 const DIAL = 14_025_000;
 const STATION = { call: "JA1ABC", freqHz: DIAL, strength: 0.5, difficulty: "novice" as const };
+/**
+ * Gains are created in a fixed order: master, noise, QRM bus, monitor, then
+ * `keyGain` + `levelGain` per station. A station's keying is therefore the
+ * fifth node, and its level the sixth.
+ */
+const FIRST_KEY_GAIN = 4;
 
 function makeSynth(sideband: Sideband = "USB") {
   const ctx = makeContext();
@@ -103,6 +109,9 @@ function makeSynth(sideband: Sideband = "USB") {
     now: () => wall,
   });
   synth.setReceiver({ dialHz: DIAL, sideband, passbandHz: 500, toneHz: 700 });
+  // One station on the band, so the bus is built: the graph comes up on first
+  // use, not in the constructor.
+  synth.ensureStation(STATION);
   return {
     ctx,
     synth,
@@ -155,7 +164,7 @@ describe("BandSynth — 一台发射机、一条总线", () => {
   it("键控直接排在增益上：每个元素一段上扬、一段落下，起落各 5 ms", () => {
     const { ctx, synth, lastLevel } = makeSynth();
     synth.ensureStation(STATION);
-    const keyGain = ctx.gains[3].gain; // master, noise, qrm 之后的第一台
+    const keyGain = ctx.gains[FIRST_KEY_GAIN].gain;
     expect(lastLevel()).toBeDefined();
 
     synth.key(makeTx("A B", ELEMENTS, 0), STATION.call, 0);
@@ -173,7 +182,7 @@ describe("BandSynth — 一台发射机、一条总线", () => {
   it("打断发报：清掉排程并平滑归零", () => {
     const { ctx, synth } = makeSynth();
     synth.ensureStation(STATION);
-    const keyGain = ctx.gains[3].gain;
+    const keyGain = ctx.gains[FIRST_KEY_GAIN].gain;
 
     synth.key(makeTx("A B", ELEMENTS, 0), STATION.call, 0);
     ctx.currentTime = 0.05;
@@ -213,9 +222,79 @@ describe("BandSynth — 一台发射机、一条总线", () => {
     expect(() => {
       synth.ensureStation(STATION);
       synth.key(makeTx("A B", ELEMENTS, 0), STATION.call, 0);
+      synth.keyMine(makeTx("A B", ELEMENTS, 0), 0);
       synth.setTransmitting(true);
       synth.dispose();
     }).not.toThrow();
+  });
+});
+
+describe("BandSynth — 从报文中间接上", () => {
+  it("已经发出去的部分不再排：只从此刻往后敲", () => {
+    const { ctx, synth, lastLevel } = makeSynth();
+    synth.ensureStation(STATION);
+    const keyGain = ctx.gains[FIRST_KEY_GAIN].gain;
+    expect(lastLevel()).toBeDefined();
+
+    // 报文从墙上 0 ms 开始，现在到了 500 ms；前 150 ms 已经在空中了
+    // （第一个元素 100 ms 的点 + 50 ms 的间隔），剩下 50 ms 间隔 + 第二个元素
+    synth.keyFrom(makeTx("A B", ELEMENTS, 0), STATION.call, 500, 150);
+
+    const ramps = keyGain.events.filter((e) => e.kind === "ramp");
+    expect(ramps.map((e) => [e.value, round(e.time)])).toEqual([
+      [1, 0.555],
+      [0, 0.65],
+    ]);
+  });
+
+  it("正好落在点里：从剩余的半个点接着响，不是从头再来", () => {
+    const { ctx, synth } = makeSynth();
+    synth.ensureStation(STATION);
+    const keyGain = ctx.gains[FIRST_KEY_GAIN].gain;
+
+    // 50 ms 已发出去，第一个元素还剩 50 ms 的点
+    synth.keyFrom(makeTx("A B", ELEMENTS, 0), STATION.call, 500, 50);
+
+    const ramps = keyGain.events.filter((e) => e.kind === "ramp");
+    // 落在点上就直接起音（5 ms 淡入），这个点还剩 50 ms，然后才是间隔
+    expect(ramps.map((e) => [e.value, round(e.time)])).toEqual([
+      [1, 0.505],
+      [0, 0.55],
+      [1, 0.655],
+      [0, 0.75],
+    ]);
+  });
+});
+
+describe("BandSynth — 自己的发射机", () => {
+  it("走监听支路：半双工静音时听不到别人，但自己的键控照样响", () => {
+    const { ctx, synth } = makeSynth();
+    synth.setVolume(0.8);
+    synth.setTransmitting(true);
+
+    // 接收总线静音
+    expect(ctx.gains[0].gain.value).toBe(0);
+    // 监听支路不受影响
+    expect(ctx.gains[3].gain.value).toBeCloseTo(0.8, 6);
+
+    synth.keyMine(makeTx("A B", ELEMENTS, 0), 0);
+
+    const own = ctx.oscs.at(-1)!;
+    expect(own.frequency.value).toBe(700); // 自己的载波就在拨轮上
+    // 自己那台的电平固定为 1：不做滤波、不起伏
+    expect(ctx.gains.at(-1)!.gain.value).toBe(1);
+    // 键控增益上排的还是同一套点划
+    const keyGain = ctx.gains.at(-2)!.gain;
+    expect(keyGain.events.filter((e) => e.kind === "ramp").length).toBe(4);
+  });
+
+  it("拨轮一动，自己的音调跟着动，但永远等于设定值", () => {
+    const { ctx, synth } = makeSynth();
+    synth.keyMine(makeTx("A B", ELEMENTS, 0), 0);
+    const own = ctx.oscs.at(-1)!;
+
+    synth.setReceiver({ dialHz: DIAL + 2_000, sideband: "LSB", passbandHz: 250, toneHz: 620 });
+    expect(own.frequency.value).toBe(620);
   });
 });
 

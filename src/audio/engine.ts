@@ -2,6 +2,7 @@ import { renderCwAudio, type CwRenderOptions, type RenderResult } from "./render
 import { encodeWav } from "./wav.js";
 import { difficultyToEnvironment, type Difficulty } from "./environment.js";
 import { LookaheadPlayer, type AudioContextLike, type PlaybackHandle } from "./player.js";
+import { audioAvailable, sharedAudioContext } from "./context.js";
 
 /**
  * High-level CW audio engine. Pure presentation layer: it renders a message to
@@ -29,51 +30,6 @@ export interface AudioPlayer {
 
 export type { PlaybackHandle } from "./player.js";
 
-function audioContextCtor(): (new () => AudioContextLike) | undefined {
-  const g = globalThis as Record<string, unknown>;
-  return (g.AudioContext ?? g.webkitAudioContext) as
-    | (new () => AudioContextLike)
-    | undefined;
-}
-
-let sharedCtx: AudioContextLike | null = null;
-let gestureWired = false;
-
-/**
- * Lazily create (and cache) the one AudioContext the engine uses. Returns null
- * where audio is unavailable (Node, jsdom), in which case playback is a no-op.
- */
-function getSharedAudioContext(): AudioContextLike | null {
-  if (sharedCtx) return sharedCtx;
-  const Ctor = audioContextCtor();
-  if (!Ctor) return null;
-  const ctx = new Ctor();
-  sharedCtx = ctx;
-  wireGestureResume(ctx);
-  return ctx;
-}
-
-/** Resume a suspended context on the first user gesture (autoplay policy). */
-function wireGestureResume(ctx: AudioContextLike): void {
-  if (gestureWired) return;
-  gestureWired = true;
-  const g = globalThis as Record<string, unknown>;
-  const add = g.addEventListener as
-    | ((type: string, cb: () => void, opts?: { once?: boolean; capture?: boolean }) => void)
-    | undefined;
-  if (typeof add !== "function") return;
-  const resume = (): void => {
-    try {
-      ctx.resume?.();
-    } catch {
-      /* ignore */
-    }
-  };
-  for (const ev of ["pointerdown", "keydown", "touchstart"]) {
-    add(ev, resume, { once: true, capture: true });
-  }
-}
-
 export interface EngineRenderOptions extends Omit<CwRenderOptions, "text"> {
   /**
    * Start this many seconds into the message. Used to join a transmission that
@@ -97,7 +53,7 @@ export class CwAudioEngine implements AudioPlayer {
     timer?: (cb: () => void, ms: number) => () => void;
   }) {
     this.player = new LookaheadPlayer(
-      opts?.contextFactory ?? getSharedAudioContext,
+      opts?.contextFactory ?? sharedAudioContext,
       opts?.timer ? { timer: opts.timer } : {},
     );
   }
@@ -151,6 +107,6 @@ export class CwAudioEngine implements AudioPlayer {
   }
 
   get playbackAvailable(): boolean {
-    return audioContextCtor() !== undefined;
+    return audioAvailable();
   }
 }
