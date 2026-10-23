@@ -18,9 +18,10 @@ import type { KeyElement } from "./decoder.js";
  * - dot = 1d, dash = 3d
  * - element gap = 1d (mandatory after every element)
  * - character gap = 3d total (auto-inserted when no paddle is held)
- * - **word gap = a longer pause**, not a key: a character that starts 5d or more
- *   after the previous element begins a new word. Words are separated by silence,
- *   the way they are on the air.
+ * - **word gap = a longer pause**, not a key: a character that starts 7d or more
+ *   after the previous element *ended* begins a new word — 3d for the character
+ *   gap that flushed the last letter, plus 4d more. Words are separated by
+ *   silence, the way they are on the air.
  *
  * Fast paddling is buffered: a press that arrives while an element is still being
  * sent is queued and played after it, so a quick tap is never dropped just
