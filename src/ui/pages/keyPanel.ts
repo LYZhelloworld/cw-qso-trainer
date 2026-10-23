@@ -39,11 +39,12 @@ export interface KeyPanelOptions {
    */
   onCancel?(): void;
   /**
-   * Live echo of the over being keyed: the decoded text so far. The page puts
-   * it in the same bar text mode uses, so all three modes show the operator's
-   * message in the same place. An empty string means "nothing is being sent".
+   * Live echo of the over being keyed: the decoded text and the dots/dashes of
+   * the character still being decoded. The page puts it in the same bar text
+   * mode uses, so all three modes show the operator's message in the same place.
+   * An empty string means "nothing is being sent".
    */
-  onEcho?(text: string): void;
+  onEcho?(text: string, pending?: string): void;
 }
 
 export interface KeyPanelView {
@@ -146,6 +147,9 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
         over += text;
         opts.onEcho?.(over);
       },
+      // The dots/dashes of the character still being decoded: they sit after
+      // the text and are replaced by the letter when the character gap passes.
+      onSymbols: (symbols) => opts.onEcho?.(over, symbols),
       onKeying: (on) => {
         driveKeying(on);
       },
@@ -216,7 +220,11 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     driveKeying,
     1200 / settings.wpm,
   );
-  keyer.onChar = (text) => opts.onEcho?.(text);
+  let straightText = "";
+  keyer.onChar = (text) => {
+    straightText = text;
+    opts.onEcho?.(text, keyer.pendingSymbols());
+  };
   flush = () => keyer.finish();
 
   keyArea.append(
@@ -230,12 +238,14 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     if (!beginOver()) return;
     keyer.keyDown();
     keyArea.classList.add("active");
+    opts.onEcho?.(straightText, keyer.pendingSymbols());
   };
   const onKeyUp = (e: KeyboardEvent): void => {
     if (e.code !== settings.keyCode || isTextField(e.target)) return;
     e.preventDefault();
     keyer.keyUp();
     keyArea.classList.remove("active");
+    opts.onEcho?.(straightText, keyer.pendingSymbols());
   };
   document.addEventListener("keydown", onKeyDown);
   document.addEventListener("keyup", onKeyUp);

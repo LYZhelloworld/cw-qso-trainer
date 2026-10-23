@@ -826,6 +826,56 @@ table.log input {
   border-color: var(--accent);
 }
 
+/* Key modes: the read-only echo bar. Decoded text, then the dots/dashes of the
+   character still being decoded (dimmer), then a block caret at the end. The
+   block is a terminal-style cursor: with a monospaced line it reads as "the next
+   character goes here", and it stays visible after a space where an underline
+   would blend into the border. */
+.send-echo {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.send-echo .echo-text {
+  white-space: pre;
+}
+
+.send-echo .echo-pending {
+  white-space: pre;
+  color: #7d8a96;
+}
+
+.send-echo .echo-caret {
+  flex: 0 0 auto;
+  width: 0.62em;
+  height: 1.2em;
+  margin-left: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: echo-caret-blink 1.06s steps(1) infinite;
+}
+
+@keyframes echo-caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .send-echo .echo-caret {
+    animation: none;
+  }
+}
+
 .send-bar .btn {
   height: 36px;
   padding: 0 18px;

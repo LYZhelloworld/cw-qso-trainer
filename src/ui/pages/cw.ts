@@ -170,25 +170,31 @@ function renderSendBar(
  * There is nothing to type and nothing to send by hand — the key is the input
  * and the over goes out when the operator stops — so the box is read-only and
  * has no button. It is here so the operator's message is in one predictable
- * place in all three modes.
+ * place in all three modes. It shows the decoded text, then the dots/dashes of
+ * the character still being decoded, then a block caret: the pending symbols
+ * are replaced by the letter when the character gap passes, which makes the
+ * moment the decoder commits visible.
  */
-function renderEchoBar(bar: HTMLElement): { set(text: string): void } {
-  const input = el("input", {
-    class: "send-input",
+function renderEchoBar(bar: HTMLElement): {
+  set(text: string, pending?: string): void;
+} {
+  const box = el("div", {
+    class: "send-input send-echo",
     attrs: {
-      type: "text",
-      readonly: "",
-      tabindex: "-1",
-      placeholder: "敲键发报，停手后自动发出",
+      role: "textbox",
+      "aria-readonly": "true",
       "aria-label": "正在发出的报文",
-      autocomplete: "off",
-      spellcheck: "false",
     },
   });
-  bar.append(input);
+  const textNode = el("span", { class: "echo-text" });
+  const pendingNode = el("span", { class: "echo-pending" });
+  const caret = el("span", { class: "echo-caret", attrs: { "aria-hidden": "true" } });
+  box.append(textNode, pendingNode, caret);
+  bar.append(box);
   return {
-    set(text: string): void {
-      if (input.value !== text) input.value = text;
+    set(text: string, pending = ""): void {
+      if (textNode.textContent !== text) textNode.textContent = text;
+      if (pendingNode.textContent !== pending) pendingNode.textContent = pending;
     },
   };
 }
@@ -212,7 +218,7 @@ function renderLiveKeyPanel(
     onLeave: (fn) => host.onLeave(fn),
     onBegin: () => session.beginLiveKeying(),
     onKeying: (on) => (on ? session.liveKeyDown() : session.liveKeyUp()),
-    onEcho: (text) => echo.set(text),
+    onEcho: (text, pending) => echo.set(text, pending),
     onOver: (text) => {
       void (async () => {
         await session.finishLiveKeying(text);

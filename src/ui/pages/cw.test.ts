@@ -70,9 +70,11 @@ describe("三种发报模式", () => {
   it("默认直键模式有电键面板，底部是只读回显框，没有发送按钮", () => {
     const { root } = makeHarness();
     expect(root.textContent).toContain("发报（直键，实时）");
-    const input = root.querySelector<HTMLInputElement>(".send-input");
-    expect(input).not.toBeNull();
-    expect(input!.readOnly).toBe(true);
+    const echo = root.querySelector<HTMLElement>(".send-echo");
+    expect(echo).not.toBeNull();
+    // 末尾有块状光标，框本身不是可编辑控件。
+    expect(echo!.querySelector(".echo-caret")).not.toBeNull();
+    expect(echo!.querySelector("input, textarea")).toBeNull();
     // 也没有「发送」按钮：直键模式不需要再按一次。
     expect(
       Array.from(root.querySelectorAll("button")).map((b) => b.textContent),
@@ -90,9 +92,7 @@ describe("三种发报模式", () => {
   it("iambic 模式显示双桨面板和只读回显框", () => {
     const { root } = makeHarness({ keyMode: "iambic" });
     expect(root.textContent).toContain("发报（iambic 双桨，实时）");
-    const input = root.querySelector<HTMLInputElement>(".send-input");
-    expect(input).not.toBeNull();
-    expect(input!.readOnly).toBe(true);
+    expect(root.querySelector(".send-echo")).not.toBeNull();
   });
 });
 
@@ -239,6 +239,24 @@ describe("CW 页 iambic 双桨输入", () => {
   const sent = (session: QsoSession): string[] =>
     session.lines.filter((l) => l.who === "me").map((l) => l.text);
 
+  it("双键敲下的点划先挂在末尾，解出字符后被文字替换", async () => {
+    const { root } = makeHarness(IAMBIC);
+    const text = (): string | null => root.querySelector(".echo-text")!.textContent;
+    const pending = (): string | null => root.querySelector(".echo-pending")!.textContent;
+
+    // 点只按住 30 ms（短于一个元素），松开后才是一个点；按住跨过元素边界
+    // 会按 iambic 的记忆继续发第二个点。
+    press("KeyZ");
+    await sleep(30);
+    release("KeyZ");
+
+    // 元素发完（1d）之后符号才出现，此时还没到字符间隔。
+    await vi.waitFor(() => expect(pending()).toBe("."), { timeout: 1000, interval: 20 });
+    // 字符间隔过后，符号被解成 E。
+    await vi.waitFor(() => expect(text()).toBe("E"), { timeout: 2000, interval: 20 });
+    expect(pending()).toBe("");
+  });
+
   it("iambic 模式下展示双桨键位提示", () => {
     const { root } = makeHarness(IAMBIC);
     expect(root.textContent).toContain("点键「KeyZ」");
@@ -308,7 +326,7 @@ describe("CW 页 iambic 双桨输入", () => {
     release("KeyZ");
     // 等第一个字符真的解出来，再停；否则两个点会被并成一个 I。
     await vi.waitFor(
-      () => expect(root.querySelector<HTMLInputElement>(".send-input")!.value).toBe("E"),
+      () => expect(root.querySelector(".echo-text")!.textContent).toBe("E"),
       { timeout: 2000, interval: 20 },
     );
 
@@ -356,20 +374,24 @@ describe("CW 页 iambic 双桨输入", () => {
 
   it("直键敲出的字符先出现在只读框里，发出后清空", async () => {
     const { root, session } = makeHarness({ keyMode: "straight", keyCode: "KeyC", wpm: 20 });
-    const input = root.querySelector<HTMLInputElement>(".send-input")!;
+    const echoText = (): string | null => root.querySelector(".echo-text")!.textContent;
+    const pending = (): string | null => root.querySelector(".echo-pending")!.textContent;
 
     press("KeyC");
     await sleep(70); // 一个点
     release("KeyC");
+    // 还没到字符间隔：点划先以符号的形式挂在那里。
+    expect(pending()).toBe(".");
 
-    // 点之后过一个字符间隔（3d = 180 ms），框里应该已经解出 E。
-    await vi.waitFor(() => expect(input.value).toBe("E"), { timeout: 2000, interval: 20 });
+    // 点之后过一个字符间隔（3d = 180 ms），符号被解成 E。
+    await vi.waitFor(() => expect(echoText()).toBe("E"), { timeout: 2000, interval: 20 });
+    expect(pending()).toBe("");
     // 停手 1.5 秒自动发出：报文上机，框清空。
     await vi.waitFor(() => expect(sent(session)).toContain("E"), {
       timeout: 3000,
       interval: 20,
     });
-    expect(input.value).toBe("");
+    expect(echoText()).toBe("");
   });
 
   it("直键模式下 iambic 键位不生效", async () => {

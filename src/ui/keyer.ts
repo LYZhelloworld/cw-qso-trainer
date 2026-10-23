@@ -27,6 +27,8 @@ export class StraightKeyer {
   private charTimer: ReturnType<typeof setTimeout> | null = null;
   /** Text already handed to `onChar` (so only growth is reported). */
   private emitted = "";
+  /** Index in `els` where the character still being keyed starts. */
+  private pendingStart = 0;
 
   /**
    * Live echo of the decoded over, updated as each character boundary passes.
@@ -94,6 +96,7 @@ export class StraightKeyer {
     this.els = [];
     this.lastUpAt = null;
     this.emitted = "";
+    this.pendingStart = 0;
     if (result.text) this.onDecode(result.text);
   }
 
@@ -105,6 +108,7 @@ export class StraightKeyer {
     this.downAt = null;
     this.lastUpAt = null;
     this.emitted = "";
+    this.pendingStart = 0;
   }
 
   /**
@@ -122,6 +126,9 @@ export class StraightKeyer {
     const text = decodeKeying(copy).text;
     if (text.length > this.emitted.length && text.startsWith(this.emitted)) {
       this.emitted = text;
+      // Everything keyed so far is now decoded text; the next element starts a
+      // fresh character, so the pending dots/dashes reset here.
+      this.pendingStart = this.els.length;
       this.onChar?.(text);
     }
   }
@@ -131,6 +138,17 @@ export class StraightKeyer {
     if (this.els.length === 0) return "";
     const d = estimateUnit(this.els.map((e) => e.on));
     return this.els.map((e) => classifyElement(e.on, d)).join("");
+  }
+
+  /**
+   * Dots/dashes of the character still being keyed — the part the decoder has
+   * not turned into a letter yet. Shown after the decoded text in the send bar.
+   */
+  pendingSymbols(): string {
+    const pending = this.els.slice(this.pendingStart);
+    if (pending.length === 0) return "";
+    const d = estimateUnit(this.els.map((e) => e.on));
+    return pending.map((e) => classifyElement(e.on, d)).join("");
   }
 
   private stopTone(): void {
