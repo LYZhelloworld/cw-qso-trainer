@@ -50,7 +50,10 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
   const { settings, onLeave } = opts;
   const useIambic = settings.keyMode === "iambic";
 
-  const keySymbols = el("div", { class: "hint", text: "" });
+  // The echo line keeps its height whether or not there is anything to echo:
+  // an empty div collapses, and a page that shrinks by one line pops the
+  // panadapter taller — see `.key-status` in the stylesheet.
+  const keySymbols = el("div", { class: "hint key-status", text: "" });
   const keyArea = el("div", { class: "key-area" });
 
   // Sidetone: the operator's own monitor tone while keying. It follows the key

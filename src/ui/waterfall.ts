@@ -537,6 +537,20 @@ export class Waterfall {
     const h = Math.round(cssH * dpr);
     if (w === this.w && h === this.h && dpr === this.dpr) return true;
 
+    // Reallocating the backing store blanks it — and the display gets resized
+    // by everything above it: a key status line appearing, a send bar coming and
+    // going, the window being dragged. Wiping the trace every time the layout
+    // moves a pixel would make the panadapter useless exactly when the operator
+    // is transmitting, so keep the picture: copy it out first and put it back at
+    // the top of the new box (the newest line is at the top, so the rows keep
+    // their meaning and only the newly exposed strip at the bottom starts
+    // black). Nothing is copied when the width changes, because the old columns
+    // no longer line up with the frequency axis.
+    const previous =
+      this.ctx && this.w > 0 && this.h > 0 && w === this.w
+        ? this.readPixels(0, 0, this.w, this.h)
+        : null;
+
     this.canvas.width = w;
     this.canvas.height = h;
     this.w = w;
@@ -547,8 +561,20 @@ export class Waterfall {
       this.rowImage = this.ctx.createImageData(w, this.rowPx);
       this.ctx.fillStyle = "#000208";
       this.ctx.fillRect(0, 0, w, h);
+      if (previous) this.ctx.putImageData(previous, 0, 0);
     }
     return true;
+  }
+
+  /** Read back what is on the screen, or null where that is not possible. */
+  private readPixels(x: number, y: number, w: number, h: number): ImageData | null {
+    try {
+      return this.ctx?.getImageData(x, y, w, h) ?? null;
+    } catch {
+      // A context that cannot be read back (tainted, or a stub in a test) just
+      // means the new box starts empty.
+      return null;
+    }
   }
 
   /**

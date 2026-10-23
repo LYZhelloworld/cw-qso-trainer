@@ -193,6 +193,42 @@ describe("瀑布图 — 组件生命周期", () => {
     return canvas;
   }
 
+  /**
+   * A canvas with a layout box that can change under the renderer, plus a stub
+   * 2D context that keeps the pixels it is given.
+   *
+   * The real reason this exists: on screen the panadapter is the flexible row of
+   * the shell, so anything that makes the page above it taller resizes it — and
+   * resizing a canvas clears it. jsdom has no layout and no 2D context, so both
+   * have to be faked to see that the picture survives.
+   */
+  function resizable(box: { w: number; h: number }): {
+    canvas: HTMLCanvasElement;
+    ctx: CanvasRenderingContext2D;
+    calls: { grabbed: number; restored: ImageData[] };
+  } {
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { get: () => box.w });
+    Object.defineProperty(canvas, "clientHeight", { get: () => box.h });
+    const calls = { grabbed: 0, restored: [] as ImageData[] };
+    const pixels = (w: number, h: number): ImageData =>
+      ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }) as ImageData;
+    const ctx = {
+      fillStyle: "",
+      fillRect: () => {},
+      drawImage: () => {},
+      createImageData: (w: number, h: number) => pixels(w, h),
+      getImageData: (_x: number, _y: number, w: number, h: number) => {
+        calls.grabbed += 1;
+        return pixels(w, h);
+      },
+      putImageData: (image: ImageData) => {
+        calls.restored.push(image);
+      },
+    } as unknown as CanvasRenderingContext2D;
+    return { canvas, ctx, calls };
+  }
+
   function snapshot(centerHz: number, signals: SpectrumSignal[] = []): SpectrumSnapshot {
     return { centerHz, signals };
   }
@@ -205,6 +241,42 @@ describe("瀑布图 — 组件生命周期", () => {
       wf.advance(500);
       wf.dispose();
     }).not.toThrow();
+  });
+
+  it("显示器变高变矮都保住已有画面，只让新露出的部分从黑开始", () => {
+    const box = { w: 400, h: 200 };
+    const { canvas, ctx, calls } = resizable(box);
+    const wf = new Waterfall(canvas, { context: ctx, now: () => 0, schedule: () => () => {} });
+    wf.setSource(() => snapshot(CENTER, [signal({ active: true })]));
+
+    wf.advance(0);
+    // 第一次布局没有旧画面可留
+    expect(calls.grabbed).toBe(0);
+
+    // 上面的页面多了一行：瀑布图被挤矮 19px
+    box.h = 181;
+    wf.advance(16);
+    expect(calls.grabbed).toBe(1);
+    expect(calls.restored.at(-1)).toBeTruthy();
+
+    // 那一行又没了：变回原高，画面接着往下滚，不是从头开始
+    box.h = 200;
+    wf.advance(32);
+    expect(calls.grabbed).toBe(2);
+    wf.dispose();
+  });
+
+  it("宽度变了不搬旧画面：旧的列已经对不上频率轴", () => {
+    const box = { w: 400, h: 200 };
+    const { canvas, ctx, calls } = resizable(box);
+    const wf = new Waterfall(canvas, { context: ctx, now: () => 0, schedule: () => () => {} });
+    wf.setSource(() => snapshot(CENTER));
+
+    wf.advance(0);
+    box.w = 500;
+    wf.advance(16);
+    expect(calls.grabbed).toBe(0);
+    wf.dispose();
   });
 
   it("显示中心从拨轮处缓动过去，而不是瞬移", () => {
