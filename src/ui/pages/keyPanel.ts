@@ -1,4 +1,4 @@
-import { button, el } from "../dom.js";
+import { el } from "../dom.js";
 import { IambicKeyerInput, StraightKeyer } from "../keyer.js";
 import { Sidetone } from "../../audio/sidetone.js";
 import type { Paddle } from "../../cw/keyer.js";
@@ -13,6 +13,12 @@ import type { AppSettings } from "../settingsSchema.js";
  * deaf), and when the over is finished hands the decoded text back (`onOver`)
  * so the band can answer it. The audio has already gone out by then — there is
  * no second transmission.
+ *
+ * **An over ends by itself.** Nothing on this panel ends it by hand: the
+ * operator keys, then stops, and after a beat of silence the rig drops the
+ * carrier and goes back to listening — the same thing letting go of the PTT
+ * does. A button would put a click between "I have said what I wanted" and the
+ * receiver coming back.
  */
 
 export interface KeyPanelOptions {
@@ -32,6 +38,13 @@ export interface KeyPanelView {
   title: string;
   node: HTMLElement;
 }
+
+/**
+ * Silence after the last element that ends the over — long enough for the
+ * operator to start the next letter, short enough that the receiver is not deaf
+ * for a noticeable beat after the last dash.
+ */
+const OVER_IDLE_MS = 1500;
 
 export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
   const { settings, onLeave } = opts;
@@ -62,9 +75,28 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
         : "侧音：开，但当前环境没有可用的音频输出（仅影响发声，不影响发报）",
   });
 
-  // One over is in progress from the first key-down until it is handed over to
-  // the band. A second `onBegin` must not be issued while it lasts.
+  // One over is in progress from the first key-down until the operator has been
+  // silent for `OVER_IDLE_MS`. A second `onBegin` must not be issued while it
+  // lasts, and the over must be closed exactly once — by the idle clock, not by
+  // a button and not twice if the clock fires while a flush is in flight.
   let live = false;
+  let idle: ReturnType<typeof setTimeout> | null = null;
+  /** How this key type flushes a finished over; set once the key exists. */
+  let flush: (() => void) | null = null;
+
+  const disarm = (): void => {
+    if (idle !== null) {
+      clearTimeout(idle);
+      idle = null;
+    }
+  };
+  /** Restart the "the operator has stopped keying" clock. */
+  const armIdle = (): void => {
+    if (!live || flush === null) return;
+    disarm();
+    idle = setTimeout(() => flush?.(), OVER_IDLE_MS);
+  };
+
   const beginOver = (): boolean => {
     if (live) return true;
     if (!opts.onBegin()) return false;
@@ -72,13 +104,17 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
     return true;
   };
   const endOver = (text: string): void => {
+    if (!live) return;
     live = false;
+    disarm();
     keySymbols.textContent = text ? `已发：${text}` : "";
-    if (text) opts.onOver(text);
+    // Even an over that decoded to nothing has to be handed back: the carrier
+    // is still up, and only the session can drop it and reopen the receiver.
+    opts.onOver(text);
   };
 
   if (useIambic) {
-    // Characters arrive one by one; the over ends when the operator says so.
+    // Characters arrive one by one; the over ends on the operator's silence.
     let over = "";
     const iambic = new IambicKeyerInput({
       wpm: settings.wpm,
@@ -86,12 +122,25 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       onText: (text) => {
         over += text;
         keySymbols.textContent = text.trim() ? `正在发：${over}` : `已发：${over}`;
+        armIdle();
       },
       onSymbols: (s) => {
         if (s) keySymbols.textContent = `正在发：${over}${s}`;
+        if (s) armIdle();
       },
-      onKeying: driveKeying,
+      onKeying: (on) => {
+        driveKeying(on);
+        if (!on) armIdle();
+      },
     });
+    flush = () => {
+      if (!live) return;
+      // Complete the element still being sent before handing the over back.
+      iambic.finish();
+      const text = over.trim();
+      over = "";
+      endOver(text);
+    };
 
     keyArea.append(
       el("div", {
@@ -99,16 +148,6 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       }),
       keySymbols,
       sidetoneHint,
-      button(
-        "发送完毕",
-        () => {
-          iambic.finish();
-          const text = over.trim();
-          over = "";
-          endOver(text);
-        },
-        "btn small",
-      ),
     );
 
     const paddleFor = (code: string): Paddle | null =>
@@ -122,11 +161,13 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
         if (!beginOver()) return;
         iambic.press(paddle);
         keyArea.classList.add("active");
+        armIdle();
         return;
       }
       if (e.code === "Space") {
         e.preventDefault();
         iambic.wordBreak();
+        armIdle();
       }
     };
     const onKeyUp = (e: KeyboardEvent): void => {
@@ -136,39 +177,33 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
       e.preventDefault();
       iambic.release(paddle);
       keyArea.classList.remove("active");
+      armIdle();
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
     onLeave(() => {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
+      disarm();
       iambic.clear();
       sidetone.dispose();
     });
     return { title: "发报（iambic 双桨，实时）", node: keyArea };
   }
 
-  // Straight key: a pause flushes the utterance, which is one over.
+  // Straight key: the keyer decodes a run of elements and flushes it after the
+  // same silence, which is what ends the over.
   const keyer = new StraightKeyer(
-    (text) => {
-      endOver(text);
-    },
-    1500,
+    (text) => endOver(text),
+    OVER_IDLE_MS,
     driveKeying,
   );
+  flush = () => keyer.finish();
 
   keyArea.append(
     el("div", { text: `按住「${settings.keyCode}」实时发报（焦点在输入框时不生效）` }),
     keySymbols,
     sidetoneHint,
-    button(
-      "结束本句",
-      () => {
-        keyer.finish();
-        keySymbols.textContent = "";
-      },
-      "btn small",
-    ),
   );
 
   const onKeyDown = (e: KeyboardEvent): void => {
@@ -191,6 +226,7 @@ export function renderKeyPanel(opts: KeyPanelOptions): KeyPanelView {
   onLeave(() => {
     document.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("keyup", onKeyUp);
+    disarm();
     keyer.clear();
     sidetone.dispose();
   });

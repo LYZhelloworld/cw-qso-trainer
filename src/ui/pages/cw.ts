@@ -188,13 +188,11 @@ function renderLiveKeyPanel(
 
   if (warnings.length) root.append(panel("提示", ...warnings));
   // No card around the key pad: it is a control surface, not a form, and the
-  // box only stood between the dial and the display.
+  // box only stood between the dial and the display. No caption under it
+  // either — how the rig behaves is something the RX/TX badge and the meter
+  // already say, and a paragraph there only pushed the panadapter down.
   root.append(
     el("h2", { class: "key-head", text: keyPanel.title }),
     keyPanel.node,
-    el("div", {
-      class: "hint key-hint",
-      text: "按键即上机：发射期间接收中断，松键、停顿后恢复收听。",
-    }),
   );
 }

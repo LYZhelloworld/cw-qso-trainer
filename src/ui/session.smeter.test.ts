@@ -158,3 +158,18 @@ describe("会话 — S 表读数", () => {
     expect(session.sMeter()).not.toBeNull();
   });
 });
+
+describe("会话 — 关台后表针不动", () => {
+  it("频率上有台在叫，但关着台就没有读数；再开台读数回来", async () => {
+    const { session } = makeSession();
+    await tuneToOneCalling(session);
+    expect(session.sMeter()).not.toBeNull();
+
+    // 台还在发（键控表没变），只是接收机关了 —— 表针属于接收机，不该跟着动。
+    session.setReceiving(false);
+    expect(session.sMeter()).toBeNull();
+
+    session.setReceiving(true);
+    expect(session.sMeter()).not.toBeNull();
+  });
+});

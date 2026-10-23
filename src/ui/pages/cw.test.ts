@@ -242,23 +242,27 @@ describe("CW 页 iambic 双桨输入", () => {
     expect(root.textContent).toContain("发报（iambic 双桨，实时）");
   });
 
-  it("敲一个点键后解码出 E，按「发送完毕」上机", async () => {
-    const { root, session } = makeHarness(IAMBIC);
+  it("敲一个点键，停手后自动结束发射，报文上机", async () => {
+    const { session } = makeHarness(IAMBIC);
 
     press("KeyZ");
     await sleep(70); // 一个点长 60ms
     release("KeyZ");
 
-    findButton(root, "发送完毕").click();
-
+    // 没有「发送完毕」这类按钮：停手 1.5 秒后电键自己收尾。
     await vi.waitFor(() => expect(sent(session)).toContain("E"), {
-      timeout: 2000,
+      timeout: 3000,
+      interval: 20,
+    });
+    // 收尾就是松 PTT：TX 灭、接收机重新打开。
+    await vi.waitFor(() => expect(session.isTransmitting).toBe(false), {
+      timeout: 3000,
       interval: 20,
     });
   });
 
   it("squeeze（点划同按）交替发出点划", async () => {
-    const { root, session } = makeHarness(IAMBIC);
+    const { session } = makeHarness(IAMBIC);
 
     press("KeyZ");
     press("KeyX"); // 双桨同按 -> 点划交替
@@ -267,10 +271,8 @@ describe("CW 页 iambic 双桨输入", () => {
     release("KeyX");
 
     // 模式 A（默认）：松开双桨即停，敲出 .- = A
-    findButton(root, "发送完毕").click();
-
     await vi.waitFor(() => expect(sent(session)).toContain("A"), {
-      timeout: 2000,
+      timeout: 3000,
       interval: 20,
     });
   });
@@ -292,10 +294,38 @@ describe("CW 页 iambic 双桨输入", () => {
     await sleep(70);
     release("KeyZ");
 
-    findButton(root, "发送完毕").click();
-
     await vi.waitFor(() => expect(sent(session)).toContain("E E"), {
-      timeout: 2000,
+      timeout: 3000,
+      interval: 20,
+    });
+  });
+
+  it("面板上没有任何手动收尾的按钮：停手就是收尾", () => {
+    const pairs = [
+      makeHarness(IAMBIC).root,
+      makeHarness({ keyMode: "straight", keyCode: "KeyC", wpm: 20 }).root,
+    ];
+    for (const root of pairs) {
+      const labels = Array.from(root.querySelectorAll("button")).map((b) => b.textContent);
+      expect(labels).not.toContain("发送完毕");
+      expect(labels).not.toContain("结束本句");
+      expect(labels).not.toContain("发送");
+    }
+  });
+
+  it("直键同样是停手后自动收尾：TX 灭、报文上机", async () => {
+    const { session } = makeHarness({ keyMode: "straight", keyCode: "KeyC", wpm: 20 });
+
+    press("KeyC");
+    await sleep(70); // 一个点
+    release("KeyC");
+
+    await vi.waitFor(() => expect(sent(session)).toContain("E"), {
+      timeout: 3000,
+      interval: 20,
+    });
+    await vi.waitFor(() => expect(session.isTransmitting).toBe(false), {
+      timeout: 3000,
       interval: 20,
     });
   });

@@ -648,6 +648,9 @@ export class QsoSession implements SessionContext {
    * What the S-meter reads: the strongest signal the receiver is hearing *right
    * now*. Two things make that agree with the operator's ears:
    *
+   *  - **A switched-off rig reads nothing.** The meter is part of the receiver,
+   *    so with the power off (or another band being monitored) the needle has no
+   *    reason to move, however busy the frequency is.
    *  - **Half-duplex.** While our own carrier is on, the meter reads our keying
    *    instead of the band: full scale on a dot or dash, nothing in the gap
    *    between them. Nothing is being received, so nothing else can register.
@@ -661,6 +664,10 @@ export class QsoSession implements SessionContext {
    * `null` when there is nothing to hear: no sound, no reading.
    */
   sMeter(): SMeterReading | null {
+    // A receiver that is switched off (or tuned to a band nobody is monitoring)
+    // has no needle to move, however busy the band is. Power sits upstream of
+    // everything else: with the rig off the meter reads nothing at all.
+    if (!this.receiving) return null;
     const at = this.clock();
     if (this.transmitting) return this.txKeyedAt(at) ? smeterReading(1) : null;
 
@@ -950,6 +957,11 @@ export class QsoSession implements SessionContext {
    * The text is what the keyer decoded from the operator's own keying; the
    * audio has already gone out, so this only records the line and runs the
    * same decision the text mode runs after `transmit`.
+   *
+   * There is no carrier tail to wait out here: this is called after the key has
+   * already been silent for a beat (`KeyPanel` owns that clock), and that
+   * silence *is* the turn-around. So the carrier drops now and the receiver
+   * opens — measured from the last element, not the last element plus a tail.
    */
   async finishLiveKeying(text: string): Promise<void> {
     if (this.liveDownAt !== null) this.liveKeyUp();
@@ -960,7 +972,6 @@ export class QsoSession implements SessionContext {
 
     try {
       if (line) this.push("me", line);
-      await this.wait(TX_TAIL_MS);
       this.transmitting = false;
       this.audio.setTransmitting(false);
       this.txTiming = null;

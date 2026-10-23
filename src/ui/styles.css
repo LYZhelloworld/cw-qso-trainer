@@ -293,10 +293,6 @@ table.log input {
   text-align: center;
 }
 
-.key-hint {
-  text-align: center;
-}
-
 .footer {
   flex: 0 0 auto;
   padding: 0 2px;
