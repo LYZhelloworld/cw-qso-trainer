@@ -235,6 +235,45 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.dispose();
   });
 
+  it("reset 把显示中心直接交还给拨轮（切波段是跳变，不是扫频）", () => {
+    let center = CENTER;
+    const wf = new Waterfall(makeCanvas(), { context: null, now: () => 0 });
+    wf.setSource(() => snapshot(center));
+    wf.advance(0);
+
+    // 跳到 21 MHz：缓动中，画面还在半路上
+    center = 21_025_000;
+    wf.advance(16);
+    expect(wf.displayCenterHz).toBeGreaterThan(CENTER);
+    expect(wf.displayCenterHz).toBeLessThan(center);
+
+    // 清屏后从新拨轮处重新开始，不再横穿几个 MHz
+    wf.reset();
+    wf.advance(32);
+    expect(wf.displayCenterHz).toBe(center);
+    wf.dispose();
+  });
+
+  it("关台后清屏，再开台从当前拨轮重新画", () => {
+    let center = CENTER;
+    const wf = new Waterfall(makeCanvas(), {
+      context: null,
+      now: () => 0,
+      schedule: () => () => {},
+    });
+    wf.setSource(() => snapshot(center));
+    wf.setActive(true);
+    wf.advance(0);
+    wf.setActive(false);
+
+    // 关着的时候换了波段：开台不应该从旧位置扫过去
+    center = 7_010_000;
+    wf.setActive(true);
+    wf.advance(16);
+    expect(wf.displayCenterHz).toBe(center);
+    wf.dispose();
+  });
+
   it("滚轮向上滚一格，频率上调 100 Hz（0.0001 MHz）", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });

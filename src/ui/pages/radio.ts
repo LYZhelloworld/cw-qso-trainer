@@ -6,7 +6,6 @@ import {
   clampToBand,
   roundFreq,
 } from "../bands.js";
-import { BAND_SIGNAL_SPREAD_HZ, SPECTRUM_SPAN_HZ } from "../../ham/spectrum.js";
 import { renderQsoPanel } from "./cw.js";
 import type { AppHost } from "../app.js";
 
@@ -114,28 +113,10 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
     button("+ 100 Hz", () => step(FREQ_FINE_STEP_MHZ), "btn small"),
   );
 
-  // The receiver's filter width is an operator choice (500 / 250 / 100 Hz);
-  // what matters here is that it is centred on the dial and the coarse buttons
-  // land exactly on the 1 kHz station grid.
-  const halfHz = host.session.passbandHalfHz;
-  root.append(
-    panel(
-      "波段与调谐",
-      tabs,
-      tuning,
-      fineTuning,
-      el("div", {
-        class: "hint",
-        text: `接收通带 ${halfHz * 2} Hz（±${halfHz} Hz），中心就是拨轮频率；电台间隔 1 kHz。`,
-      }),
-      el("div", {
-        class: "hint",
-        text: `台站散布在中心 ±${BAND_SIGNAL_SPREAD_HZ / 1000} kHz 的波段切片上，瀑布一次只看得到 ±${
-          SPECTRUM_SPAN_HZ / 2000
-        } kHz —— 调过去才会遇到新的台。`,
-      }),
-    ),
-  );
+  // The receiver's filter width is an operator choice (500 / 250 / 100 Hz),
+  // set in the settings dialog. Nothing is spelled out on the page: the band
+  // is something to be worked by ear, not read off a caption.
+  root.append(panel("波段与调谐", tabs, tuning, fineTuning));
 
   // --- receiver ------------------------------------------------------------
   // The roster is deliberately not shown. Which station sits where, and what it

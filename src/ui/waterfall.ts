@@ -372,14 +372,40 @@ export class Waterfall {
     if (Number.isFinite(wpm) && wpm > 0) this.wpm = wpm;
   }
 
-  /** Powered up = scroll; powered down = freeze on the last line. */
+  /** Powered up = scroll from a blank picture; powered down = the screen is dark. */
   setActive(on: boolean): void {
     if (on) this.start();
-    else this.stop();
+    else {
+      this.stop();
+      this.reset();
+    }
+  }
+
+  /**
+   * Blank the picture and put the display back on the dial.
+   *
+   * A receiver that has just been switched on has no history: what was on the
+   * screen belongs to a band it is no longer tuned to, or to a session that
+   * ended when the power went off. The same goes for a band change — there is
+   * no 40 m sweep to carry on with on 20 m — so switching is instant instead
+   * of looking like somebody winding the knob across several MHz.
+   */
+  reset(): void {
+    this.primed = false;
+    this.centerHz = null;
+    this.startedAt = 0;
+    this.lastFrameAt = 0;
+    this.nextRowAt = 0;
+    const ctx = this.ctx;
+    // No layout yet (detached, or under jsdom): the canvas is blank already.
+    if (!ctx || this.w <= 0 || this.h <= 0) return;
+    ctx.fillStyle = "#000208";
+    ctx.fillRect(0, 0, this.w, this.h);
   }
 
   start(): void {
     if (this.active) return;
+    this.reset();
     this.active = true;
     this.syncSize();
     const loop = (): void => {

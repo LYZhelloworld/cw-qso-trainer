@@ -265,6 +265,9 @@ export class App implements AppHost {
       this.activeBand = clampBandIndex(merged.bandIndex);
       this.session.retune(merged.freqMHz);
       this.watchBand(this.activeBand);
+      // A band switch is a jump, not a sweep: the display starts again on the
+      // new band instead of sliding there through several MHz of nothing.
+      this.waterfall?.reset();
     } else if (freqChanged) {
       // Retuning inside the same band: same air, new dial frequency.
       this.session.retune(merged.freqMHz);

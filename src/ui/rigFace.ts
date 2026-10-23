@@ -106,16 +106,14 @@ export class RigFace {
   /**
    * Refresh the overlay text. Deliberately does not touch the canvas, so the
    * picture (and its history) is untouched by a re-render.
+   *
+   * Nothing is written while the rig is on: the display is a receiver, not an
+   * operating manual, and the only thing worth saying about a dark screen is
+   * that the power is off.
    */
   updateScope(view: ScopeView): void {
     this.scope.classList.toggle("off", !view.powered);
-
-    // The display is a receiver, not a status board: no signal counts, no
-    // "nobody is calling" hints, no station names. The label only says how the
-    // dial moves, because nothing on screen would otherwise reveal the wheel.
-    this.label.textContent = view.powered
-      ? "波段频谱 · 滚轮调谐 100 Hz（Shift = 1 kHz）"
-      : "设备已关机";
+    this.label.textContent = view.powered ? "" : "设备已关机";
   }
 
   /**

@@ -230,14 +230,13 @@ describe("频谱瀑布图", () => {
     expect(root.querySelector(".rig-scope canvas")).toBe(canvas);
   });
 
-  it("关台时标签只说设备已关机；开台后提示可以用滚轮调谐", () => {
+  it("画面不写调谐提示：开台只留画面，关台才说设备已关机", () => {
     const { root, app } = mountApp();
     expect(root.querySelector(".rig-scope")?.textContent).toContain("设备已关机");
 
     app.setPower(true);
     const scope = root.querySelector(".rig-scope");
-    expect(scope?.textContent).toContain("滚轮调谐");
-    expect(scope?.textContent).not.toContain("设备已关机");
+    expect(scope?.textContent).toBe("");
   });
 
   it("滚轮调谐（tuneTo）会被夹在当前波段范围内", () => {

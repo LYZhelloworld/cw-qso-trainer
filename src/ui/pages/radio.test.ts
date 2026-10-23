@@ -159,10 +159,10 @@ describe("电台页 — 波段与调谐", () => {
     expect(host.settings.freqMHz).toBe(14.0249);
   });
 
-  it("说明接收通带宽度与电台间隔", () => {
+  it("不在页面上写通带宽度与台站分布——靠自己调、自己听", () => {
     const { root } = makeHost({ bandIndex: 1 });
-    expect(root.textContent).toContain("接收通带 500 Hz");
-    expect(root.textContent).toContain("电台间隔 1 kHz");
+    expect(root.textContent).not.toContain("接收通带");
+    expect(root.textContent).not.toContain("波段切片");
   });
 });
 
