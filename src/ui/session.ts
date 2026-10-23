@@ -97,6 +97,18 @@ const TX_TAIL_MS = 1_500;
 const CALL_ANSWER_WAIT_MS = 15_000;
 
 /**
+ * How long the partner waits for the operator's next over before it sends the
+ * same thing again. A station that has just reported "R UR RST 579 BK" does not
+ * sit in silence — it repeats itself, and after `PARTNER_REPEAT_LIMIT` tries it
+ * gives up and goes back to calling CQ. Long enough to decode and key a reply at
+ * a learner's speed, short enough that the operator can tell nobody is there.
+ */
+const PARTNER_WAIT_MS = 10_000;
+
+/** How many times the partner repeats before it gives up on the operator. */
+const PARTNER_REPEAT_LIMIT = 2;
+
+/**
  * Does this line name a station? "R UR RST 599 BK" does not, "BT9BYA DE BG7XXX"
  * does. It separates the two things an operator can mean while a pile-up is
  * running: answering without picking a caller (keep the pile-up going), and
@@ -298,6 +310,12 @@ export class QsoSession implements SessionContext {
    */
   private ownCqSilentSince: number | null = null;
   /**
+   * When the partner will repeat itself if the operator stays silent, and how
+   * many times it already has. `null` means no over is waiting on an answer.
+   */
+  private partnerWaitAt: number | null = null;
+  private partnerWaits = 0;
+  /**
    * Whether the operator's receiver is open. Off = the rig is powered down.
    * Defaults to on so a session used on its own (tests, embedding) behaves like
    * a station that is already listening; the App drives it from the power
@@ -417,6 +435,10 @@ export class QsoSession implements SessionContext {
     }
     this.audio.setMuted(false);
     this.audio.wireSynth();
+    // A QSO that was left waiting while the rig was off gets its patience back:
+    // the partner has been calling into a dead receiver, and that must not count
+    // against the operator the moment they switch on.
+    if (this.exchangeInProgress) this.armPartnerWait();
     // Powering up onto a station that is mid-CQ should put us in the middle of
     // it, exactly like switching a real receiver on.
     this.rejoinOnAir();
@@ -845,6 +867,9 @@ export class QsoSession implements SessionContext {
    */
   private async transmit(text: string): Promise<void> {
     this.audio.stop(); // our key comes down on top of whatever was playing
+    // The operator is answering: the partner's patience starts over from
+    // scratch once this over has been answered.
+    this.clearPartnerWait();
     this.push("me", text);
     this.transmitting = true;
     this.txStartedAt = this.clock();
@@ -881,6 +906,8 @@ export class QsoSession implements SessionContext {
     this.sending = true;
     // Our key comes down on top of whatever was playing.
     this.audio.stop();
+    // The operator is answering: the partner's patience starts over.
+    this.clearPartnerWait();
     this.transmitting = true;
     this.txStartedAt = this.clock();
     this.txTiming = [];
@@ -986,6 +1013,11 @@ export class QsoSession implements SessionContext {
     // Non-blocking: do not await the full CQ, otherwise the user could not
     // answer until it finished. The audio is cut by the next user transmission.
     const tx = this.notePlaying(target, text);
+    // Re-time the station's next CQ from the *end* of this one. Without this the
+    // activity scheduler keeps firing on its fallback gap (3–8 s measured from
+    // the start), so a long call is cut off mid-message and restarted on top of
+    // itself — heard as garbled, stuttering audio.
+    if (tx) this.band.scheduleNextCq(target.call, tx.durationMs + nextCqGapMs(this.rng));
     if (tx) void this.audio.playTx(tx, target, this.now());
     return true;
   }
@@ -1084,6 +1116,8 @@ export class QsoSession implements SessionContext {
         this.push("ham", agn);
         const tx = this.notePlaying(this.ham, agn);
         if (tx) await this.audio.playTx(tx, this.ham, this.now());
+        // The partner has asked for a repeat and is waiting for one.
+        this.armPartnerWait();
         return;
       }
     }
@@ -1096,6 +1130,10 @@ export class QsoSession implements SessionContext {
       const tx = this.notePlaying(this.ham, reply);
       if (tx) await this.audio.playTx(tx, this.ham, this.now());
     }
+
+    // The station has said its piece and is listening for the operator's next
+    // over. If none comes it repeats itself instead of going silent.
+    this.armPartnerWait();
 
     // QSO complete: the HAM goes back to its own CQ rhythm.
     if (machine.state === "LOGGED" && this.ham) this.endStation(this.ham);
@@ -1206,6 +1244,8 @@ export class QsoSession implements SessionContext {
     this.push("ham", reply);
     const tx = this.notePlaying(this.ham ?? chosen.ham, reply);
     if (tx) await this.audio.playTx(tx, this.ham ?? chosen.ham, this.now());
+    // The named station has sent its report and is waiting for ours.
+    this.armPartnerWait();
   }
 
   // --- log & lifecycle of a QSO --------------------------------------------
@@ -1243,6 +1283,7 @@ export class QsoSession implements SessionContext {
    * goes back to calling CQ, a pile-up is released, and the band carries on.
    */
   private endExchange(): void {
+    this.clearPartnerWait();
     this.pileup.clear();
     if (this.ham) this.endStation(this.ham);
     this.machine?.reset();
@@ -1300,6 +1341,7 @@ export class QsoSession implements SessionContext {
     this.pileup.drive();
     this.hamQso.drive();
     this.expireOwnCq();
+    this.servicePartnerWait();
   }
 
   /**
@@ -1329,6 +1371,70 @@ export class QsoSession implements SessionContext {
     this.ownCqSilentSince = null;
     this.endExchange();
     this.note("没有人回应你的呼叫，已回到守听");
+  }
+
+  /**
+   * Start the clock on the operator's next over.
+   *
+   * The band is not a voicemail. A station that has just sent "R UR RST 579 BK"
+   * waits, sends it again, and after `PARTNER_REPEAT_LIMIT` tries it gives up
+   * and calls CQ again — which is also the cue that the operator has missed
+   * their opening. `afterMs` is the over that is still going out: the clock
+   * only starts once it has finished keying.
+   */
+  private armPartnerWait(afterMs = 0): void {
+    if (!this.ham || !this.exchangeInProgress) return;
+    this.partnerWaitAt = this.clock() + afterMs + PARTNER_WAIT_MS;
+  }
+
+  /** The operator is answering: the partner starts waiting from scratch. */
+  private clearPartnerWait(): void {
+    this.partnerWaitAt = null;
+    this.partnerWaits = 0;
+  }
+
+  /**
+   * The partner's patience runs out while the operator stays silent: it repeats
+   * its last over, and eventually gives up.
+   *
+   * Giving up is not silence either — the station goes back to its own CQ
+   * rhythm (`endStation` → `markListening`), so the operator can try again or
+   * move on, rather than being left in a QSO the other side has abandoned
+   * without saying so.
+   */
+  private servicePartnerWait(): void {
+    if (this.partnerWaitAt === null) return;
+    if (!this.exchangeInProgress || !this.ham || !this.machine) {
+      this.partnerWaitAt = null;
+      return;
+    }
+    // Powered down, mid-over, or busy keying: nothing to answer to yet.
+    if (!this.receiving || this.sending || this.transmitting) return;
+    if (this.clock() < this.partnerWaitAt) return;
+
+    if (this.partnerWaits >= PARTNER_REPEAT_LIMIT) {
+      this.partnerWaitAt = null;
+      this.partnerWaits = 0;
+      this.endExchange();
+      this.note("对方呼叫几次没人应，已回到 CQ");
+      return;
+    }
+
+    this.partnerWaits += 1;
+    // `timeoutResend` is the machine's own "say that again" (see its timer
+    // hooks): it hands back the last over rather than inventing a new one.
+    const text = this.machine.timeoutResend()[0];
+    this.partnerWaitAt = null;
+    if (!text) {
+      // Nothing to repeat — the contact had nothing to say in the first place.
+      this.endExchange();
+      return;
+    }
+    this.push("ham", text);
+    const tx = this.notePlaying(this.ham, text);
+    if (!tx) return;
+    void this.audio.playTx(tx, this.ham, this.now());
+    this.armPartnerWait(tx.durationMs);
   }
 
   private handleActivity(events: HamActivityEvent[]): void {

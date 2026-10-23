@@ -61,13 +61,11 @@ export interface QsoMachineOptions {
  * decoded to letters) and drives a deterministic virtual HAM.
  *
  * Timer semantics are modelled explicitly rather than with real timers, so the
- * logic stays deterministic and unit-testable. The 「超时」 hooks below
- * (`timeoutFirstCall` / `timeoutResend` / `hamOffline`) are the deterministic
- * *interface* for that, and are covered by tests — but note they are **not
- * wired into the app**: with the current flow a HAM's reply is generated at the
- * moment the user's line is parsed (there is no window in which the user waits
- * for an answer), and the band-level 3-minute give-up is scheduled by
- * `ham/activity` instead. They exist for a flow that waits on the air.
+ * logic stays deterministic and unit-testable. The 「超时」 hooks below are that
+ * deterministic *interface*; the session owns the clock that drives them:
+ * `timeoutFirstCall` is mirrored by `QsoSession.expireOwnCq`, and
+ * `timeoutResend` by `QsoSession.servicePartnerWait` — the partner repeating
+ * itself when the operator stays silent, then giving up.
  */
 export class QsoMachine {
   state: QsoState = "IDLE";
@@ -313,7 +311,11 @@ export class QsoMachine {
 
     if (p.rst) {
       this.ctx.rstTx = p.rst;
-      const reply = `R UR RST ${p.rst} BK`;
+      // Both reports are in: the exchange is over. A station that has just
+      // copied "R UR RST 599 BK" acknowledges and signs off — sending the
+      // operator's own report straight back at them is a parrot, not a QSO.
+      if (this.ctx.rstRx !== null) return [this.hamSignsOff()];
+      const reply = `R UR RST ${this.ham.report} BK`;
       this.ctx.rstRx = this.ham.report;
       this.lastReply = reply;
       this.lastRetryKey = null;
@@ -334,7 +336,9 @@ export class QsoMachine {
       this.ctx.userEndSent = true;
     }
 
-    const reply = "R TU 73 SK";
+    // If the HAM already signed off, answering its 73 is a courtesy: a real
+    // station sends the short form, not the whole sign-off a second time.
+    const reply = this.ctx.peerEndHeard ? "73" : "R TU 73 SK";
     this.lastReply = reply;
     this.lastRetryKey = null;
     this.ctx.peerEndHeard = true; // HAM sends its own end
@@ -344,6 +348,23 @@ export class QsoMachine {
       this.state = "SIGNOFF";
     }
     return [reply];
+  }
+
+  /**
+   * Both reports have been exchanged: acknowledge and sign off.
+   *
+   * This is the "73" the operator has earned. It is deliberately the HAM that
+   * closes the contact — the operator answered its CQ, so the operator is owed
+   * the sign-off — and it leaves the machine in `SIGNOFF`, waiting for the
+   * operator's own 73 before the QSO is logged.
+   */
+  private hamSignsOff(): string {
+    const reply = "R TU 73 SK";
+    this.lastReply = reply;
+    this.lastRetryKey = null;
+    this.ctx.peerEndHeard = true;
+    this.state = "SIGNOFF";
+    return reply;
   }
 
   private hamExchangeReply(_p: ParsedMessage): string[] {
