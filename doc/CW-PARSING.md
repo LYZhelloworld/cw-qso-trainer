@@ -14,7 +14,7 @@
 
 > **已实现（2026-10-14）**：核心在 `src/cw/keyer.ts` 的 `IambicKeyer` —— Mode A/B、点划记忆（squeeze）、自动 3d 字符间隔与 7d 单词间隔均已落地。它的时钟与驱动全部由外部注入（每个方法都接收 `now`），因此行为完全确定、可单测。UI 接线见 `src/ui/keyer.ts` 的 `IambicKeyerInput`，界面面板见 `src/ui/pages/keyPanel.ts`，设置页可切换「直键 / iambic」并绑定点划键位。
 >
-> **侧音**也已实现（`src/audio/sidetone.ts`，详见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 的「发报侧音」）：它不走报文渲染，而是常驻振荡器实时开关，按下即响、松开即停。
+> **侧音**也已实现（`src/audio/sidetone.ts`，详见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 的「发报侧音」）：它不走报文音频，而是常驻振荡器实时开关，按下即响、松开即停。
 
 ### 键位绑定
 
@@ -153,7 +153,7 @@
 - 默认：**700 Hz**
 - 可调范围：**300 – 1200 Hz**
 - 波形：正弦波
-- 实现：**先整段渲染成 PCM 采样**（`src/audio/render.ts`：正弦载波乘摩尔斯键控包络，再叠 QSB / QRM / QRN），交给 lookahead 播放器按音频时钟分块播出（见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 的「音频处理架构」）。整段一次算完，衰落与干扰才是连续的、没有接缝爆音。**只有侧音**用常驻 `OscillatorNode`。
+- 实现：点划时长直接排成**发射机的增益斜坡**（`src/audio/bandSynth.ts`：常驻振荡器 × 键控增益，起落各 5 ms 斜坡），实时敲到频率上；QSB 是乘在同一台增益上的慢速包络，QRN / QRM 混进总线（见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 的「音频处理架构」）。侧音同理，只是走自己的振荡器。
 
 ---
 
