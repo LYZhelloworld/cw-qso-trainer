@@ -183,7 +183,7 @@ describe("App 外壳", () => {
     expect(mode()).toBe("CW-U");
   });
 
-  it("点击模式标签可切换边带并固定下来（不再跟随波段）", () => {
+  it("点击模式标签只改这个波段，换到别的波段仍是它自己的默认模式", () => {
     const { root, app } = mountApp();
     const label = (): HTMLButtonElement =>
       root.querySelector<HTMLButtonElement>(".rig .badge.sideband-btn")!;
@@ -191,12 +191,21 @@ describe("App 外壳", () => {
     // 默认 20m 跟随波段为 USB
     expect(label().textContent).toBe("CW-U");
     label().click();
-    expect(app.settings.cwSideband).toBe("LSB");
     expect(label().textContent).toBe("CW-L");
     expect(app.session.sideband).toBe("LSB");
 
-    // 固定后换波段仍是 LSB（波段约定只是初始值）
+    // 20m 上的改动不外溢：21m 仍是它自己的默认 CW-U
     app.updateSettings({ freqMHz: 21.025, bandIndex: 2 });
+    expect(label().textContent).toBe("CW-U");
+    expect(app.session.sideband).toBe("USB");
+
+    // 切回 20m：刚才选的 CW-L 还在（按波段记忆）
+    app.updateSettings({ freqMHz: 14.025, bandIndex: 1 });
+    expect(label().textContent).toBe("CW-L");
+    expect(app.session.sideband).toBe("LSB");
+
+    // 40m 从没动过，用的是波段约定 CW-L
+    app.updateSettings({ freqMHz: 7.025, bandIndex: 0 });
     expect(label().textContent).toBe("CW-L");
     expect(app.session.sideband).toBe("LSB");
   });

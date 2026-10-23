@@ -130,12 +130,22 @@ export class QsoSession implements SessionContext {
     return Math.round(this.freqMHz * 1e6);
   }
   /**
-   * The CW sideband this receiver is on: the band's convention unless the
-   * operator pinned one from the mode label (see `ham/tuning`). It is what
-   * decides which way the note moves as the dial is turned.
+   * The CW sideband this receiver is on: whatever this band was last left on,
+   * or the band's convention (LSB below 10 MHz, USB above) if it has never been
+   * touched. It is what decides which way the note moves as the dial is turned.
+   *
+   * Held per session — one session is one band — so the mode travels with the
+   * band: turning the knob to 40 m gets 40 m's mode, not whatever the previous
+   * band happened to be on. Same as a real rig's per-band mode memory.
    */
   get sideband(): Sideband {
-    return resolveSideband(this.settings.cwSideband, this.dialHz);
+    // No memory for this band yet ("auto") means: follow its convention.
+    return resolveSideband(this.sidebandMode ?? "auto", this.dialHz);
+  }
+
+  /** Switch this band's mode (the rig's CW-L / CW-U label). */
+  setSidebandMode(sideband: Sideband): void {
+    this.sidebandMode = sideband;
   }
   /** Receiver CW filter width in Hz (500 / 250 / 100), from settings. */
   get passbandHz(): number {
@@ -157,6 +167,14 @@ export class QsoSession implements SessionContext {
   draft = "";
   /** Set once the finished QSO has been written to the log (prevents duplicates). */
   logWritten = false;
+
+  /**
+   * This band's mode, once the operator has chosen one. `null` means "never
+   * touched": the band's convention applies (see `sideband`). Kept on the
+   * session rather than in settings because it belongs to *this band* — that is
+   * the whole point of per-band mode memory.
+   */
+  private sidebandMode: Sideband | null = null;
 
   /** The band: its roster and its listening pool. */
   readonly band: Frequency;

@@ -44,12 +44,9 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ iambicMode: "X" }).iambicMode).toBe("A");
   });
 
-  it("keeps a pinned CW sideband but defaults to auto (follow the band)", () => {
-    expect(normalizeSettings({ cwSideband: "USB" }).cwSideband).toBe("USB");
-    expect(normalizeSettings({ cwSideband: "LSB" }).cwSideband).toBe("LSB");
-    expect(normalizeSettings({ cwSideband: "auto" }).cwSideband).toBe("auto");
-    expect(normalizeSettings({ cwSideband: "bogus" }).cwSideband).toBe("auto");
-    expect(DEFAULT_SETTINGS.cwSideband).toBe("auto");
+  it("边带不存设置：它属于波段，旧版本留下的 cwSideband 会被丢掉", () => {
+    const settings = normalizeSettings({ cwSideband: "USB" });
+    expect("cwSideband" in settings).toBe(false);
   });
 
   it("keeps a supported filter width but defaults to 500 Hz", () => {

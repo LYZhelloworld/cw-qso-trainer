@@ -240,13 +240,18 @@ export class App implements AppHost {
   }
 
   /**
-   * Flip the receiving sideband from the mode label. The band's convention is
-   * the starting point; clicking pins the other one. Only how the receiver
-   * interprets the dial changes — nothing is torn down and the QSO keeps
-   * running, exactly as flipping a real rig's mode mid-QSO would.
+   * Flip the receiving sideband from the mode label.
+   *
+   * This is the rig's **per-band mode memory**: the choice stays with this band
+   * and only this band, so turning the knob back to 40 m finds 40 m's mode
+   * rather than whatever 20 m was left on. Every band starts on its convention
+   * (LSB below 10 MHz, USB above) until the operator says otherwise here. Only
+   * how the receiver interprets the dial changes — nothing is torn down and the
+   * QSO keeps running, exactly as flipping a real rig's mode mid-QSO would.
    */
   private toggleSideband(current: Sideband): void {
-    this.updateSettings({ cwSideband: otherSideband(current) });
+    this.session.setSidebandMode(otherSideband(current));
+    this.refresh();
   }
 
   updateSettings(patch: Partial<AppSettings>): void {
@@ -343,7 +348,13 @@ export class App implements AppHost {
 
   /** The radio face: frequency, band, mode, power switch and settings gear. */
   private renderRig(): void {
-    this.rig.render({ settings: this.settings, powered: this.powerOn });
+    this.rig.render({
+      settings: this.settings,
+      powered: this.powerOn,
+      // The mode belongs to the band, so the face reads it from the session
+      // rather than from settings.
+      sideband: this.session.sideband,
+    });
     this.waterfall?.setSpeed(this.settings.wpm);
     this.rig.updateScope(this.scopeView());
   }

@@ -212,12 +212,13 @@ describe("CW 通带与裙边：出了通带先变弱，再消失", () => {
 });
 
 describe("CW 边带偏好与可调滤波带宽", () => {
-  it("默认跟随波段，固定 LSB 后 20m 上的音调方向反过来", async () => {
+  it("本波段改成 LSB 后，20m 上的音调方向反过来", async () => {
     const audio = new FakeAudio();
-    const s = makeSession(audio, { settings: { cwSideband: "LSB" } });
+    const s = makeSession(audio);
+    s.setSidebandMode("LSB"); // 20m 上手动改成 CW-L
     const ham = s.seedHams(1)[0];
 
-    expect(s.sideband).toBe("LSB"); // 20m 手动指定 CW-L
+    expect(s.sideband).toBe("LSB");
     tuneBelow(s, ham, 180); // 台在拨轮上方 180 Hz
     await s.hamCallsCq(ham);
 
@@ -225,12 +226,13 @@ describe("CW 边带偏好与可调滤波带宽", () => {
     expect(lastTone(audio)).toBe(520);
   });
 
-  it("固定 USB 后 40m 上的音调方向反过来", async () => {
+  it("本波段改成 USB 后，40m 上的音调方向反过来", async () => {
     const audio = new FakeAudio();
-    const s = makeSession(audio, { freqMHz: 7.025, settings: { cwSideband: "USB" } });
+    const s = makeSession(audio, { freqMHz: 7.025 });
+    s.setSidebandMode("USB"); // 40m 上手动改成 CW-U
     const ham = s.seedHams(1)[0];
 
-    expect(s.sideband).toBe("USB"); // 40m 手动指定 CW-U
+    expect(s.sideband).toBe("USB");
     tuneBelow(s, ham, 180);
     await s.hamCallsCq(ham);
 

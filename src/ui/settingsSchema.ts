@@ -1,20 +1,18 @@
 import { BANDS } from "./bands.js";
-import {
-  PASSBAND_HZ,
-  normalisePassband,
-  type SidebandPreference,
-} from "../ham/tuning.js";
+import { PASSBAND_HZ, normalisePassband } from "../ham/tuning.js";
 
 /**
  * User settings schema: defaults, normalisation and callsign validation.
  * Intentionally free of DOM / storage so it stays unit-testable under Node.
+ *
+ * Deliberately *not* here: the CW sideband. A rig keeps its mode per band, so
+ * that lives on the band's session (see `QsoSession.sideband`) — a single
+ * global "CW-L / CW-U" preference would leak one band's choice onto the next.
  */
 
 export type UiDifficulty = "novice" | "intermediate" | "hardcore";
 export type IambicMode = "A" | "B";
 export type KeyMode = "straight" | "iambic";
-/** Which CW sideband to work: the band's convention, or pinned. */
-export type CwSideband = SidebandPreference;
 
 export interface AppSettings {
   /** The user's own callsign (practise callsign; format-checked only). */
@@ -43,12 +41,6 @@ export interface AppSettings {
   sidetoneVolume: number;
   /** Iambic squeeze behaviour: A drops the latched element, B sends it. */
   iambicMode: IambicMode;
-  /**
-   * Which CW sideband is received: `"auto"` follows the band's convention
-   * (LSB below 10 MHz, USB above), otherwise it is pinned. Logged QSOs are
-   * always plain `CW` either way.
-   */
-  cwSideband: CwSideband;
   /** Receiver CW filter width in Hz (one of `PASSBAND_OPTIONS`). */
   passbandHz: number;
 }
@@ -79,7 +71,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   iambicMode: "A",
   sidetone: true,
   sidetoneVolume: 40,
-  cwSideband: "auto",
   passbandHz: PASSBAND_HZ,
 };
 
@@ -142,9 +133,8 @@ export function normalizeSettings(raw: unknown): AppSettings {
       SIDETONE_MIN,
       SIDETONE_MAX,
     ),
-    // Only "LSB" / "USB" pin the sideband; anything else (including corrupt
-    // storage) means "follow the band", which is the safe default.
-    cwSideband: r.cwSideband === "LSB" || r.cwSideband === "USB" ? r.cwSideband : "auto",
+    // A `cwSideband` left behind by an older build is simply ignored: the mode
+    // now belongs to the band, and every band starts on its convention.
     passbandHz: normalisePassband(r.passbandHz),
   };
 }

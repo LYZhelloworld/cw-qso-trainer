@@ -10,7 +10,6 @@ import {
   WPM_MAX,
   WPM_MIN,
   validateCallsign,
-  type CwSideband,
   type IambicMode,
   type KeyMode,
   type UiDifficulty,
@@ -158,21 +157,6 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
     (iambicMode) => host.updateSettings({ iambicMode }),
   );
 
-  // --- CW sideband ---------------------------------------------------------
-  // Which sideband the receiver demodulates decides which way the note moves as
-  // the dial is turned. The rig's mode label (CW-L / CW-U) toggles it too; this
-  // is where "follow the band" is restored.
-  const sidebandField = selectRow<CwSideband>(
-    "CW 边带",
-    [
-      ["auto", "自动（跟随波段：40m 及以下 CW-L，20m 及以上 CW-U）"],
-      ["LSB", "CW-L（下边带）"],
-      ["USB", "CW-U（上边带）"],
-    ],
-    s.cwSideband,
-    (cwSideband) => host.updateSettings({ cwSideband }),
-  );
-
   // --- receiver filter width ----------------------------------------------
   // A narrower filter is harder to stay inside, so this is also a difficulty
   // dial: 500 Hz is forgiving, 100 Hz demands you park on the signal.
@@ -212,11 +196,14 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
     ),
     panel(
       "CW 接收",
-      sidebandField,
       passbandField,
       el("div", {
         class: "hint",
         text: "通带以拨轮频率为中心；带宽越窄，离信号越远就越听不到——500 Hz 最宽松，100 Hz 要求正好停在信号上。带宽不影响通联记录（始终记为 CW）。",
+      }),
+      el("div", {
+        class: "hint",
+        text: "边带（CW-L / CW-U）不在这里设：它跟着波段走，在电台面板上点一下模式标签就能改，每个波段各记各的。",
       }),
     ),
     panel(

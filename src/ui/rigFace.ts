@@ -1,7 +1,7 @@
 import { button, clear, el } from "./dom.js";
 import { BANDS } from "./bands.js";
 import { formatFreqMHz } from "./logRecord.js";
-import { resolveSideband, sidebandLabel, type Sideband } from "../ham/tuning.js";
+import { sidebandLabel, type Sideband } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
 
 /**
@@ -27,6 +27,11 @@ export interface RigFaceOptions {
 export interface RigView {
   settings: AppSettings;
   powered: boolean;
+  /**
+   * The mode of the band being shown (CW-L / CW-U). Comes from the session, not
+   * from settings: a rig remembers the mode per band, so it is band state.
+   */
+  sideband: Sideband;
 }
 
 /**
@@ -89,7 +94,7 @@ export class RigFace {
 
     const meta = el("div", { class: "rig-meta" });
     meta.append(el("span", { class: "badge", text: band.name }));
-    meta.append(this.modeButton(settings));
+    meta.append(this.modeButton(view.sideband));
 
     const right = el("div", { class: "rig-right" });
     const power = button(
@@ -117,24 +122,19 @@ export class RigFace {
   }
 
   /**
-   * The mode readout is also the sideband switch. The band's convention (40 m
-   * and down LSB, 20 m and up USB) is only the starting point — the operator
-   * can pin the other sideband by clicking here. Either way a logged QSO is
-   * plain CW (see `logRecord`).
+   * The mode readout is also the mode switch. Each band has its own memory:
+   * 40 m and down start on CW-L, 20 m and up on CW-U, and clicking here changes
+   * *this band only* — turn to another band and it keeps its own mode. Either
+   * way a logged QSO is plain CW (see `logRecord`).
    */
-  private modeButton(settings: AppSettings): HTMLElement {
-    const sideband = resolveSideband(settings.cwSideband, Math.round(settings.freqMHz * 1e6));
+  private modeButton(sideband: Sideband): HTMLElement {
     const btn = button(
       sidebandLabel(sideband),
       () => this.opts.onToggleSideband(sideband),
       "badge mode sideband-btn",
     );
-    btn.title =
-      settings.cwSideband === "auto"
-        ? `${sidebandLabel(sideband)}（本波段默认）· 点击切换到 ${
-            sideband === "USB" ? "CW-L" : "CW-U"
-          }`
-        : `${sidebandLabel(sideband)}（手动指定）· 点击切换（可在设置里恢复跟随波段）`;
+    const other = sideband === "USB" ? "CW-L" : "CW-U";
+    btn.title = `${sidebandLabel(sideband)}（本波段）· 点击切换到 ${other}`;
     return btn;
   }
 }

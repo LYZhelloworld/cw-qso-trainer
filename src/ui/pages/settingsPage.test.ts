@@ -163,15 +163,11 @@ describe("设置页", () => {
     expect(host.settings.difficulty).toBe("hardcore");
   });
 
-  it("CW 边带默认跟随波段，可手动指定 LSB / USB", () => {
-    const { root, host } = makeHost();
-    const select = fieldByLabel(root, "CW 边带").querySelector("select")!;
-    expect(select.value).toBe("auto");
-    expect(select.textContent).toContain("自动");
-
-    select.value = "USB";
-    select.dispatchEvent(new Event("change"));
-    expect(host.settings.cwSideband).toBe("USB");
+  it("不再提供全局 CW 边带选项：边带跟着波段走", () => {
+    const { root } = makeHost();
+    expect(root.textContent).not.toContain("CW 边带");
+    // 说明文字指向电台面板的模式标签
+    expect(root.textContent).toContain("模式标签");
   });
 
   it("接收滤波带宽默认 500 Hz，可切到 250 / 100 Hz", () => {
