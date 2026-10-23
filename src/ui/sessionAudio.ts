@@ -147,22 +147,18 @@ export class SessionAudio {  /** Calls currently on the band, so `syncStations` 
   }
 
   /**
-   * Put a recorded transmission on the air, starting where it has already got
-   * to.
+   * Wait out a transmission that is already keyed.
    *
-   * Playback takes the `Tx` itself rather than a text plus an offset spelled out
-   * by the caller: the same record drives the waterfall and the meter, so the
-   * audio cannot start at a different point than the signal shown on screen —
-   * tuning onto a station mid-CQ hears exactly the part the display says is
-   * still being sent.
+   * Keying happens once, when the message is recorded (`notePlaying` /
+   * `noteCq` in the session call `keyStation`), because that is the single act
+   * that makes the waterfall and the speaker agree. This method therefore only
+   * *paces* the caller: replies follow each other at keying speed, so whoever
+   * drives the exchange has to wait as long as the over lasts. Re-keying here
+   * would be harmless (`scheduleKeying` cancels and rewrites the same events),
+   * but it would put a second owner on "is it on the air", which is how the two
+   * drifted apart before.
    */
-  async playTx(tx: Tx, ham: VirtualHam | null | undefined, at: number): Promise<void> {
-    // The station's carrier is already running on the bus, so this only keys the
-    // dots and dashes onto it — no rendering, no buffer.
-    if (ham) this.keyStation(tx, ham);
-    // Nothing to play back, but callers still pace themselves on how long a
-    // transmission takes (replies follow each other at keying speed), so resolve
-    // when this over would have finished.
+  async playTx(tx: Tx, _ham: VirtualHam | null | undefined, at: number): Promise<void> {
     await this.waitFor(tx.startedAt + tx.durationMs - at);
   }
 

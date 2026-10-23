@@ -117,8 +117,11 @@ describe("调准一个正在发报的台", () => {
     const ham = session.listHams()[0];
     session.start();
 
-    tickTo(5_000); // rng=0 -> 首呼在 5 秒；此时我们还没调过去，所以没听见
-    expect(band.keyed).toHaveLength(0);
+    tickTo(5_000); // rng=0 -> 首呼在 5 秒
+    // 台站照发：它一开口就敲在自己的载波上了，与我们有没有调过去无关。
+    // "我们没听见"这件事由接收机负责（滤波器/静音），不靠台站闭嘴。
+    expect(band.keyed).toHaveLength(1);
+    expect(band.joined).toHaveLength(0);
 
     tickTo(8_000); // 这条 CQ 已经发了 3 秒
     session.retune(ham.freqHz / 1e6); // 调准
@@ -144,8 +147,9 @@ describe("调准一个正在发报的台", () => {
 
     session.retune(ham.freqHz / 1e6);
 
+    // 没有正在发的报文可以接，所以没有 `keyFrom`；但报文本身早就敲过
     expect(band.joined).toHaveLength(0);
-    expect(band.keyed).toHaveLength(0);
+    expect(band.keyed).toHaveLength(1);
   });
 });
 

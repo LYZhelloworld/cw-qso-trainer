@@ -610,6 +610,28 @@ export class QsoSession implements SessionContext {
   }
 
   /**
+   * Put a message on the air: record it in the keying table **and** key it onto
+   * the station's carrier.
+   *
+   * These two are one act on purpose. Everything the operator can see — the
+   * waterfall's dots, the S-meter's needle — is derived from the keying table,
+   * while the sound comes from the transmitter. Recording without keying is
+   * exactly how a station ends up drawn on screen and silent in the speaker, so
+   * the two are not allowed to be separate decisions: whoever records a
+   * transmission has already keyed it.
+   *
+   * Whether it is *heard* is a different question with a different owner — the
+   * receiver's filter, mute and half-duplex state decide that, in the audio
+   * layer alone.
+   */
+  private airStation(ham: VirtualHam, text: string): Tx {
+    const tx = makeTx(text, this.audio.keyElements(text), this.clock());
+    this.txs.set(ham.call, tx);
+    this.audio.keyStation(tx, ham);
+    return tx;
+  }
+
+  /**
    * Record what this station is keying and when it started: the message's real
    * envelope goes into the keying table, and everything else (waterfall, meter,
    * playback) reads it from there. Returns the record so the caller can hand
@@ -617,9 +639,7 @@ export class QsoSession implements SessionContext {
    */
   private notePlaying(ham: VirtualHam | null | undefined, text: string): Tx | null {
     if (!ham) return null;
-    const tx = makeTx(text, this.audio.keyElements(text), this.clock());
-    this.txs.set(ham.call, tx);
-    return tx;
+    return this.airStation(ham, text);
   }
 
   /**
@@ -750,7 +770,6 @@ export class QsoSession implements SessionContext {
    * or there is simply no station inside the passband.
    */
   async hamCallsCq(ham?: VirtualHam): Promise<boolean> {
-    if (this.sending) return false;
     // Half-duplex: nobody is heard while our own key is down.
     if (this.transmitting) return false;
     // A powered-down rig hears nothing, so a CQ is never picked up.
@@ -1030,27 +1049,24 @@ export class QsoSession implements SessionContext {
 
   private handleActivity(events: HamActivityEvent[]): void {
     for (const e of events) {
-      // The burst goes on the air whether or not we are listening: that record
-      // is what lets the operator tune in halfway through it.
-      const tx = this.noteCq(e.ham);
-      // Powered down: the CQ goes out on the air, we just do not hear it. The
-      // band must still be advanced (which it is — that happened in frequency),
-      // so the station keeps its own rhythm.
-      if (!this.receiving) continue;
-      // Half-duplex: a transmitting station is deaf, so this CQ is not heard.
-      if (this.transmitting) continue;
-      // Outside the passband: the filter cuts the station off, so its CQ is
-      // never picked up. It stays on the waterfall for the operator to tune to.
-      if (!this.canHear(e.ham)) continue;
-
-      // Inside the passband, awake, not sending: the station is *on the air* as
-      // far as this receiver is concerned. Whether the exchange is open to it is
-      // a separate question — an operator mid-QSO still hears the rest of the
-      // band. Hearing it is the filter's call, answering is the machine's, and
-      // conflating the two is what used to light the waterfall while the speaker
-      // stayed silent.
-      if (this.deafToNewCalls(e.ham)) {
-        this.audio.keyStation(tx, e.ham);
+      // Two ways to put this burst on the air, and both of them key it:
+      // `hamCallsCq` records it with the machine's own wording and opens the
+      // exchange, `noteCq` records it as a plain CQ. The choice below is only
+      // about whether the *exchange* is open to this station — never about
+      // whether the station transmits. Recording without keying is exactly how
+      // a signal ends up drawn on the waterfall and silent in the speaker.
+      //
+      // Powered down, half-duplex, outside the passband, or busy with another
+      // contact: the CQ is still keyed onto its carrier. The audio layer
+      // decides what reaches the speaker (filter, mute, half-duplex) and the
+      // band keeps its own rhythm either way.
+      if (
+        !this.receiving ||
+        this.transmitting ||
+        !this.canHear(e.ham) ||
+        this.deafToNewCalls(e.ham)
+      ) {
+        this.noteCq(e.ham);
         continue;
       }
       void this.hamCallsCq(e.ham);
@@ -1075,15 +1091,19 @@ export class QsoSession implements SessionContext {
   }
 
   /**
-   * Record one burst as being on the air, and re-time the station's next one:
-   * the next CQ starts after this message has finished keying plus a listening
-   * gap. Only the session knows how long a message takes, so the band's
-   * scheduler cannot work this out on its own.
+   * Put one burst on the air, and re-time the station's next one: the next CQ
+   * starts after this message has finished keying plus a listening gap. Only
+   * the session knows how long a message takes, so the band's scheduler cannot
+   * work this out on its own.
+   *
+   * Keyed unconditionally — the band does not go quiet because of what this
+   * receiver happens to be doing. Whether it reaches the speaker is the audio
+   * layer's call (filter, mute, half-duplex), and whether it opens an exchange
+   * is `deafToNewCalls`'s.
    */
   private noteCq(ham: VirtualHam): Tx {
     const text = `CQ CQ CQ DE ${ham.call} ${ham.call} PSE K`;
-    const tx = makeTx(text, this.audio.keyElements(text), this.clock());
-    this.txs.set(ham.call, tx);
+    const tx = this.airStation(ham, text);
     this.band.scheduleNextCq(ham.call, tx.durationMs + nextCqGapMs(this.rng));
     return tx;
   }

@@ -118,8 +118,8 @@ describe("实时模型 — 会话驱动频段", () => {
       }
     }
     expect(onAirAt).toBeGreaterThanOrEqual(0);
-    // 关台期间一次也没有往总线上敲：不是"敲了但静音"，是根本没听
-    expect(band.all("key").length).toBe(0);
+    // 关台是聋，不是停台：报文照样被敲在频率上，只是总线压到 0，我们听不到。
+    expect(band.all("key").length).toBeGreaterThan(0);
     expect(band.last("muted")?.on).toBe(true);
 
     // 让这条报文先发出去一段，再开台
@@ -152,11 +152,12 @@ describe("实时模型 — 会话驱动频段", () => {
     session.start();
     session.setReceiving(true);
 
-    // 先让它呼叫一次，会话开始跟这一台建立联系
+    // 先让它呼叫一次，会话开始跟这一台建立联系。
+    // 只认我们调过去的那一台：别的台也在发，只是不在通带里。
     let firstKeyed = false;
     for (let ms = 250; ms <= 30_000 && !firstKeyed; ms += 250) {
       await tickTo(ms);
-      firstKeyed = band.all("key").length > 0;
+      firstKeyed = band.all("key").some((c) => c.call === hams[0].call);
     }
     expect(firstKeyed).toBe(true);
 
@@ -176,5 +177,50 @@ describe("实时模型 — 会话驱动频段", () => {
     expect(keyed).toBeDefined();
     expect(String(keyed!.text)).toMatch(/^CQ CQ CQ DE /);
     expect(session.state).toBe("EXCHANGE");
+  });
+
+  it("自己发报时波段照常运转：别人的 CQ 也敲在频率上，只是进不了喇叭", async () => {
+    let t = 0;
+    const ticks: Array<() => void> = [];
+    const band = new SpyBand();
+    // 扣住发报，让 `transmitting` 一直为真
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const settings = normalizeSettings({ freqMHz: 14.025, myCall: "BG7XXX", wpm: 20 });
+    const session = new QsoSession(14.025, settings, {
+      rng: mulberry32(11),
+      now: () => t,
+      referenceHz: REF,
+      startTicking: (cb) => {
+        ticks.push(cb);
+        return () => {};
+      },
+      delay: async () => {},
+      pace: () => gate,
+      synth: band,
+    });
+    const hams = session.seedHams(2);
+    session.retune(hams[0].freqHz / 1e6);
+    session.start();
+    session.setReceiving(true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    const sending = session.userSend("R R R TEST");
+    expect(session.isTransmitting).toBe(true);
+    band.clear();
+
+    // 半双工期间另一个台开口：记录必然伴随敲响，否则就又是"屏幕亮、喇叭哑"
+    const handle = session as unknown as {
+      handleActivity(events: Array<{ type: "cq"; ham: typeof hams[0] }>): void;
+    };
+    handle.handleActivity([{ type: "cq", ham: hams[1] }]);
+    const keyed = band.all("key").filter((c) => String(c.text).startsWith("CQ CQ CQ DE"));
+    expect(keyed).toHaveLength(1);
+    expect(keyed[0]!.call).toBe(hams[1].call);
+
+    release();
+    await sending;
   });
 });

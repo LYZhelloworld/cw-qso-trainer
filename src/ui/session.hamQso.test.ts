@@ -113,24 +113,30 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
     h.session.start();
     const caller = await h.untilExchange();
 
-    // 之前不在通带内，一个字也没播出；现在把拨轮对准它。
-    expect(h.band.texts).toHaveLength(0);
+    // 他们一直在发（台站照发，只是不在我们的通带里），但表针不动：
+    // 听不听得到由接收机决定，不由台站闭不闭嘴决定。
+    expect(h.session.sMeter()).toBeNull();
     h.session.retune(caller.freqHz / 1e6);
     const endedAt = await h.runToEnd();
     expect(endedAt).not.toBeNull();
 
-    // 呼叫方先开口，应答方从第二行里认出来。
-    expect(h.band.texts).toHaveLength(6);
-    expect(h.band.texts[0]).toBe(`CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`);
-    const answerer = h.band.texts[1].split(" ")[2];
-    expect(h.band.texts).toEqual([
+    // 调到它上面之后，剧本的六行一行不落地敲了出来，而且顺序不乱。
+    // 频段上别的台也在发，所以按内容挑出这一对的行，不能按下标。
+    const texts = h.band.texts;
+    const answerLine = texts.find((t) => t.startsWith(`${caller.call} DE `));
+    expect(answerLine).toBeDefined();
+    const script = [
       `CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`,
-      `${caller.call} DE ${answerer} K`,
+      answerLine!,
       "R UR RST 599 599 BK",
       "R UR RST 599 BK",
       "R TU 73 SK",
       "R TU 73 SK",
-    ]);
+    ];
+    const at = script.map((line) => texts.indexOf(line));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    const answerer = answerLine!.split(" ")[2];
     // 守听的那个台从头到尾没进过频段名单：它没有频率，也不该有。
     expect(h.session.hamActivity().some((e) => e.ham.call === answerer)).toBe(false);
   });
@@ -169,7 +175,7 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
 
     expect(await h.runToEnd()).not.toBeNull();
     const ownCq = `CQ CQ CQ DE ${caller.call} ${caller.call} PSE K`;
-    expect(h.band.texts.filter((c) => c === ownCq)).toHaveLength(1);
+    const cqsBefore = h.band.texts.filter((c) => c === ownCq).length;
 
     // 签完 73 后几秒内重新开口（2–6 s），而不是等 30–60 s 的常规间隔。
     let seenCqing = false;
@@ -181,7 +187,8 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
       }
     }
     expect(seenCqing).toBe(true);
-    expect(h.band.texts.filter((c) => c === ownCq).length).toBeGreaterThanOrEqual(2);
+    // 又多敲了一次 CQ：签名之后它回到自己的呼叫节奏
+    expect(h.band.texts.filter((c) => c === ownCq).length).toBeGreaterThan(cqsBefore);
   });
 
   it("应答方不被当成可通联对象：它根本不在名单上", async () => {

@@ -39,7 +39,7 @@ function makeSession(rng: () => number = () => 0) {
 }
 
 describe("关台 = 只是不接收（环境不随人下线）", () => {
-  it("关台后不再接话：不写报文，也不发声", async () => {
+  it("关台后不再接话：不写报文，也不进日志；报文照样上频率，只是听不见", async () => {
     const h = makeSession();
     h.session.seedHams(1);
     h.session.retune(h.session.listHams()[0].freqHz / 1e6); // 对准它
@@ -48,8 +48,10 @@ describe("关台 = 只是不接收（环境不随人下线）", () => {
 
     await h.tickTo(5_000); // rng=0 -> 首呼延迟 5 s
 
+    // 关台是聋，不是停台：CQ 照发（瀑布图上看得见），但没有人抄它
     expect(h.session.lines).toHaveLength(0);
-    expect(h.band.texts).toHaveLength(0);
+    expect(h.band.texts.length).toBeGreaterThan(0);
+    expect(h.band.last("muted")?.on).toBe(true);
   });
 
   it("关台后频段照常运转：到点仍会呼叫，台也不会消失", async () => {
