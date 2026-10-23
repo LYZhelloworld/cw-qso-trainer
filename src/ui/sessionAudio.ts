@@ -159,23 +159,33 @@ export class SessionAudio {  /** Calls currently on the band, so `syncStations` 
   async playTx(tx: Tx, ham: VirtualHam | null | undefined, at: number): Promise<void> {
     // The station's carrier is already running on the bus, so this only keys the
     // dots and dashes onto it — no rendering, no buffer.
-    if (ham) {
-      this.wireSynth();
-      this.synth.ensureStation({
-        call: ham.call,
-        freqHz: ham.freqHz,
-        strength: ham.strength,
-        difficulty: ham.difficulty,
-      });
-      // Key from the message's own start time, not from `at`: the carrier is
-      // live, so a message that began before the operator tuned in is already
-      // part-way through — and that is exactly what should be heard.
-      this.synth.key(tx, ham.call, tx.startedAt);
-    }
+    if (ham) this.keyStation(tx, ham);
     // Nothing to play back, but callers still pace themselves on how long a
     // transmission takes (replies follow each other at keying speed), so resolve
     // when this over would have finished.
     await this.waitFor(tx.startedAt + tx.durationMs - at);
+  }
+
+  /**
+   * Put a station's recorded message on the air, without waiting for it.
+   *
+   * This is what "hearing the band" means: a station inside the passband is
+   * keyed onto its own carrier, whether or not the exchange goes on to answer
+   * it. The caller decides what to do about it; the receiver has already done
+   * its part.
+   */
+  keyStation(tx: Tx, ham: VirtualHam): void {
+    this.wireSynth();
+    this.synth.ensureStation({
+      call: ham.call,
+      freqHz: ham.freqHz,
+      strength: ham.strength,
+      difficulty: ham.difficulty,
+    });
+    // Key from the message's own start time, not from now: the carrier is live,
+    // so a message that began before the operator tuned in is already part-way
+    // through — and that is exactly what should be heard.
+    this.synth.key(tx, ham.call, tx.startedAt);
   }
 
   /** The operator's own transmission: always its own pitch, never faded. */

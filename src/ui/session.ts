@@ -1032,7 +1032,7 @@ export class QsoSession implements SessionContext {
     for (const e of events) {
       // The burst goes on the air whether or not we are listening: that record
       // is what lets the operator tune in halfway through it.
-      this.noteCq(e.ham);
+      const tx = this.noteCq(e.ham);
       // Powered down: the CQ goes out on the air, we just do not hear it. The
       // band must still be advanced (which it is — that happened in frequency),
       // so the station keeps its own rhythm.
@@ -1042,18 +1042,36 @@ export class QsoSession implements SessionContext {
       // Outside the passband: the filter cuts the station off, so its CQ is
       // never picked up. It stays on the waterfall for the operator to tune to.
       if (!this.canHear(e.ham)) continue;
-      // Mid-exchange: ignore other stations calling on the band rather than
-      // trampling over the QSO in progress.
-      if (this.exchangeInProgress) continue;
-      // Mid-pile-up: the operator is answering *these* stations. Another CQ on
-      // the band must not hijack the selection.
-      if (this.pileup.active) continue;
-      // Already listening to one station's CQ: only its own repeats get through.
-      if (this.machine?.state === "PEER_CQ" && this.ham?.call !== e.ham.call) continue;
+
+      // Inside the passband, awake, not sending: the station is *on the air* as
+      // far as this receiver is concerned. Whether the exchange is open to it is
+      // a separate question — an operator mid-QSO still hears the rest of the
+      // band. Hearing it is the filter's call, answering is the machine's, and
+      // conflating the two is what used to light the waterfall while the speaker
+      // stayed silent.
+      if (this.deafToNewCalls(e.ham)) {
+        this.audio.keyStation(tx, e.ham);
+        continue;
+      }
       void this.hamCallsCq(e.ham);
     }
 
     this.activityListener?.(events);
+  }
+
+  /**
+   * Should a CQ that is inside the passband be *answered* (i.e. allowed to open
+   * or repeat an exchange)? It is still heard either way.
+   *
+   *  - mid-exchange: the QSO in progress keeps the operator's attention;
+   *  - mid-pile-up: the operator is picking one of the stations already calling;
+   *  - already copying one station's CQ: another station's call does not hijack
+   *    the selection, but only that station's own repeats re-open it.
+   */
+  private deafToNewCalls(ham: VirtualHam): boolean {
+    if (this.exchangeInProgress) return true;
+    if (this.pileup.active) return true;
+    return this.machine?.state === "PEER_CQ" && this.ham?.call !== ham.call;
   }
 
   /**
@@ -1062,11 +1080,12 @@ export class QsoSession implements SessionContext {
    * gap. Only the session knows how long a message takes, so the band's
    * scheduler cannot work this out on its own.
    */
-  private noteCq(ham: VirtualHam): void {
+  private noteCq(ham: VirtualHam): Tx {
     const text = `CQ CQ CQ DE ${ham.call} ${ham.call} PSE K`;
     const tx = makeTx(text, this.audio.keyElements(text), this.clock());
     this.txs.set(ham.call, tx);
     this.band.scheduleNextCq(ham.call, tx.durationMs + nextCqGapMs(this.rng));
+    return tx;
   }
 
   /**

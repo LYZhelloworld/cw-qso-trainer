@@ -144,4 +144,37 @@ describe("实时模型 — 会话驱动频段", () => {
     expect(band.stations.size).toBe(0);
     expect(band.last("dispose")).toBeDefined();
   });
+
+  it("通联进行中，通带里的 CQ 仍然被敲响：屏幕亮着，喇叭就不能哑", async () => {
+    const { session, band, tickTo } = makeSession();
+    const hams = session.seedHams(2);
+    session.retune(hams[0].freqHz / 1e6);
+    session.start();
+    session.setReceiving(true);
+
+    // 先让它呼叫一次，会话开始跟这一台建立联系
+    let firstKeyed = false;
+    for (let ms = 250; ms <= 30_000 && !firstKeyed; ms += 250) {
+      await tickTo(ms);
+      firstKeyed = band.all("key").length > 0;
+    }
+    expect(firstKeyed).toBe(true);
+
+    // 操作者回一句，会话进入 EXCHANGE：从此这次呼叫不再"开启"通联
+    await session.userSend("R R R TEST");
+    expect(session.state).toBe("EXCHANGE");
+    band.clear();
+
+    // 同一台在通带里再次呼叫
+    const handle = session as unknown as {
+      handleActivity(events: Array<{ type: "cq"; ham: typeof hams[0] }>): void;
+    };
+    handle.handleActivity([{ type: "cq", ham: hams[0] }]);
+
+    // 状态机不再应答它，但报文照样敲在频率上——瀑布、S 表、耳朵说的是同一件事
+    const keyed = band.last("key");
+    expect(keyed).toBeDefined();
+    expect(String(keyed!.text)).toMatch(/^CQ CQ CQ DE /);
+    expect(session.state).toBe("EXCHANGE");
+  });
 });
