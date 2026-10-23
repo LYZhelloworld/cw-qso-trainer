@@ -69,11 +69,11 @@ type Phase = "idle" | "element" | "gap";
 const DEFAULT_WPM = 20;
 
 /**
- * How many taps may wait behind the element being sent. Far more than a hand can
- * put in during one element; the cap only stops a stuck key from growing an
- * unbounded backlog.
+ * How many taps may wait behind the element being sent. A burst of fast paddling
+ * can be a dozen elements deep, so leave plenty of room; the cap only stops a
+ * stuck key from growing an unbounded backlog.
  */
-const MAX_QUEUED_ELEMENTS = 8;
+const MAX_QUEUED_ELEMENTS = 16;
 
 export class IambicKeyer {
   private d: number;
@@ -145,23 +145,20 @@ export class IambicKeyer {
     this.d = opts.unit ?? (opts.wpm ? 1200 / opts.wpm : this.d);
   }
 
-  /** Press a paddle at `now`. Squeeze (both paddles) is detected here. */
+  /** Press a paddle at `now`. Squeeze is detected at the element boundaries. */
   press(paddle: Paddle, now: number): void {
     this.advance(now);
-    const other: Paddle = paddle === "dot" ? "dash" : "dot";
-    const otherDown = other === "dot" ? this.dotDown : this.dashDown;
-    if (otherDown) {
-      this.latched = other; // squeezing: remember the other paddle
-    }
     if (paddle === "dot") this.dotDown = true;
     else this.dashDown = true;
 
     if (this.phase === "idle") {
       this.startElement(paddle, now);
-    } else if (!otherDown) {
-      // A tap that lands while an element is still being sent is not a squeeze —
-      // it is the next element, so remember it and play it when the keyer is free.
-      if (this.queue.length < MAX_QUEUED_ELEMENTS) this.queue.push(paddle);
+    } else if (this.queue.length < MAX_QUEUED_ELEMENTS) {
+      // Every tap is an element, even when it lands on top of the other paddle
+      // (fast alternation does exactly that). Queue it in order and let the
+      // keyer play it; squeeze — both held across a boundary — is the held-state
+      // alternation in `decideNext`, not a property of this single press.
+      this.queue.push(paddle);
     }
   }
 
@@ -315,14 +312,21 @@ export class IambicKeyer {
    * Pick the next element when a gap ends.
    *
    * Queued taps first (a fast sequence is played in the order it was keyed),
-   * then squeeze alternation, then a held paddle repeating, then — Mode B — the
-   * element latched by a squeeze that has since been released.
+   * then — both paddles held across the boundary — squeeze alternation, then a
+   * held paddle repeating, then Mode B's release memory.
    */
   private decideNext(): Paddle | null {
+    const both = this.dotDown && this.dashDown;
     const queued = this.queue.shift();
-    if (queued) return queued;
+    if (queued) {
+      // Both held across this boundary: the classic keyer also remembers the
+      // element that would come after this one. Mode B sends it if both
+      // paddles are released while this element plays; Mode A drops it.
+      if (both) this.latched = queued === "dot" ? "dash" : "dot";
+      return queued;
+    }
 
-    if (this.dotDown && this.dashDown) {
+    if (both) {
       const next: Paddle = this.lastPaddle === "dot" ? "dash" : "dot";
       this.latched = next === "dot" ? "dash" : "dot";
       return next;

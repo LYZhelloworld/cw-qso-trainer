@@ -32,6 +32,25 @@ function sendSymbol(k: IambicKeyer, sym: string, start: number, d = D): number {
   return t;
 }
 
+/**
+ * Play a run of paddle taps in real time order. A tap goes down at `i * spacing`
+ * and up `hold` ms later; when `hold > spacing` the next press lands before the
+ * previous release — which is exactly what fast alternation looks like.
+ */
+function playTaps(k: IambicKeyer, taps: Paddle[], spacing: number, hold: number): void {
+  const events: Array<{ at: number; down: boolean; paddle: Paddle }> = [];
+  taps.forEach((p, i) => {
+    events.push({ at: i * spacing, down: true, paddle: p });
+    events.push({ at: i * spacing + hold, down: false, paddle: p });
+  });
+  // At the same instant a release happens before a press ("hold 0" still works).
+  events.sort((a, b) => a.at - b.at || Number(a.down) - Number(b.down));
+  for (const e of events) {
+    if (e.down) k.press(e.paddle, e.at);
+    else k.release(e.paddle, e.at);
+  }
+}
+
 describe("IambicKeyer 时序基础", () => {
   it("dot unit 由 wpm 推导，也可显式指定", () => {
     expect(new IambicKeyer({ wpm: 20 }).unit).toBe(60);
@@ -92,6 +111,23 @@ describe("IambicKeyer 时序基础", () => {
 });
 
 describe("IambicKeyer squeeze 与点划记忆", () => {
+  it("连续快速交替按左右桨：每次按键都产生一个元素（不重叠）", () => {
+    const k = new IambicKeyer({ unit: D });
+    playTaps(k, ["dot", "dash", "dot", "dash", "dot", "dash"], 50, 20);
+    k.advance(5000);
+
+    expect(k.elements().map((e) => e.on)).toEqual([D, 3 * D, D, 3 * D, D, 3 * D]);
+  });
+
+  it("连续快速交替按左右桨：稍微重叠也不吞键", () => {
+    const k = new IambicKeyer({ unit: D });
+    // 按住 60 ms、每 50 ms 按下一键：下一键在上一键松开之前按下，手快时很常见
+    playTaps(k, ["dot", "dash", "dot", "dash", "dot", "dash"], 50, 60);
+    k.advance(5000);
+
+    expect(k.elements().map((e) => e.on)).toEqual([D, 3 * D, D, 3 * D, D, 3 * D]);
+  });
+
   it("双桨同时按下时点划交替", () => {
     const k = new IambicKeyer({ unit: D, mode: "B" });
     k.press("dot", 0);
