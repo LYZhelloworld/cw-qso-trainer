@@ -557,24 +557,9 @@ table.log input {
   gap: 3px;
 }
 
-/* "S" and its reading sit together at the left of the bar: the right end is
-   where the dial begins, and a number there read as part of the frequency. */
-.smeter-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.smeter-label {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 2px;
-  color: var(--muted);
-}
-
-/* Sits right after the "S", left-aligned: the value grows to the right as the
-   signal climbs and nothing else on the line moves. */
+/* The reading is the whole caption above the bar ("S7", "S9+12", "—"), left
+   aligned with it: the bar's right end is where the dial begins, and a number
+   there read as part of the frequency. */
 .smeter-read {
   font-family: var(--mono);
   font-size: 13px;

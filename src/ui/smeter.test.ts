@@ -61,6 +61,14 @@ describe("S 表横条", () => {
     expect(meter.querySelector(".smeter-tick.s9")?.textContent).toBe("S9");
   });
 
+  it("横条上方只有读数本身，不再额外挂一个 S", () => {
+    const meter = renderSMeter({ reading: () => reading(7), onLeave: () => {} });
+
+    // 读数已经带 S 前缀（"S7"）；再挂一个静态 "S" 会念成 "S S7"。
+    expect(meter.firstElementChild?.textContent).toBe("S7");
+    expect(meter.querySelector(".smeter-label")).toBeNull();
+  });
+
   it("读数变化时两段填充跟着走", () => {
     vi.useFakeTimers();
     let current: SMeterReading | null = reading(9, 30);

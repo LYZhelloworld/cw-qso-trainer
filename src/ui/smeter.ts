@@ -82,12 +82,11 @@ const DEFAULT_TICK_MS = 60;
  */
 export function renderSMeter(host: SMeterHost): HTMLElement {
   const wrap = el("div", { class: "smeter", attrs: { role: "meter" } });
-  wrap.append(
-    el("div", { class: "smeter-head" }, [
-      el("span", { class: "smeter-label", text: "S" }),
-      el("span", { class: "smeter-read", text: QUIET.label }),
-    ]),
-  );
+  // The reading is the whole caption: "S7", "S9+12", "—". A separate "S" label
+  // next to it would read "S S7", and the scale under the bar already spells out
+  // S1..S9.
+  const readout = el("span", { class: "smeter-read", text: QUIET.label });
+  wrap.append(readout);
 
   const track = el("div", { class: "smeter-track" });
   const sSegment = el("div", { class: "smeter-seg s" });
@@ -112,7 +111,6 @@ export function renderSMeter(host: SMeterHost): HTMLElement {
   }
 
   wrap.append(track, scale);
-  const readout = wrap.querySelector<HTMLElement>(".smeter-read")!;
 
   const draw = (): void => {
     const bar = smeterBar(host.reading());
