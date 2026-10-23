@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { renderSettings } from "./settingsPage.js";
+import { renderSettingsPanel } from "./settingsPage.js";
 import { DEFAULT_SETTINGS, TONE_MAX, TONE_MIN, WPM_MAX, normalizeSettings, type AppSettings } from "../settingsSchema.js";
 import { QsoSession } from "../session.js";
 import { dxccDatabase } from "../../data/dxcc.js";
@@ -25,9 +25,7 @@ function makeHost(overrides: Partial<AppSettings> = {}) {
   };
 
   function render(): void {
-    const page = document.createElement("div");
-    renderSettings(host, page);
-    root.replaceChildren(page);
+    root.replaceChildren(renderSettingsPanel(host));
   }
 
   render();
@@ -64,9 +62,16 @@ afterEach(() => {
 });
 
 describe("设置页", () => {
-  it("包含身份 / 音频与速度 / 通联 / 键位 / 其他五个区块", () => {
+  it("包含身份 / 音频与速度 / CW 接收 / 通联 / 键位 / 其他六个区块", () => {
     const { root } = makeHost();
-    expect(panelTitles(root)).toEqual(["身份", "音频与速度", "通联", "键位", "其他"]);
+    expect(panelTitles(root)).toEqual([
+      "身份",
+      "音频与速度",
+      "CW 接收",
+      "通联",
+      "键位",
+      "其他",
+    ]);
   });
 
   it("未填呼号时给出错误提示", () => {
@@ -158,15 +163,26 @@ describe("设置页", () => {
     expect(host.settings.difficulty).toBe("hardcore");
   });
 
-  it("辅助模式开关会更新设置", () => {
-    const { root, host } = makeHost({ assistMode: false });
-    const box = checkboxByLabel(root, "辅助模式（默认）");
+  it("不再提供全局 CW 边带选项：边带跟着波段走", () => {
+    const { root } = makeHost();
+    expect(root.textContent).not.toContain("CW 边带");
+    // 说明文字指向电台面板的模式标签
+    expect(root.textContent).toContain("模式标签");
+  });
 
-    expect(box.checked).toBe(false);
-    box.checked = true;
-    box.dispatchEvent(new Event("change"));
+  it("接收滤波带宽默认 500 Hz，可切到 250 / 100 Hz", () => {
+    const { root, host } = makeHost();
+    const select = fieldByLabel(root, "接收滤波带宽").querySelector("select")!;
+    expect(select.value).toBe("500");
+    expect(Array.from(select.querySelectorAll("option")).map((o) => o.value)).toEqual([
+      "500",
+      "250",
+      "100",
+    ]);
 
-    expect(host.settings.assistMode).toBe(true);
+    select.value = "100";
+    select.dispatchEvent(new Event("change"));
+    expect(host.settings.passbandHz).toBe(100);
   });
 
   it("Farnsworth 开关会更新设置", () => {

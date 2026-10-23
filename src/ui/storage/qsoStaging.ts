@@ -19,6 +19,10 @@ export interface HamSnapshot {
   call: string;
   difficulty: Difficulty;
   report: string;
+  /** Absolute frequency in Hz (optional: older snapshots predate the waterfall). */
+  freqHz?: number;
+  /** Signal strength 0..1 (optional, as above). */
+  strength?: number;
 }
 
 export interface StagedQso {

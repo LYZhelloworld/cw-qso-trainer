@@ -16,7 +16,7 @@ describe("BANDS", () => {
 
 describe("clampToBand", () => {
   it("keeps a frequency inside the band", () => {
-    const band = BANDS[2];
+    const band = BANDS[1];
     expect(clampToBand(14.0, band)).toBe(14.0);
     expect(clampToBand(99, band)).toBe(band.maxMHz);
     expect(clampToBand(0, band)).toBe(band.minMHz);

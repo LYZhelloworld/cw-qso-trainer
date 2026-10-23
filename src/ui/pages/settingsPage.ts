@@ -1,5 +1,6 @@
 import { button, el, panel } from "../dom.js";
 import { dxccDatabase } from "../../data/dxcc.js";
+import { PASSBAND_HZ, PASSBAND_OPTIONS } from "../../ham/tuning.js";
 import {
   DEFAULT_SETTINGS,
   SIDETONE_MAX,
@@ -50,6 +51,26 @@ function checkRow(
   return wrap;
 }
 
+/** Labelled `<select>`: `[value, text]` pairs in, committed value out. */
+function selectRow<T extends string>(
+  label: string,
+  options: ReadonlyArray<readonly [T, string]>,
+  value: string,
+  onCommit: (value: T) => void,
+): HTMLLabelElement {
+  const select = el("select");
+  for (const [optionValue, text] of options) {
+    const opt = el("option", { attrs: { value: optionValue } });
+    opt.textContent = text;
+    select.append(opt);
+  }
+  select.value = value;
+  select.addEventListener("change", () => onCommit(select.value as T));
+  const wrap = el("label", { class: "field" });
+  wrap.append(document.createTextNode(label), select);
+  return wrap;
+}
+
 /** Button that captures the next key press and reports its `KeyboardEvent.code`. */
 function keyCaptureButton(
   label: string,
@@ -70,8 +91,13 @@ function keyCaptureButton(
   return btn;
 }
 
-export function renderSettings(host: AppHost, root: HTMLElement): void {
+/**
+ * The settings body, returned as a standalone element so the app can drop it
+ * into the gear's modal sheet (it used to be a full page of its own).
+ */
+export function renderSettingsPanel(host: AppHost): HTMLElement {
   const s = host.settings;
+  const root = el("div", { class: "settings-body" });
 
   // --- identity ------------------------------------------------------------
   const callInput = el("input", { attrs: { type: "text" } });
@@ -91,32 +117,23 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
   callField.append(document.createTextNode("本方呼号"), callInput, callMsg);
 
   // --- difficulty ----------------------------------------------------------
-  const diffSelect = el("select");
-  for (const d of ["novice", "intermediate", "hardcore"] as const) {
-    const opt = el("option", { attrs: { value: d } });
-    opt.textContent = DIFFICULTY_LABEL[d];
-    diffSelect.append(opt);
-  }
-  diffSelect.value = s.difficulty;
-  diffSelect.addEventListener("change", () =>
-    host.updateSettings({ difficulty: diffSelect.value as UiDifficulty }),
+  const diffField = selectRow(
+    "难度等级",
+    (Object.keys(DIFFICULTY_LABEL) as UiDifficulty[]).map((d) => [d, DIFFICULTY_LABEL[d]] as const),
+    s.difficulty,
+    (difficulty) => host.updateSettings({ difficulty }),
   );
-  const diffField = el("label", { class: "field" });
-  diffField.append(document.createTextNode("难度等级"), diffSelect);
 
   // --- key mode ------------------------------------------------------------
-  const keyModeSelect = el("select");
-  for (const m of ["straight", "iambic"] as const) {
-    const opt = el("option", { attrs: { value: m } });
-    opt.textContent = m === "straight" ? "直键（手键，手动控制点划）" : "iambic 双桨（自动键）";
-    keyModeSelect.append(opt);
-  }
-  keyModeSelect.value = s.keyMode;
-  keyModeSelect.addEventListener("change", () =>
-    host.updateSettings({ keyMode: keyModeSelect.value as KeyMode }),
+  const keyModeField = selectRow<KeyMode>(
+    "电键类型",
+    [
+      ["straight", "直键（手键，手动控制点划）"],
+      ["iambic", "iambic 双桨（自动键）"],
+    ],
+    s.keyMode,
+    (keyMode) => host.updateSettings({ keyMode }),
   );
-  const keyModeField = el("label", { class: "field" });
-  keyModeField.append(document.createTextNode("电键类型"), keyModeSelect);
 
   // --- key bindings --------------------------------------------------------
   const straightBtn = keyCaptureButton("直键按键", s.keyCode, host, (code) =>
@@ -130,19 +147,27 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
   );
 
   // --- iambic mode ---------------------------------------------------------
-  const iambicSelect = el("select");
-  for (const m of ["A", "B"] as const) {
-    const opt = el("option", { attrs: { value: m } });
-    opt.textContent =
-      m === "A" ? "模式 A（松开双桨即停）" : "模式 B（松开双桨补发记忆元素）";
-    iambicSelect.append(opt);
-  }
-  iambicSelect.value = s.iambicMode;
-  iambicSelect.addEventListener("change", () =>
-    host.updateSettings({ iambicMode: iambicSelect.value as IambicMode }),
+  const iambicField = selectRow<IambicMode>(
+    "iambic 模式",
+    [
+      ["A", "模式 A（松开双桨即停）"],
+      ["B", "模式 B（松开双桨补发记忆元素）"],
+    ],
+    s.iambicMode,
+    (iambicMode) => host.updateSettings({ iambicMode }),
   );
-  const iambicField = el("label", { class: "field" });
-  iambicField.append(document.createTextNode("iambic 模式"), iambicSelect);
+
+  // --- receiver filter width ----------------------------------------------
+  // A narrower filter is harder to stay inside, so this is also a difficulty
+  // dial: 500 Hz is forgiving, 100 Hz demands you park on the signal.
+  const passbandField = selectRow(
+    "接收滤波带宽",
+    PASSBAND_OPTIONS.map(
+      (hz) => [`${hz}`, hz === PASSBAND_HZ ? `${hz} Hz（默认）` : `${hz} Hz`] as const,
+    ),
+    String(s.passbandHz),
+    (value) => host.updateSettings({ passbandHz: Number(value) }),
+  );
 
   root.append(
     panel("身份", callField),
@@ -170,10 +195,24 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
       }),
     ),
     panel(
+      "CW 接收",
+      passbandField,
+      el("div", {
+        class: "hint",
+        text: "通带以拨轮频率为中心；带宽越窄，离信号越远就越听不到——500 Hz 最宽松，100 Hz 要求正好停在信号上。带宽不影响通联记录（始终记为 CW）。",
+      }),
+      el("div", {
+        class: "hint",
+        text: "边带（CW-L / CW-U）不在这里设：它跟着波段走，在电台面板上点一下模式标签就能改，每个波段各记各的。",
+      }),
+    ),
+    panel(
       "通联",
       diffField,
-      checkRow("辅助模式（默认）", s.assistMode, (v) => host.updateSettings({ assistMode: v })),
-      el("div", { class: "hint", text: "辅助模式也可在 CW 翻译页面随时开关。" }),
+      el("div", {
+        class: "hint",
+        text: "难度决定底噪、衰落与干扰，以及对方抄不清你报文的概率。",
+      }),
     ),
     panel(
       "键位",
@@ -198,4 +237,5 @@ export function renderSettings(host: AppHost, root: HTMLElement): void {
     ),
     panel("其他", button("恢复默认设置", () => host.updateSettings(DEFAULT_SETTINGS), "btn danger")),
   );
+  return root;
 }

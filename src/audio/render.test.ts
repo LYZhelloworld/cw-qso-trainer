@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { renderCwAudio, type Segment } from "./render.js";
 import { encodeWav, decodeWav } from "./wav.js";
 import { difficultyToEnvironment } from "./environment.js";
-import { CwAudioEngine } from "./engine.js";
 import { QsoMachine } from "../qso/stateMachine.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 import { dxccDatabase } from "../data/dxcc.js";
@@ -68,6 +67,56 @@ describe("renderCwAudio — basics", () => {
     const r = renderCwAudio({ text: "E", sampleRate: SR, wpm: 20 });
     // d = 1200 / 20 = 60 ms, single dot, no trailing gap.
     expect(r.durationSec).toBeCloseTo(0.06, 3);
+  });
+});
+
+describe("renderCwAudio — receiver filter gain（滤波器裙边）", () => {
+  const text = "E E E";
+
+  it("gain 线性缩放信号本身", () => {
+    const full = renderCwAudio({ text, sampleRate: SR, toneHz: 700, wpm: 20 });
+    const weak = renderCwAudio({ text, sampleRate: SR, toneHz: 700, wpm: 20, gain: 0.1 });
+    const ratio =
+      rms(collectOnSamples(weak.samples, weak.segments, SR)) /
+      rms(collectOnSamples(full.samples, full.segments, SR));
+    expect(ratio).toBeCloseTo(0.1, 2);
+  });
+
+  it("gain 为 0 时一点信号都不剩", () => {
+    const r = renderCwAudio({ text, sampleRate: SR, toneHz: 700, wpm: 20, gain: 0 });
+    expect(rms(collectOnSamples(r.samples, r.segments, SR))).toBeLessThan(1e-6);
+  });
+
+  it("不压底噪与干扰：QRM / QRN 的电平与 gain 无关", () => {
+    const base = {
+      text,
+      sampleRate: SR,
+      wpm: 20,
+      noiseSeed: 7,
+      qrm: { enabled: true, interferers: 3, level: 0.2 },
+      qrn: { enabled: true, level: 0.1 },
+    };
+    const full = renderCwAudio({ ...base, gain: 1 });
+    const weak = renderCwAudio({ ...base, gain: 0.05 });
+    // 间隙里只有环境声，两边的底噪必须一模一样。
+    expect(rms(collectOffSamples(weak.samples, weak.segments, SR))).toBeCloseTo(
+      rms(collectOffSamples(full.samples, full.segments, SR)),
+      6,
+    );
+  });
+
+  it("信号压到底噪以下时，听到的几乎只剩噪声", () => {
+    const r = renderCwAudio({
+      text,
+      sampleRate: SR,
+      wpm: 20,
+      gain: 0.02,
+      qrn: { enabled: true, level: 0.2 },
+      noiseSeed: 3,
+    });
+    const on = rms(collectOnSamples(r.samples, r.segments, SR));
+    const off = rms(collectOffSamples(r.samples, r.segments, SR));
+    expect(on / off).toBeLessThan(1.2); // 叠上去的那点信号几乎听不出来
   });
 });
 
@@ -167,11 +216,10 @@ describe("difficultyToEnvironment", () => {
   });
 });
 
-describe("CwAudioEngine + integration (HAM voice)", () => {
+describe("整条链路：HAM 的报文渲染成可听的 PCM", () => {
   it("renders the virtual HAM's replies to audible PCM", () => {
     const ham = new VirtualHam({ call: "JA1ABC", difficulty: "novice" });
     const m = new QsoMachine({ myCall: "BG7XXX", ham, db: dxccDatabase });
-    const engine = new CwAudioEngine();
     const replies: string[] = [];
     m.userSend("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
     replies.push(m.hamAnswerCq());
@@ -180,15 +228,15 @@ describe("CwAudioEngine + integration (HAM voice)", () => {
     expect(replies.length).toBeGreaterThan(0);
     for (const text of replies) {
       if (!text) continue;
-      const r = engine.render(text, { sampleRate: SR });
+      const r = renderCwAudio({ text, sampleRate: SR });
       expect(r.samples.length).toBeGreaterThan(0);
       expect(r.durationSec).toBeGreaterThan(0);
     }
   });
 
   it("renderToWav yields a playable buffer", () => {
-    const engine = new CwAudioEngine();
-    const wav = engine.renderToWav("CQ DE BG7XXX", { sampleRate: SR });
+    const r = renderCwAudio({ text: "CQ DE BG7XXX", sampleRate: SR });
+    const wav = encodeWav(r.samples, r.sampleRate);
     const { samples } = decodeWav(wav);
     expect(samples.length).toBeGreaterThan(0);
   });

@@ -5,25 +5,38 @@ import {
   hasAcknowledgedDisclaimer,
 } from "./disclaimer.js";
 import { QsoSession } from "./session.js";
+import { installDebugConsole } from "./debugConsole.js";
 import { loadSettings, saveSettings } from "./storage/settingsStore.js";
 import { normalizeSettings, type AppSettings } from "./settingsSchema.js";
 import { renderAbout } from "./pages/about.js";
-import { renderCw } from "./pages/cw.js";
-import { renderFrequency } from "./pages/frequency.js";
 import { renderLog } from "./pages/logPage.js";
-import { renderSettings } from "./pages/settingsPage.js";
+import { renderRadio } from "./pages/radio.js";
+import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
+import { BANDS, clampToBand, roundFreq } from "./bands.js";
+import { otherSideband, type Sideband } from "../ham/tuning.js";
+import { Waterfall } from "./waterfall.js";
+import { RigFace, type ScopeView } from "./rigFace.js";
 
-export type PageId = "frequency" | "cw" | "log" | "settings" | "about";
+export type PageId = "radio" | "log" | "about";
 
 export interface AppHost {
   settings: AppSettings;
   session: QsoSession;
+  /**
+   * Station power. `false` = 关台 (standby: no HAM activity, no audio).
+   * Optional so lightweight test hosts can omit it (treated as powered).
+   */
+  readonly powered?: boolean;
+  /** Turn the station on/off (the rig's 开台/关台 switch). */
+  setPower?(on: boolean): void;
   /** Merge a partial update, persist it and re-render. */
   updateSettings(patch: Partial<AppSettings>): void;
   /** Abandon the current QSO and re-seed activity on the frequency. */
   newSession(): void;
   go(page: PageId): void;
+  /** Open the settings sheet behind the gear button. */
+  openSettings?(): void;
   refresh(): void;
   /** Register a cleanup (e.g. remove key listeners) run before the next render. */
   onLeave(fn: () => void): void;
@@ -56,78 +69,227 @@ interface PageDef {
 }
 
 const PAGES: PageDef[] = [
-  { id: "frequency", label: "频率", render: renderFrequency },
-  { id: "cw", label: "CW 翻译", render: renderCw },
+  { id: "radio", label: "电台", render: renderRadio },
   { id: "log", label: "日志", render: renderLog },
-  { id: "settings", label: "设置", render: renderSettings },
   { id: "about", label: "关于", render: renderAbout },
 ];
 
+/**
+ * The application shell, styled as a radio: a persistent "rig" header (frequency,
+ * band, mode, power switch, settings gear) plus a small nav for the secondary
+ * views (log / about). Settings live behind the gear as a modal sheet.
+ */
+/** Clamp a band index into range (settings are normalised, but be defensive). */
+function clampBandIndex(index: number): number {
+  return Math.min(Math.max(index, 0), BANDS.length - 1);
+}
+
 export class App implements AppHost {
   settings: AppSettings;
-  session: QsoSession;
-  private page: PageId = "frequency";
+  /**
+   * One session per band — this is the *environment*. Every band's virtual HAMs
+   * are generated when the app opens and keep calling CQ / giving up / being
+   * replaced for as long as it stays open, whether or not the operator is
+   * powered up. The rig's power switch only decides whether we hear the band we
+   * are tuned to; the others simply keep running unheard.
+   */
+  private readonly sessions: QsoSession[];
+  /** Which band the operator is tuned to (index into `sessions`). */
+  private activeBand: number;
+  private page: PageId = "radio";
+  /** Radio power. Off by default so the band is silent until the user opens up. */
+  private powerOn = false;
+  private settingsOverlay: HTMLElement | null = null;
+  /** The radio face (header + panadapter). Owns its own DOM and its canvas. */
+  private readonly rig = new RigFace({
+    onPower: (on) => this.setPower(on),
+    onOpenSettings: () => this.openSettings(),
+    onToggleSideband: (sideband) => this.toggleSideband(sideband),
+  });
   private readonly navRoot = el("nav", { class: "nav" });
   private readonly pageRoot = el("div");
+  private waterfall: Waterfall | null = null;
   private cleanups: Array<() => void> = [];
 
   constructor(private readonly root: HTMLElement) {
     this.settings = loadSettings();
-    this.session = this.createSession();
-    this.startSession();
-    // Resume an in-progress QSO if the user refreshed mid-conversation.
-    this.session.restoreStaging();
+    this.activeBand = clampBandIndex(this.settings.bandIndex);
+    // The air is built up front but no timer runs until `start()`.
+    this.sessions = BANDS.map((_, i) => this.createSession(i));
+    this.sessions[this.activeBand].retune(this.settings.freqMHz);
   }
 
-  /** A fresh session for the current band, with the band populated. */
-  private createSession(): QsoSession {
-    const session = new QsoSession(this.settings.freqMHz, this.settings);
-    session.seedHams();
-    return session;
+  /** The session for the band the operator is currently tuned to. */
+  get session(): QsoSession {
+    return this.sessions[this.activeBand];
   }
 
   /**
-   * Populate + start the HAMs' CQ rhythm, and let autonomous activity refresh
-   * the view. Refreshes are skipped while the user has unsent text, so an
+   * A fresh session for one band. The tuned band takes the operator's dial
+   * frequency; every other band starts on its own default. Either way the
+   * band's *reference* (where its stations live) is its nominal centre, so the
+   * same band always holds the same stations however the dial wanders.
+   */
+  private createSession(bandIndex: number): QsoSession {
+    const freqMHz =
+      bandIndex === this.activeBand ? this.settings.freqMHz : BANDS[bandIndex].defaultMHz;
+    return new QsoSession(freqMHz, this.settings, {
+      referenceHz: Math.round(BANDS[bandIndex].defaultMHz * 1e6),
+    });
+  }
+
+  get powered(): boolean {
+    return this.powerOn;
+  }
+
+  /**
+   * Power + tuning decide which band (if any) the station is actually hearing.
+   * Everything else keeps running silently.
+   */
+  private applyReceiving(): void {
+    this.sessions.forEach((s, i) => {
+      s.setReceiving(this.powerOn && i === this.activeBand);
+    });
+  }
+
+  /**
+   * Only the band being monitored refreshes the view; the rest keep running in
+   * the background. Refreshes are skipped while the user has unsent text, so an
    * incoming CQ can never wipe out a half-typed transmission.
    */
-  private startSession(): void {
-    this.session.start();
-    this.session.setActivityListener(() => {
-      if (this.session.draft) return;
-      if (this.page === "frequency" || this.page === "cw") this.refresh();
+  private watchBand(index: number): void {
+    this.sessions.forEach((s, i) => {
+      if (i !== index) {
+        s.setActivityListener(null);
+        return;
+      }
+      s.setActivityListener(() => {
+        // No page rebuild on band activity. The radio view shows no live band
+        // state on screen (no transcript; the roster is by-ear only), and its
+        // dynamic pieces — panadapter, S-meter — redraw on their own timers.
+        // Rebuilding it here would tear down the send box and key panel on every
+        // scheduler tick, stealing focus from the textarea and dropping any
+        // in-progress key gesture. Explicit actions (send / tune / power) call
+        // `refresh()` themselves, which is enough.
+      });
     });
   }
 
   start(): void {
     clear(this.root);
-    const header = el("div", { class: "app-header" });
-    header.append(el("span", { class: "app-title", text: "CW QSO 练习器" }));
-    header.append(el("span", { class: "app-sub", text: "离线摩尔斯电码通联练习" }));
-    this.root.append(header, this.navRoot, this.pageRoot, el("div", { class: "footer", text: DISCLAIMER_TEXT }));
+    this.rig.mount(this.root);
+    this.root.append(
+      this.navRoot,
+      this.pageRoot,
+      el("div", { class: "footer", text: DISCLAIMER_TEXT }),
+    );
+    // F12 console: only print what the operator can actually hear on the band
+    // being monitored — every band is wired so `window.cw` reflects the active
+    // one, but the streaming console is filtered to audible + active band.
+    installDebugConsole(this.sessions, { getActive: () => this.session });
+    // The band exists whether or not anyone is listening: populate every band
+    // and start its CQ rhythm now, so the air is already alive (and evolving)
+    // by the time the operator flips the power switch.
+    for (const s of this.sessions) {
+      s.seedHams();
+      s.start();
+    }
+    this.applyReceiving();
+    this.watchBand(this.activeBand);
+    this.startWaterfall();
+    this.renderRig();
     this.renderNav();
     this.renderPage();
     if (!hasAcknowledgedDisclaimer()) this.showDisclaimerModal();
   }
 
+  /**
+   * Build the waterfall once and let it scroll. It reads the band straight from
+   * the active session on every line, so it stays current without the App
+   * having to push anything at it.
+   */
+  private startWaterfall(): void {
+    if (!this.waterfall) {
+      this.waterfall = new Waterfall(this.rig.canvas);
+      this.waterfall.setSource(() => this.session.spectrum());
+      this.waterfall.onTune = (hz) => this.tuneTo(hz);
+    }
+    this.waterfall.setSpeed(this.settings.wpm);
+    this.waterfall.setActive(this.powerOn);
+  }
+
+  /**
+   * Tune the dial to an absolute frequency (Hz). Wired to the waterfall's
+   * click-to-tune; clamped to the current band, and refused while powered down
+   * (you cannot tune a radio that is switched off).
+   */
+  tuneTo(hz: number): void {
+    if (!this.powerOn || !Number.isFinite(hz)) return;
+    const band = BANDS[clampBandIndex(this.settings.bandIndex)];
+    const mhz = roundFreq(clampToBand(hz / 1e6, band));
+    if (mhz === this.settings.freqMHz) return;
+    this.updateSettings({ freqMHz: mhz });
+  }
+
+  /**
+   * 开台 / 关台. This is the *receiver* switch: powering down silences the
+   * station and stops it hearing anything, but the band it was on is left
+   * exactly as it was — its HAMs keep calling CQ, because the environment does
+   * not go off the air when we do. Powering up just starts hearing again.
+   */
+  setPower(on: boolean): void {
+    if (on === this.powerOn) return;
+    this.powerOn = on;
+    // Resume a QSO that a refresh interrupted; never clobber a live one.
+    if (on && !this.session.inQso) this.session.restoreStaging();
+    this.applyReceiving();
+    // The panadapter is part of the receiver: it scrolls when we are listening
+    // and freezes (keeping its history) when we are not.
+    this.waterfall?.setActive(on);
+    this.refresh();
+  }
+
+  /**
+   * Flip the receiving sideband from the mode label.
+   *
+   * This is the rig's **per-band mode memory**: the choice stays with this band
+   * and only this band, so turning the knob back to 40 m finds 40 m's mode
+   * rather than whatever 20 m was left on. Every band starts on its convention
+   * (LSB below 10 MHz, USB above) until the operator says otherwise here. Only
+   * how the receiver interprets the dial changes — nothing is torn down and the
+   * QSO keeps running, exactly as flipping a real rig's mode mid-QSO would.
+   */
+  private toggleSideband(current: Sideband): void {
+    this.session.setSidebandMode(otherSideband(current));
+    this.refresh();
+  }
+
   updateSettings(patch: Partial<AppSettings>): void {
     const merged = normalizeSettings({ ...this.settings, ...patch });
+    const bandChanged = merged.bandIndex !== this.settings.bandIndex;
     const freqChanged = merged.freqMHz !== this.settings.freqMHz;
     this.settings = merged;
     saveSettings(merged);
-    if (freqChanged) {
-      // A different frequency means a different set of HAMs: start over.
-      // The old session must be disposed first, otherwise its scheduler keeps
-      // ticking forever on a band nobody is listening to.
-      this.session.dispose();
-      this.session = this.createSession();
-      this.startSession();
-      // The staged in-progress QSO belongs to the previous band; drop it.
-      this.session.discardStaging();
-    } else {
-      this.session.updateSettings(merged);
+    for (const s of this.sessions) s.updateSettings(merged);
+
+    if (bandChanged) {
+      // Tuning away abandons the QSO on the old band — its partner goes back to
+      // calling CQ on a band that keeps running without us. Only the receiver
+      // moves: nothing is torn down and nothing is re-seeded.
+      this.session.reset();
+      this.activeBand = clampBandIndex(merged.bandIndex);
+      this.session.retune(merged.freqMHz);
+      this.watchBand(this.activeBand);
+      // A band switch is a jump, not a sweep: the display starts again on the
+      // new band instead of sliding there through several MHz of nothing.
+      this.waterfall?.reset();
+    } else if (freqChanged) {
+      // Retuning inside the same band: same air, new dial frequency.
+      this.session.retune(merged.freqMHz);
     }
+    this.applyReceiving();
     this.refresh();
+    this.renderSettingsModal();
   }
 
   newSession(): void {
@@ -142,13 +304,18 @@ export class App implements AppHost {
     this.refresh();
   }
 
-  /** Release page listeners and stop the HAM scheduler. */
+  /** Release page listeners and stop every band's scheduler. */
   dispose(): void {
     this.runCleanups();
-    this.session.dispose();
+    for (const s of this.sessions) s.dispose();
+    this.waterfall?.dispose();
+    this.waterfall = null;
+    this.settingsOverlay?.remove();
+    this.settingsOverlay = null;
   }
 
   refresh(): void {
+    this.renderRig();
     this.renderPage();
   }
 
@@ -156,7 +323,60 @@ export class App implements AppHost {
     this.cleanups.push(fn);
   }
 
+  // --- settings sheet ------------------------------------------------------
+
+  openSettings(): void {
+    if (!this.settingsOverlay) {
+      const overlay = el("div", { class: "modal-overlay" });
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) this.closeSettings();
+      });
+      this.settingsOverlay = overlay;
+      document.body.append(overlay);
+    }
+    this.renderSettingsModal();
+  }
+
+  private closeSettings(): void {
+    this.settingsOverlay?.remove();
+    this.settingsOverlay = null;
+  }
+
+  private renderSettingsModal(): void {
+    const overlay = this.settingsOverlay;
+    if (!overlay) return;
+    clear(overlay);
+    const modal = el("div", { class: "modal settings-modal" });
+    const head = el("div", { class: "modal-head" });
+    head.append(el("h2", { text: "设置" }));
+    head.append(button("关闭", () => this.closeSettings(), "btn small"));
+    modal.append(head, renderSettingsPanel(this));
+    overlay.append(modal);
+  }
+
   // --- internals -----------------------------------------------------------
+
+  /** The radio face: frequency, band, mode, power switch and settings gear. */
+  private renderRig(): void {
+    this.rig.render({
+      settings: this.settings,
+      powered: this.powerOn,
+      // The mode belongs to the band, so the face reads it from the session
+      // rather than from settings.
+      sideband: this.session.sideband,
+    });
+    this.waterfall?.setSpeed(this.settings.wpm);
+    this.rig.updateScope(this.scopeView());
+  }
+
+  /**
+   * What the panadapter's overlay says. Almost nothing on purpose: the display
+   * is a receiver, and what is on the band is for the operator's ears (see
+   * `ScopeView`).
+   */
+  private scopeView(): ScopeView {
+    return { powered: this.powerOn };
+  }
 
   private renderNav(): void {
     clear(this.navRoot);

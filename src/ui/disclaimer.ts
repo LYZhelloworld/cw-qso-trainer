@@ -1,13 +1,12 @@
 /**
- * Disclaimer copy, shown per UI.md: first-run dialog, about page, log page
- * watermark and footer. Kept in one place so the wording never drifts.
+ * Disclaimer copy, defined in the root README.md and shown in four places: the
+ * first-run dialog, the about page, the log page watermark and the footer. Kept
+ * in one place so the wording never drifts.
  */
 
 export const DISCLAIMER_TEXT =
-  "本软件仅供练习使用。\n" +
-  "其中生成的呼号为虚拟呼号，可能与现实存在的呼号重复，\n" +
-  "不代表真实的无线电环境，也不能作为真实的通联记录。\n" +
-  "日志不可导出为 ADIF 等格式，不可用于任何奖项申请。";
+  "本软件仅供练习使用。其中生成的呼号为虚拟呼号，可能与现实存在的呼号重复，" +
+  "不代表真实的无线电环境，也不能作为真实的通联记录。";
 
 export const LOG_WATERMARK = "练习日志，非真实通联记录，不可用于任何奖项申请。";
 

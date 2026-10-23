@@ -43,6 +43,18 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ iambicMode: "B" }).iambicMode).toBe("B");
     expect(normalizeSettings({ iambicMode: "X" }).iambicMode).toBe("A");
   });
+
+  it("边带不存设置：它属于波段，旧版本留下的 cwSideband 会被丢掉", () => {
+    const settings = normalizeSettings({ cwSideband: "USB" });
+    expect("cwSideband" in settings).toBe(false);
+  });
+
+  it("keeps a supported filter width but defaults to 500 Hz", () => {
+    expect(normalizeSettings({ passbandHz: 250 }).passbandHz).toBe(250);
+    expect(normalizeSettings({ passbandHz: 100 }).passbandHz).toBe(100);
+    expect(normalizeSettings({ passbandHz: 42 }).passbandHz).toBe(500);
+    expect(DEFAULT_SETTINGS.passbandHz).toBe(500);
+  });
 });
 
 describe("callsignPrefix", () => {

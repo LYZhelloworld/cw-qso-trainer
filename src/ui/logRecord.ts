@@ -1,7 +1,7 @@
 import type { QsoLog, QsoState } from "../qso/stateMachine.js";
 
 /**
- * Log book rows shown on the log page, mirroring the field table in UI.md:
+ * Log book rows shown on the log page, mirroring the field table in LOG.md:
  * DATE / TIME_UTC / CALL / FREQ_MHZ / MODE / RST_RX / RST_TX.
  *
  * Pure data + derivation (no DOM, no storage) so it stays unit-testable.
@@ -14,12 +14,17 @@ export interface LogRecord {
   timeUtc: string; // HH:MM:SS
   call: string;
   freqMHz: string; // e.g. "14.0250"
+  /**
+   * Always plain "CW". The rig's CW-L / CW-U (which sideband the receiver is
+   * demodulating) is an operating preference, not a mode — it never reaches the
+   * log, exactly as a real logbook records CW either way.
+   */
   mode: "CW";
   rstRx: string;
   rstTx: string;
 }
 
-/** The conditions UI.md requires before a QSO is written to the log. */
+/** The conditions LOG.md requires before a QSO is written to the log. */
 export interface LogGate {
   state: QsoState;
   callsignsConfirmed: boolean;

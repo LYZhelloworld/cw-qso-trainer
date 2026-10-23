@@ -20,7 +20,7 @@ const completeQso: QsoLog = {
 };
 
 describe("canWriteLog", () => {
-  it("is true only when all six UI.md conditions hold", () => {
+  it("is true only when all six LOG.md conditions hold", () => {
     expect(canWriteLog(completeGate)).toBe(true);
   });
 
@@ -45,7 +45,7 @@ describe("canWriteLog", () => {
 });
 
 describe("deriveLogRecord", () => {
-  it("maps a completed QSO onto the UI.md log fields", () => {
+  it("maps a completed QSO onto the LOG.md log fields", () => {
     const rec = deriveLogRecord(completeQso, 14.025, new Date("2026-10-14T12:34:56.000Z"));
     expect(rec).not.toBeNull();
     expect(rec?.date).toBe("2026-10-14");
@@ -68,6 +68,6 @@ describe("formatFreqMHz", () => {
   it("formats to four decimals", () => {
     expect(formatFreqMHz(14.025)).toBe("14.0250");
     expect(formatFreqMHz(7.025)).toBe("7.0250");
-    expect(formatFreqMHz(3.55)).toBe("3.5500");
+    expect(formatFreqMHz(28.025)).toBe("28.0250");
   });
 });

@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { QsoSession } from "./session.js";
 import { normalizeSettings } from "./settingsSchema.js";
+import type { VirtualHam } from "../ham/virtualHam.js";
+
+/**
+ * Tune the dial onto the band's first station. A CW receiver only hears what
+ * falls inside its ±250 Hz passband, so a test that wants a HAM's CQ to be
+ * picked up has to be sitting on that HAM's frequency first — which is exactly
+ * what the operator does with the tuning knob.
+ */
+function tuneOntoFirstHam(s: QsoSession): VirtualHam {
+  const ham = s.listHams()[0];
+  s.retune(ham.freqHz / 1e6);
+  return ham;
+}
 
 /**
  * Wiring tests for the HAMs' autonomous CQ rhythm. Everything time-based is
@@ -23,6 +36,7 @@ function makeSession(rng: () => number = () => 0) {
         stopped = true;
       };
     },
+    pace: async () => {},
     delay: async (ms: number) => {
       waits.push(ms);
     },
@@ -47,6 +61,7 @@ describe("HAM 自主发 CQ", () => {
   it("到点才呼叫，之前频率是安静的", async () => {
     const h = makeSession();
     h.session.seedHams(1); // rng=0 -> 首呼延迟取 5 s
+    tuneOntoFirstHam(h.session);
     h.session.start();
 
     await h.tickTo(4_000);
@@ -60,6 +75,7 @@ describe("HAM 自主发 CQ", () => {
   it("无人应答时反复重呼，且不重置已建立的状态", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
 
     await h.tickTo(5_000);
@@ -71,28 +87,34 @@ describe("HAM 自主发 CQ", () => {
     expect(h.session.lines.filter((l) => l.who === "ham").length).toBe(2);
   });
 
-  it("连续 3 分钟无应答则下线，并补上新台", async () => {
+  it("台不会因为无人应答而下线：三分钟后还是同一台在呼叫", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000);
 
-    const gone = h.session.listHams()[0].call;
+    const call = h.session.listHams()[0].call;
     await h.tickTo(5_000 + 180_000);
 
-    expect(h.session.lines.some((l) => l.text.includes("下线"))).toBe(true);
-    const now = h.session.listHams();
-    expect(now).toHaveLength(1); // 补位后仍是 1 个（目标数量由 rng 决定）
-    expect(now[0].call).not.toBe(gone);
+    expect(h.session.listHams()).toHaveLength(1);
+    expect(h.session.listHams()[0].call).toBe(call);
+    expect(h.session.lines.some((l) => l.text.includes("下线"))).toBe(false);
+    expect(h.session.hamActivity()[0].state).toBe("cqing");
   });
 
   it("通联中不会被频段上其他台的呼叫打断", async () => {
+    // A 500 Hz passband only ever holds one station, so on a band with two of
+    // them only the one the dial is on can be heard at all — the deeper
+    // "ignore the rest while mid-exchange" rule is covered by
+    // session.tuning/passband tests. What this pins down is that a second
+    // calling station never joins the session.
     const h = makeSession();
-    h.session.seedHams(2); // 两台首呼都是 5 s
+    h.session.seedHams(2);
+    tuneOntoFirstHam(h.session);
     h.session.start();
 
     await h.tickTo(5_000);
-    // 同一时刻两台都在呼叫，但只有一台被接入会话
     expect(h.session.lines.filter((l) => l.who === "ham").length).toBe(1);
   });
 });
@@ -101,6 +123,7 @@ describe("用户应答后", () => {
   it("该台停止自己的呼叫节奏", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000); // HAM 发 CQ
 
@@ -116,6 +139,7 @@ describe("用户应答后", () => {
   it("HAM 的回复前会等待 1–3 秒", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000);
 
@@ -130,6 +154,7 @@ describe("用户应答后", () => {
   it("通联结束后该台回到守听并可再次呼叫", async () => {
     const h = makeSession();
     h.session.seedHams(1);
+    tuneOntoFirstHam(h.session);
     h.session.start();
     await h.tickTo(5_000);
 
@@ -141,27 +166,61 @@ describe("用户应答后", () => {
   });
 });
 
-describe("应答延迟区间", () => {
-  it("用户发 CQ 后对方延迟 1–5 秒应答", async () => {
+describe("堆叠应答延迟区间", () => {
+  it("用户发 CQ 后第一台在 1–5 秒内应答", async () => {
     const h = makeSession(() => 0.5);
     h.session.seedHams(1);
+    h.session.start();
 
     await h.session.userCallsCq();
-    expect(h.waits).toHaveLength(1);
     // randInt(1000, 5000, 0.5) = 3000
-    expect(h.waits[0]).toBe(3_000);
+    await h.tickTo(2_999);
+    expect(h.session.lines.filter((l) => l.who === "ham")).toHaveLength(0);
+
+    await h.tickTo(3_000);
+    expect(h.session.lines.filter((l) => l.who === "ham")).toHaveLength(1);
   });
 
   it("延迟取自会话的随机源，注入后完全确定", async () => {
     const a = makeSession(() => 0);
     a.session.seedHams(1);
+    a.session.start();
     await a.session.userCallsCq();
-    expect(a.waits[0]).toBe(1_000); // 区间下界
+    await a.tickTo(999); // 区间下界 1000 ms
+    expect(a.session.lines.filter((l) => l.who === "ham")).toHaveLength(0);
+    await a.tickTo(1_000);
+    expect(a.session.lines.filter((l) => l.who === "ham")).toHaveLength(1);
 
     const b = makeSession(() => 0.999999);
     b.session.seedHams(1);
+    b.session.start();
     await b.session.userCallsCq();
-    expect(b.waits[0]).toBe(5_000); // 区间上界
+    await b.tickTo(4_999); // 区间上界 5000 ms
+    expect(b.session.lines.filter((l) => l.who === "ham")).toHaveLength(0);
+    await b.tickTo(5_000);
+    expect(b.session.lines.filter((l) => l.who === "ham")).toHaveLength(1);
+  });
+});
+
+describe("波段规模", () => {
+  it("默认每个波段有 12–18 个台，且各自占一个不同的频率", () => {
+    const h = makeSession();
+    const hams = h.session.seedHams();
+
+    expect(hams.length).toBeGreaterThanOrEqual(12);
+    expect(hams.length).toBeLessThanOrEqual(18);
+    const freqs = hams.map((x) => x.freqHz);
+    expect(new Set(freqs).size).toBe(freqs.length); // 没有两台挤在同一个槽上
+  });
+
+  it("显式设定的台数就是这个波段的台数（不会有人下线被补位）", async () => {
+    const h = makeSession();
+    h.session.seedHams(3);
+    h.session.start();
+
+    await h.tickTo(5_000 + 180_000);
+
+    expect(h.session.listHams()).toHaveLength(3);
   });
 });
 

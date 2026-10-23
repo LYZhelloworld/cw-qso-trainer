@@ -235,6 +235,26 @@ textarea:focus {
   font-weight: 600;
 }
 
+/* S-meter: the nine-unit ladder plus its dB-over-S9 readout. The readout is
+   monospaced and fixed width so "S9+12" does not shove the ladder sideways as
+   the number changes width. */
+.smeter {
+  gap: 8px;
+  align-items: center;
+}
+
+.smeter-read {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--accent);
+  min-width: 5ch;
+  text-align: right;
+}
+
+.smeter.quiet .smeter-read {
+  color: var(--muted);
+}
+
 .signal {
   display: flex;
   gap: 3px;
@@ -251,46 +271,6 @@ textarea:focus {
 
 .signal i.on {
   background: var(--accent);
-}
-
-.cw-pane {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-  font-family: var(--mono);
-  min-height: 120px;
-  max-height: 260px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.cw-line {
-  margin-bottom: 6px;
-}
-
-.cw-line .who {
-  color: var(--muted);
-  margin-right: 6px;
-}
-
-.cw-line.rx .txt {
-  color: var(--accent-2);
-}
-
-.cw-line.tx .txt {
-  color: var(--text);
-}
-
-.cw-line.sys .txt {
-  color: var(--muted);
-  font-style: italic;
-}
-
-.masked {
-  color: var(--muted);
-  letter-spacing: 2px;
 }
 
 .badge {
@@ -409,16 +389,6 @@ table.log input {
   gap: 8px;
 }
 
-.assist-banner {
-  background: #1a2a24;
-  border: 1px solid #2a4a3a;
-  color: var(--accent-2);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-  margin-bottom: 10px;
-}
-
 .error-panel {
   border-color: #5a2a2a;
   background: #2a1a1a;
@@ -436,4 +406,201 @@ table.log input {
   max-height: 240px;
   overflow: auto;
   margin: 8px 0;
+}
+
+/* --- rig: the persistent radio face ------------------------------------- */
+
+.rig {
+  background: linear-gradient(180deg, #1b222b, #141a20);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.rig-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.rig-brand {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+}
+
+.rig-freq {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.rig-freq .freq-value {
+  font-family: var(--mono);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+  text-shadow: 0 0 12px rgba(240, 160, 32, 0.25);
+}
+
+.rig:not(.powered) .rig-freq .freq-value {
+  color: var(--muted);
+  text-shadow: none;
+}
+
+.rig-freq .freq-unit {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rig-meta {
+  display: flex;
+  gap: 6px;
+}
+
+.badge.mode {
+  color: var(--accent-2);
+  border-color: #2a4a3a;
+}
+
+/* The mode readout is also the CW sideband switch (CW-L / CW-U): a badge that
+   happens to be clickable, not a full button. */
+.badge.sideband-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.badge.sideband-btn:hover {
+  border-color: var(--accent-2);
+  background: rgba(78, 201, 176, 0.12);
+}
+
+.badge.sideband-btn:focus-visible {
+  outline: 1px solid var(--accent-2);
+  outline-offset: 1px;
+}
+
+.rig-right {
+  display: flex;
+  gap: 8px;
+}
+
+.btn.power {
+  border-color: #4a2a2a;
+  color: var(--danger);
+}
+
+.btn.power.on {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #0e1a0e;
+  font-weight: 600;
+}
+
+/* --- waterfall (band panadapter) ---------------------------------------- */
+
+.rig-scope {
+  position: relative;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #000208;
+  overflow: hidden;
+}
+
+.scope-canvas {
+  display: block;
+  width: 100%;
+  /* Tall enough to read a couple of minutes of band history: the waterfall is
+     the main instrument on the page, not a decoration under the header. */
+  height: 240px;
+  /* The dial is turned with the wheel; ← → says so. */
+  cursor: col-resize;
+}
+
+/* Powered down the picture freezes; dim it so "frozen" reads as "not receiving". */
+.rig-scope.off .scope-canvas {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.scope-label {
+  position: absolute;
+  top: 5px;
+  left: 9px;
+  font-size: 11px;
+  pointer-events: none;
+  color: var(--muted);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+/* The dial marker: a single vertical line at the tuned frequency, as on a real
+   rig's panadapter. The filter width is an audio property, not two edges drawn
+   on the display — two lines would read as two working frequencies. */
+.scope-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(120, 220, 255, 0.85);
+  box-shadow: 0 0 4px rgba(120, 220, 255, 0.55);
+  pointer-events: none;
+}
+
+/* Powered down nothing is being received, so the marker dims with the scope. */
+.rig-scope.off .scope-cursor {
+  opacity: 0.25;
+}
+
+.standby {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+}
+
+.standby-icon {
+  font-size: 40px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.standby-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* --- settings sheet ------------------------------------------------------ */
+
+.settings-modal {
+  max-width: 560px;
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.modal-head h2 {
+  margin: 0;
+}
+
+.settings-body .panel {
+  background: var(--bg);
 }

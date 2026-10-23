@@ -1,11 +1,14 @@
 /**
- * HAM activity scheduling: when a virtual HAM calls CQ, when it gives up and
- * goes offline, and how long it takes to answer the user.
+ * HAM activity scheduling: when a virtual HAM calls CQ, and how long it takes to
+ * answer the user.
  *
  * Per VIRTUAL-HAM.md:
- *  - Calls CQ every 30–60 s at random, repeating while nobody answers
- *  - Goes offline after 3 minutes without an answer
- *  - 1–3 HAMs are active on a band at a time
+ *  - A calling station transmits continuously: one CQ burst, a short listening
+ *    gap, then the next burst. The band is never quiet for long, which is what a
+ *    real band segment sounds like and what makes "tune in and listen" work.
+ *  - 12–18 HAMs are *calling* on a band at a time (the band's callers; the
+ *    stations that only answer CQ are a separate, much larger population — see
+ *    `ham/answerers`)
  *  - Answers the user's CQ after 1–5 s
  *  - Replies to the user's answer after 1–3 s
  *
@@ -17,14 +20,37 @@
 
 import type { VirtualHam } from "./virtualHam.js";
 
-/** Random interval between two CQ calls, in ms (30–60 s). */
-export const CQ_INTERVAL_MIN_MS = 30_000;
-export const CQ_INTERVAL_MAX_MS = 60_000;
-/** Continuous silence after a CQ before the HAM gives up (3 min). */
-export const GIVE_UP_MS = 180_000;
-/** Number of HAMs kept active on one band. */
-export const ACTIVE_HAMS_MIN = 1;
-export const ACTIVE_HAMS_MAX = 3;
+/**
+ * Silence between one CQ burst and the next, in ms (3–8 s) — the operator
+ * listening between overs. The burst itself lasts as long as the message does
+ * (the session knows that and re-times the next one with `scheduleNext`), so
+ * this is a *gap*, not an interval between starts.
+ */
+export const CQ_GAP_MIN_MS = 3_000;
+export const CQ_GAP_MAX_MS = 8_000;
+/**
+ * How long a station waits before calling CQ again after signing off a QSO
+ * (2–6 s). It has just said 73; a real operator clears the key, listens for a
+ * moment, then starts calling again.
+ */
+export const RESUME_CQ_DELAY_MIN_MS = 2_000;
+export const RESUME_CQ_DELAY_MAX_MS = 6_000;
+/**
+ * Number of *calling* stations kept active on one band.
+ *
+ * A real CW band segment is busy, and — this is the point — wider than any one
+ * screen: the stations are scattered over ±25 kHz (`ham/spectrum`) while the
+ * waterfall shows ±10 kHz, so the operator meets new stations by tuning rather
+ * than by looking at a list. 12–18 stations over 51 grid slots is roughly one
+ * every 3 kHz: enough to keep hunting, thin enough that a 500 Hz passband is
+ * usually empty until you land on somebody.
+ *
+ * Only callers count here. The stations that merely answer CQ hold no slot and
+ * are not part of this number — that pool is far larger and lives in
+ * `ham/answerers`.
+ */
+export const ACTIVE_HAMS_MIN = 12;
+export const ACTIVE_HAMS_MAX = 18;
 /** Delay before a HAM answers the user's CQ (1–5 s). */
 export const ANSWER_CQ_DELAY_MIN_MS = 1_000;
 export const ANSWER_CQ_DELAY_MAX_MS = 5_000;
@@ -47,9 +73,7 @@ export interface HamActivityEntry {
   cqSince: number | null;
 }
 
-export type HamActivityEvent =
-  | { type: "cq"; ham: VirtualHam }
-  | { type: "offline"; ham: VirtualHam };
+export type HamActivityEvent = { type: "cq"; ham: VirtualHam };
 
 /** Uniform integer in [min, max]. Clamped so an out-of-range injected rng still stays inside. */
 function randInt(min: number, max: number, rng: () => number): number {
@@ -57,9 +81,14 @@ function randInt(min: number, max: number, rng: () => number): number {
   return Math.min(max, Math.max(min, raw));
 }
 
-/** Interval until the next CQ (30–60 s). */
-export function nextCqDelayMs(rng: () => number = Math.random): number {
-  return randInt(CQ_INTERVAL_MIN_MS, CQ_INTERVAL_MAX_MS, rng);
+/** Gap until the next CQ burst (3–8 s). */
+export function nextCqGapMs(rng: () => number = Math.random): number {
+  return randInt(CQ_GAP_MIN_MS, CQ_GAP_MAX_MS, rng);
+}
+
+/** Pause before a station that just finished a QSO calls CQ again (2–6 s). */
+export function resumeCqDelayMs(rng: () => number = Math.random): number {
+  return randInt(RESUME_CQ_DELAY_MIN_MS, RESUME_CQ_DELAY_MAX_MS, rng);
 }
 
 /** How long a HAM takes to answer the user's CQ (1–5 s). */
@@ -72,7 +101,7 @@ export function replyDelayMs(rng: () => number = Math.random): number {
   return randInt(REPLY_DELAY_MIN_MS, REPLY_DELAY_MAX_MS, rng);
 }
 
-/** How many HAMs to keep active on one band (1–3). */
+/** How many HAMs to keep active on one band (12–18). */
 export function targetHamCount(rng: () => number = Math.random): number {
   return randInt(ACTIVE_HAMS_MIN, ACTIVE_HAMS_MAX, rng);
 }
@@ -81,8 +110,6 @@ export interface HamActivityOptions {
   rng?: () => number;
   /** Injected clock. */
   now?: () => number;
-  /** Notified of every CQ / offline as soon as `advance()` produces it. */
-  onEvent?: (event: HamActivityEvent) => void;
 }
 
 interface Record {
@@ -100,20 +127,18 @@ export class HamActivity {
   private readonly records = new Map<string, Record>();
   private readonly rng: () => number;
   private readonly now: () => number;
-  private readonly onEvent?: (event: HamActivityEvent) => void;
 
   constructor(opts: HamActivityOptions = {}) {
     this.rng = opts.rng ?? Math.random;
     this.now = opts.now ?? (() => Date.now());
-    this.onEvent = opts.onEvent;
   }
 
   /**
    * Put a HAM on the frequency.
    *
-   * @param firstCqDelayMs Override for the very first CQ. The default is the
-   *   spec interval (30–60 s); callers pass something shorter when they want
-   *   audible activity soon after tuning to a band.
+   * @param firstCqDelayMs Override for the very first CQ. The default is one
+   *   listening gap (3–8 s); callers pass something shorter when they want
+   *   audible activity immediately after tuning to a band.
    */
   add(ham: VirtualHam, firstCqDelayMs?: number): void {
     if (this.records.has(ham.call)) return;
@@ -121,7 +146,7 @@ export class HamActivity {
     this.records.set(ham.call, {
       ham,
       inQso: false,
-      nextCqAt: now + (firstCqDelayMs ?? nextCqDelayMs(this.rng)),
+      nextCqAt: now + (firstCqDelayMs ?? nextCqGapMs(this.rng)),
       cqSince: null,
     });
   }
@@ -148,28 +173,12 @@ export class HamActivity {
     return out;
   }
 
-  /** The HAM whose CQ is currently out and unanswered, if any. */
-  cqingHam(): VirtualHam | null {
-    for (const r of this.records.values()) {
-      if (!r.inQso && r.cqSince !== null) return r.ham;
-    }
-    return null;
-  }
-
-  /** A HAM that is free to work (not already in a QSO with the user). */
-  availableHam(): VirtualHam | null {
-    for (const r of this.records.values()) {
-      if (!r.inQso) return r.ham;
-    }
-    return null;
-  }
-
   /** Count of HAMs still on the frequency. */
   get size(): number {
     return this.records.size;
   }
 
-  /** The user started working this HAM: stop its CQ rhythm and give-up timer. */
+  /** The user started working this HAM: stop its CQ rhythm. */
   markInQso(call: string): void {
     const r = this.records.get(call);
     if (!r) return;
@@ -183,45 +192,57 @@ export class HamActivity {
     if (!r) return;
     r.inQso = false;
     r.cqSince = null;
-    r.nextCqAt = this.now() + nextCqDelayMs(this.rng);
+    r.nextCqAt = this.now() + nextCqGapMs(this.rng);
   }
 
   /**
-   * The user answered this HAM's CQ. The HAM re-enters a normal CQ rhythm
-   * rather than waiting for the give-up timer to expire.
+   * A station just finished a QSO and goes back to calling CQ — the way a real
+   * operator does after signing off: a short pause, then "CQ CQ CQ" again.
+   *
+   * Distinct from `markListening`, which leaves it quiet for the normal gap.
    */
-  markAnswered(call: string): void {
-    this.markListening(call);
+  resumeCq(call: string, delayMs?: number): void {
+    const r = this.records.get(call);
+    if (!r) return;
+    r.inQso = false;
+    r.cqSince = null;
+    r.nextCqAt = this.now() + (delayMs ?? resumeCqDelayMs(this.rng));
+  }
+
+  /**
+   * Re-time this station's next CQ. The session calls this after each burst,
+   * because only it knows how long the message takes to key: the next CQ starts
+   * one message + one listening gap later, so a slow fist is never talked over.
+   */
+  scheduleNext(call: string, delayMs: number): void {
+    const r = this.records.get(call);
+    if (!r) return;
+    r.nextCqAt = this.now() + Math.max(0, delayMs);
   }
 
   /**
    * Advance to `at` and return everything that happened.
    *
-   * A HAM that is calling repeats its CQ every 30–60 s while nobody answers,
-   * and drops off the frequency once it has been unanswered for 3 minutes.
-   * Offline HAMs are removed here — the caller refills the band.
+   * A calling station repeats its CQ for as long as it is on the band — there
+   * is no give-up timer. Stations stay put so the band is a stable, continuous
+   * signal to tune across; the session re-times each repeat to the length of
+   * the message it just sent.
    */
   advance(at: number = this.now()): HamActivityEvent[] {
     const events: HamActivityEvent[] = [];
 
-    for (const [call, r] of [...this.records]) {
+    for (const r of this.records.values()) {
       if (r.inQso) continue;
 
-      // Give up before re-calling: 3 min unanswered means the HAM goes away.
-      if (r.cqSince !== null && at - r.cqSince >= GIVE_UP_MS) {
-        this.records.delete(call);
-        events.push({ type: "offline", ham: r.ham });
-        continue;
-      }
-
       if (at >= r.nextCqAt) {
-        if (r.cqSince === null) r.cqSince = at;
-        r.nextCqAt = at + nextCqDelayMs(this.rng);
+        r.cqSince = at;
+        // Fallback timing; the session re-times it once it knows the message
+        // length (see `scheduleNext`).
+        r.nextCqAt = at + nextCqGapMs(this.rng);
         events.push({ type: "cq", ham: r.ham });
       }
     }
 
-    for (const e of events) this.onEvent?.(e);
     return events;
   }
 }

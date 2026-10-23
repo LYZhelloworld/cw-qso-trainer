@@ -4,7 +4,7 @@ import { clearLogs, listLogs, logsAvailable, updateLog } from "../storage/logSto
 import type { LogRecord } from "../logRecord.js";
 import type { AppHost } from "../app.js";
 
-/** Column order mirrors the UI.md log field table. */
+/** Column order mirrors the LOG.md log field table. */
 const COLUMNS = ["DATE", "TIME_UTC", "CALL", "FREQ_MHZ", "MODE", "RST_RX", "RST_TX", "操作"];
 
 export function renderLog(host: AppHost, root: HTMLElement): void {

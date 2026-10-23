@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { VirtualHam, MISS_PROBABILITY } from "./virtualHam.js";
 import { generateVirtualHam, haversineKm } from "./generate.js";
-import { Frequency, planHamToHam } from "./frequency.js";
+import { Frequency } from "./frequency.js";
+import { BAND_SIGNAL_SPREAD_HZ, SIGNAL_GRID_HZ } from "./spectrum.js";
 import { dxccDatabase } from "../data/dxcc.js";
 
 /** Deterministic PRNG so distribution tests are reproducible. */
@@ -48,11 +49,22 @@ describe("haversineKm", () => {
 });
 
 describe("generateVirtualHam — validity & weighting", () => {
-  it("always produces a callsign that passes validation", () => {
+  it("always produces a callsign that passes validation (suffix 2–3 letters)", () => {
     const rng = mulberry32(42);
     for (let i = 0; i < 300; i++) {
       const ham = generateVirtualHam({ myCall: "BG7XXX", db: dxccDatabase, rng });
-      expect(ham.call).toMatch(/^[A-Z]{1,2}[0-9][A-Z]{1,3}$/);
+      expect(ham.call).toMatch(/^[A-Z]{1,2}[0-9][A-Z]{2,3}$/);
+    }
+  });
+
+  it("never emits the illegal single-letter suffix (e.g. BG4I)", () => {
+    // Regression: suffixLen used to be 1..3, producing calls like BG4I.
+    const rng = mulberry32(2024);
+    for (let i = 0; i < 500; i++) {
+      const ham = generateVirtualHam({ myCall: "BG7XXX", db: dxccDatabase, rng });
+      const suffix = ham.call.replace(/^[A-Z]{1,2}[0-9]/, "");
+      expect(suffix.length).toBeGreaterThanOrEqual(2);
+      expect(suffix.length).toBeLessThanOrEqual(3);
     }
   });
 
@@ -95,17 +107,23 @@ describe("Frequency", () => {
   it("spawns a valid virtual HAM on the frequency", () => {
     const f = new Frequency(14.0, dxccDatabase);
     const ham = f.spawnHam("BG7XXX");
-    expect(ham.call).toMatch(/^[A-Z]{1,2}[0-9][A-Z]{1,3}$/);
+    expect(ham.call).toMatch(/^[A-Z]{1,2}[0-9][A-Z]{2,3}$/);
     expect(f.listHams()).toHaveLength(1);
-    expect(f.activeHam()?.call).toBe(ham.call);
+    expect(f.activityState()[0].ham).toBe(ham);
   });
 
-  it("exposes a reserved HAM-to-HAM plan stub (step 3 placeholder)", () => {
+  it("波段上摆满台时也不会两台共用一个频率槽", () => {
     const f = new Frequency(14.0, dxccDatabase);
-    const a = f.spawnHam("BG7XXX", "novice", mulberry32(1));
-    const b = f.spawnHam("BG7XXX", "novice", mulberry32(2));
-    const plan = planHamToHam(a, b);
-    expect(plan.reserved).toBe(true);
-    expect(plan.participants).toEqual([a, b]);
+    const rng = mulberry32(99);
+    for (let i = 0; i < 12; i += 1) f.spawnHam("BG7XXX", "novice", rng);
+
+    const hams = f.listHams();
+    expect(hams).toHaveLength(12);
+    const freqs = hams.map((h) => h.freqHz);
+    expect(new Set(freqs).size).toBe(12);
+    for (const hz of freqs) {
+      expect(hz % SIGNAL_GRID_HZ).toBe(0); // 都在 1 kHz 网格上
+      expect(Math.abs(hz - 14_000_000)).toBeLessThanOrEqual(BAND_SIGNAL_SPREAD_HZ);
+    }
   });
 });

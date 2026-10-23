@@ -1,7 +1,7 @@
 import type { LogRecord } from "../logRecord.js";
 
 /**
- * Log persistence (IndexedDB), per UI.md. Deliberately write-only outwards:
+ * Log persistence (IndexedDB), per LOG.md. Deliberately write-only outwards:
  * there is no export path, matching the "no ADIF/CSV/JSON export" rule.
  */
 
@@ -68,7 +68,7 @@ export async function addLog(record: LogRecord): Promise<void> {
   }
 }
 
-/** Manual edit support (UI.md): replace the stored row with the edited one. */
+/** Manual edit support (LOG.md): replace the stored row with the edited one. */
 export async function updateLog(record: LogRecord): Promise<void> {
   if (!logsAvailable()) return;
   try {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderCw } from "./cw.js";
+import { renderQsoPanel } from "./cw.js";
 import { normalizeSettings, type AppSettings } from "../settingsSchema.js";
 import { QsoSession } from "../session.js";
 import type { AppHost, PageId } from "../app.js";
@@ -9,7 +9,7 @@ import type { AppHost, PageId } from "../app.js";
 function makeHarness(overrides: Partial<AppSettings> = {}) {
   const root = document.createElement("div");
   document.body.append(root);
-  const settings = normalizeSettings({ myCall: "BG7XXX", assistMode: false, ...overrides });
+  const settings = normalizeSettings({ myCall: "BG7XXX", ...overrides });
   const session = new QsoSession(14.025, settings);
   let cleanups: Array<() => void> = [];
 
@@ -39,7 +39,7 @@ function makeHarness(overrides: Partial<AppSettings> = {}) {
     for (const fn of cleanups) fn();
     cleanups = [];
     const page = document.createElement("div");
-    renderCw(host, page);
+    renderQsoPanel(host, page);
     root.replaceChildren(page);
   }
 
@@ -55,10 +55,6 @@ function findButton(root: HTMLElement, text: string): HTMLButtonElement {
   return found;
 }
 
-function hamRows(root: HTMLElement): HTMLElement[] {
-  return Array.from(root.querySelectorAll<HTMLElement>(".cw-pane .cw-line.ham"));
-}
-
 beforeEach(() => {
   document.body.innerHTML = "";
 });
@@ -67,110 +63,55 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-describe("CW 翻译页", () => {
-  it("没有通联内容时给出引导提示", () => {
+describe("通联面板", () => {
+  it("只有发送与电键，没有状态行、记录面板与操作按钮", () => {
     const { root } = makeHarness();
-    expect(root.textContent).toContain("尚无通联内容");
+    expect(root.textContent).toContain("发送");
+    expect(root.textContent).toContain("电键输入");
+    expect(root.textContent).not.toContain("操作");
+    expect(root.textContent).not.toContain("通联状态");
+    expect(root.textContent).not.toContain("收报 / 发报记录");
+    expect(root.textContent).not.toContain("尚无通联内容");
+    expect(root.querySelector(".cw-pane")).toBeNull();
   });
 
-  it("对方发来 CQ 后显示一行对方报文", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true });
+  it("不显示对方是谁：呼号要靠抄收", async () => {
+    const { root, session, render } = makeHarness();
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
-    const rows = hamRows(root);
-    expect(rows.length).toBe(1);
-    expect(rows[0].querySelector(".who")?.textContent).toBe("对方");
-    expect(rows[0].textContent).toContain(session.lines[0].text);
-    expect(root.textContent).toContain(`对方 ${session.ham?.call}`);
+    const call = session.ham!.call;
+    expect(root.textContent).not.toContain(call);
+    expect(root.textContent).not.toContain("对方 ");
   });
 
-  it("辅助模式关闭时对方内容被遮蔽并提供单条「显示」", async () => {
-    const { root, session, render } = makeHarness({ assistMode: false });
-    await session.hamCallsCq();
-    render();
-
-    const row = hamRows(root)[0];
-    expect(row.querySelector(".masked")).not.toBeNull();
-    expect(row.textContent).not.toContain(session.lines[0].text);
-    expect(row.querySelector("button")?.textContent).toBe("显示");
-  });
-
-  it("点击「显示」只揭示该条报文且原文可读", async () => {
-    const { root, session, render } = makeHarness({ assistMode: false });
-    await session.hamCallsCq();
-    render();
-
-    findButton(hamRows(root)[0], "显示").click();
-
-    const row = hamRows(root)[0];
-    expect(row.querySelector(".masked")).toBeNull();
-    expect(row.textContent).toContain(session.lines[0].text);
-    expect(row.querySelector("button")).toBeNull();
-  });
-
-  it("辅助模式开启时直接显示原文并给出提示横幅", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true });
-    await session.hamCallsCq();
-    render();
-
-    expect(root.querySelector(".assist-banner")?.textContent).toContain("辅助模式开启");
-    expect(root.querySelector(".masked")).toBeNull();
-  });
-
-  it("勾选辅助模式复选框会更新设置并重绘", () => {
-    const { root, host } = makeHarness({ assistMode: false });
-
-    const box = root.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(box).not.toBeNull();
-    box!.checked = true;
-    box!.dispatchEvent(new Event("change"));
-
-    expect(host.settings.assistMode).toBe(true);
-    expect(root.querySelector(".assist-banner")).not.toBeNull();
-  });
-
-  it("短语宏会把预设报文填入输入框", () => {
+  it("没有短语宏：报文自己打", () => {
     const { root } = makeHarness();
-    const input = root.querySelector("textarea");
-    expect(input).not.toBeNull();
-
-    findButton(root, "RST 599").click();
-    expect(input!.value).toBe("R UR RST 599 BK");
-
-    findButton(root, "73 SK").click();
-    expect(input!.value).toBe("R TU 73 SK");
+    const labels = Array.from(root.querySelectorAll("button")).map((b) => b.textContent);
+    expect(labels).not.toContain("RST 599");
+    expect(labels).not.toContain("我发 CQ");
+    expect(labels).not.toContain("73 SK");
   });
 
-  it("发送报文后会把「我」这一行追加到记录里", async () => {
-    const { root, session, render } = makeHarness({ assistMode: true });
+  it("发送后会清空输入框，但不会在页面上留下记录", async () => {
+    const { root, session, render } = makeHarness();
+    session.seedHams(1);
+    session.retune(session.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await session.hamCallsCq();
     render();
 
-    const peer = session.ham!.call;
     const input = root.querySelector("textarea")!;
-    input.value = `${peer} DE BG7XXX K`;
+    input.value = "R UR RST 599 BK";
     findButton(root, "发送").click();
 
+    expect(input.value).toBe("");
     await vi.waitFor(() => {
-      expect(session.lines.some((l) => l.who === "me" && l.text.includes("DE BG7XXX"))).toBe(true);
+      expect(session.lines.some((l) => l.who === "me")).toBe(true);
     });
-    await vi.waitFor(() => {
-      expect(root.querySelectorAll(".cw-pane .cw-line.me").length).toBe(1);
-    });
-    expect(root.querySelector(".cw-pane .cw-line.me .who")?.textContent).toBe("我");
-  });
-
-  it("「新通联」会清空记录并回到初始提示", async () => {
-    const { root, session, host } = makeHarness({ assistMode: true });
-    await session.hamCallsCq();
-    host.refresh();
-    expect(root.querySelector(".cw-pane")?.textContent).not.toContain("尚无通联内容");
-
-    host.newSession();
-
-    expect(session.lines.length).toBe(0);
-    expect(root.querySelector(".cw-pane")?.textContent).toContain("尚无通联内容");
+    // 报文进了空中，没有进屏幕。
+    expect(root.querySelector(".cw-pane")).toBeNull();
   });
 
   it("离开页面时注销键盘监听（清理钩子已注册）", () => {
@@ -178,17 +119,14 @@ describe("CW 翻译页", () => {
     expect(harness.cleanups()).toBeGreaterThan(0);
   });
 
-  it("重绘（切换辅助模式）不会弄丢输入框里还没发送的报文", () => {
-    const { root, host } = makeHarness({ assistMode: true });
+  it("重绘不会弄丢输入框里还没发送的报文", () => {
+    const { root, host } = makeHarness();
     const first = root.querySelector("textarea")!;
     first.value = "R UR RST 5"; // 输入一半，尚未发送
     first.dispatchEvent(new Event("input"));
 
-    const assist = root.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    assist.checked = false;
-    assist.dispatchEvent(new Event("change"));
+    host.refresh();
 
-    expect(host.settings.assistMode).toBe(false);
     expect(root.querySelector("textarea")!.value).toBe("R UR RST 5");
   });
 });
@@ -271,7 +209,51 @@ describe("CW 页 iambic 双桨输入", () => {
   });
 });
 
+describe("堆叠", () => {
+  it("多台应答时页面上什么都不说：谁在应你、有几台，全靠耳朵", async () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    let t = 0;
+    const ticks: Array<() => void> = [];
+    const settings = normalizeSettings({ myCall: "BG7XXX" });
+    const session = new QsoSession(14.025, settings, {
+      now: () => t,
+      startTicking: (cb) => {
+        ticks.push(cb);
+        return () => {};
+      },
+      delay: async () => {},
+    pace: async () => {},
+    });
+    const host = {
+      settings,
+      session,
+      updateSettings() {},
+      newSession() {},
+      go() {},
+      refresh() {},
+      onLeave() {},
+    } as unknown as AppHost;
+
+    await session.userCallsCq();
+    session.start();
+    // Drive the injected clock until at least one station has called.
+    for (t = 250; t <= 20_000 && session.heardPileupCallers().length === 0; t += 250) {
+      for (const cb of ticks) cb();
+    }
+
+    renderQsoPanel(host, root);
+    const callers = session.pileupCallers();
+    expect(callers.length).toBeGreaterThan(0);
+    for (const caller of callers) {
+      expect(root.textContent).not.toContain(caller.call);
+    }
+    expect(root.textContent).not.toContain("台同时应答");
+    expect(root.textContent).not.toContain("点名");
+    expect(root.textContent).not.toContain("堆叠");
+  });
+});
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-

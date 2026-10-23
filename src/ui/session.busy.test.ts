@@ -15,6 +15,7 @@ function makeSession() {
     now: () => 0,
     startTicking: () => () => {},
     delay: async () => {},
+    pace: async () => {},
   });
 }
 
@@ -22,6 +23,7 @@ describe("发送 busy 保护", () => {
   it("并发发送只有第一次生效，不会交错报文", async () => {
     const s = makeSession();
     s.seedHams(1);
+    s.retune(s.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await s.hamCallsCq(); // 进入 PEER_CQ
     const peer = s.ham!.call;
 
@@ -36,6 +38,7 @@ describe("发送 busy 保护", () => {
   it("顺序发送不受影响（每次都完成）", async () => {
     const s = makeSession();
     s.seedHams(1);
+    s.retune(s.listHams()[0].freqHz / 1e6); // 对准它，通带内才听得见
     await s.hamCallsCq();
     const peer = s.ham!.call;
     await s.userSend(`${peer} DE BG7XXX K`);

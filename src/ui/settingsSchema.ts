@@ -1,8 +1,13 @@
 import { BANDS } from "./bands.js";
+import { PASSBAND_HZ, normalisePassband } from "../ham/tuning.js";
 
 /**
  * User settings schema: defaults, normalisation and callsign validation.
  * Intentionally free of DOM / storage so it stays unit-testable under Node.
+ *
+ * Deliberately *not* here: the CW sideband. A rig keeps its mode per band, so
+ * that lives on the band's session (see `QsoSession.sideband`) — a single
+ * global "CW-L / CW-U" preference would leak one band's choice onto the next.
  */
 
 export type UiDifficulty = "novice" | "intermediate" | "hardcore";
@@ -21,8 +26,6 @@ export interface AppSettings {
   /** Effective Farnsworth speed; never higher than `wpm`. */
   farnsworthWpm: number;
   difficulty: UiDifficulty;
-  /** Assist mode: reveal received text instead of copying by ear. */
-  assistMode: boolean;
   freqMHz: number;
   bandIndex: number;
   /** Straight key or iambic paddles. */
@@ -38,6 +41,8 @@ export interface AppSettings {
   sidetoneVolume: number;
   /** Iambic squeeze behaviour: A drops the latched element, B sends it. */
   iambicMode: IambicMode;
+  /** Receiver CW filter width in Hz (one of `PASSBAND_OPTIONS`). */
+  passbandHz: number;
 }
 
 export const WPM_MIN = 5;
@@ -55,9 +60,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   farnsworthEnabled: false,
   farnsworthWpm: 18,
   difficulty: "novice",
-  assistMode: false,
   freqMHz: 14.025,
-  bandIndex: 2,
+  bandIndex: 1,
   keyMode: "straight",
   keyCode: "Space",
   // Z/X: adjacent, so both can be squeezed at once; no browser shortcut grabs
@@ -67,6 +71,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   iambicMode: "A",
   sidetone: true,
   sidetoneVolume: 40,
+  passbandHz: PASSBAND_HZ,
 };
 
 /** Mirrors the callsign pattern used by MESSAGE-PARSING (ITU-style). */
@@ -104,8 +109,6 @@ export function normalizeSettings(raw: unknown): AppSettings {
     // Farnsworth speed can never exceed the character speed.
     farnsworthWpm: clampNum(r.farnsworthWpm, wpm, WPM_MIN, wpm),
     difficulty: isDifficulty(r.difficulty) ? r.difficulty : DEFAULT_SETTINGS.difficulty,
-    assistMode:
-      typeof r.assistMode === "boolean" ? r.assistMode : DEFAULT_SETTINGS.assistMode,
     freqMHz:
       typeof r.freqMHz === "number" && Number.isFinite(r.freqMHz)
         ? r.freqMHz
@@ -130,6 +133,9 @@ export function normalizeSettings(raw: unknown): AppSettings {
       SIDETONE_MIN,
       SIDETONE_MAX,
     ),
+    // A `cwSideband` left behind by an older build is simply ignored: the mode
+    // now belongs to the band, and every band starts on its convention.
+    passbandHz: normalisePassband(r.passbandHz),
   };
 }
 

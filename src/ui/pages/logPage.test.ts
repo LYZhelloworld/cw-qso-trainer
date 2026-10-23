@@ -72,7 +72,7 @@ describe("日志页（IndexedDB 可用）", () => {
     await vi.waitFor(() => expect(root.textContent).toContain("暂无日志记录"));
   });
 
-  it("有记录时按 UI.md 的字段顺序渲染表格", async () => {
+  it("有记录时按 LOG.md 的字段顺序渲染表格", async () => {
     await addLog(SAMPLE);
     const root = freshRoot();
     mountLog(root);
@@ -157,8 +157,13 @@ describe("日志页（IndexedDB 可用）", () => {
     // No real waiting: this case is about the log record, not the HAM's answer
     // timing. Leaving the 1–3 s reply delays real would push it past the
     // default test timeout and make it flaky.
-    const session = new QsoSession(14.025, settings, { delay: async () => {} });
+    const session = new QsoSession(14.025, settings, { delay: async () => {}, pace: async () => {} });
 
+    session.seedHams(1);
+    const station = session.listHams()[0];
+    // Tune onto it first: a CW receiver only hears its ±250 Hz passband, and the
+    // log records the dial as it stood during the contact.
+    session.retune(station.freqHz / 1e6);
     await session.hamCallsCq();
     const peer = session.ham!.call;
     await session.userSend(`${peer} DE BG7XXX R UR RST 599 599 BK`);
@@ -170,7 +175,7 @@ describe("日志页（IndexedDB 可用）", () => {
     expect(record).not.toBeNull();
     expect(record!.call).toBe(peer);
     expect(record!.mode).toBe("CW");
-    expect(record!.freqMHz).toBe("14.0250");
+    expect(record!.freqMHz).toBe((station.freqHz / 1e6).toFixed(4));
 
     await addLog(record!);
     session.markLogged();

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderCw } from "./cw.js";
+import { renderQsoPanel } from "./cw.js";
 import { normalizeSettings, type AppSettings } from "../settingsSchema.js";
 import { QsoSession } from "../session.js";
 import type { AppHost, PageId } from "../app.js";
@@ -15,7 +15,7 @@ import type { AppHost, PageId } from "../app.js";
 function mount(overrides: Partial<AppSettings> = {}) {
   const root = document.createElement("div");
   document.body.append(root);
-  const settings = normalizeSettings({ myCall: "BG7XXX", assistMode: false, ...overrides });
+  const settings = normalizeSettings({ myCall: "BG7XXX", ...overrides });
   const session = new QsoSession(14.025, settings);
   let cleanups: Array<() => void> = [];
 
@@ -44,7 +44,7 @@ function mount(overrides: Partial<AppSettings> = {}) {
     for (const fn of cleanups) fn();
     cleanups = [];
     const page = document.createElement("div");
-    renderCw(host, page);
+    renderQsoPanel(host, page);
     root.replaceChildren(page);
   }
 
