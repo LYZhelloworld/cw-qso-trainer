@@ -39,12 +39,19 @@ export interface SessionContext {
   readonly band: Frequency;
   /** Per-call "keying until" timestamps (ms) for the waterfall. */
   readonly keyingUntil: Map<string, number>;
-  /** The receiver is open (the rig's power switch). */
+  /**
+   * Sound could come out of the speaker right now: the rig is on **and** we are
+   * not transmitting. Half-duplex means transmit *or* listen, so our own carrier
+   * makes the receiver deaf. Ask this before playing anything at the operator.
+   */
   readonly isReceiving: boolean;
   /**
-   * The rig is switched on. Not the same question as `isReceiving`: a rig that
-   * is switched on but transmitting is deaf, and the S-meter still has to work
-   * (it reads our own keying). Power is upstream of both.
+   * The rig is switched on. Power only — it stays true while we transmit.
+   *
+   * Kept separate from `isReceiving` on purpose. The S-meter asks this one to
+   * decide whether it has a needle at all, and `isTransmitting` to decide what
+   * the needle reads; folding the two into `isReceiving` would make the meter
+   * read `null` for the whole of our own over (it still has to read our key).
    */
   readonly rigOn: boolean;
   /** One of our transmissions is in flight right now. */
