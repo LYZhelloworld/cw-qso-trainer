@@ -97,4 +97,44 @@ describe("会话 — S 表读数", () => {
     const later = session.sMeter()!.dbm;
     expect(later).not.toBe(first);
   });
+
+  it("堆叠应答也进 S 表：有声就该有读数，不管是谁把台放上去的", async () => {
+    const { session, tickTo } = makeSession();
+    session.seedHams(4);
+    session.start();
+    await session.userCallsCq();
+    expect(session.pileupCallers().length).toBeGreaterThan(0);
+
+    // 让第一台应答（堆叠只报 keyingUntil，没有逐条报文的播放簿记）
+    let answered = false;
+    for (let at = 250; at <= 20_000 && !answered; at += 250) {
+      await tickTo(at);
+      answered = session.lines.some((l) => l.who === "ham");
+    }
+    expect(answered).toBe(true);
+    expect(session.sMeter()).not.toBeNull();
+  });
+
+  it("调到一条正在发的 CQ 中间：声音接上来，表针也得抬起来", async () => {
+    const { session, tickTo } = makeSession();
+    session.seedHams(1);
+    const ham = session.listHams()[0];
+    // 先调离它：这条 CQ 在别处发，我们听不到，但它被记账了
+    session.retune((ham.freqHz + 5_000) / 1e6);
+    session.start();
+
+    let onAir = false;
+    for (let at = 250; at <= 20_000 && !onAir; at += 250) {
+      await tickTo(at);
+      onAir = session
+        .spectrum()
+        .signals.some((sig) => sig.call === ham.call && sig.active);
+    }
+    expect(onAir).toBe(true);
+    expect(session.sMeter()).toBeNull(); // 在通带外，听不到就没有读数
+
+    // 中途把拨轮调过去：音频从半路接上（rejoinOnAir），表针必须跟着动
+    session.retune(ham.freqHz / 1e6);
+    expect(session.sMeter()).not.toBeNull();
+  });
 });

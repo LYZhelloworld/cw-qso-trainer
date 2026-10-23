@@ -534,8 +534,9 @@ export class QsoSession implements SessionContext {
 
     let best: SMeterReading | null = null;
     for (const ham of this.audibleStations()) {
-      // Nothing on the air from this one at this instant.
-      if ((this.playingUntil.get(ham.call) ?? 0) <= at) continue;
+      // No sound, no reading. The needle only moves while this station's over
+      // is actually being played — whichever driver put it there.
+      if (!this.onAirAt(ham, at)) continue;
       if (!inSpectrumWindow(ham.freqHz, this.dialHz)) continue;
       const rx = this.audio.reception(ham);
       if (rx === null) continue;
