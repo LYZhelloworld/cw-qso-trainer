@@ -3,6 +3,7 @@ import type { AudioPlayer, EngineRenderOptions } from "../audio/engine.js";
 import { textToTiming } from "../cw/encode.js";
 import type { KeyElement } from "../cw/decoder.js";
 import { receiveStation, type Reception, type Sideband } from "../ham/tuning.js";
+import { txOffsetSec, type Tx } from "../ham/tx.js";
 import type { VirtualHam } from "../ham/virtualHam.js";
 import type { AppSettings } from "./settingsSchema.js";
 
@@ -68,12 +69,17 @@ export class SessionAudio {
   }
 
   /**
-   * Join a station that is already transmitting: play the rest of the message
-   * from `offsetSec`. Used when the operator tunes onto a CQ that has already
-   * started — the receiver should hear the tail of it, not wait for the next one.
+   * Put a recorded transmission on the air, starting where it has already got
+   * to.
+   *
+   * Playback takes the `Tx` itself rather than a text plus an offset spelled out
+   * by the caller: the same record drives the waterfall and the meter, so the
+   * audio cannot start at a different point than the signal shown on screen —
+   * tuning onto a station mid-CQ hears exactly the part the display says is
+   * still being sent.
    */
-  async playHamFrom(text: string, ham: VirtualHam | undefined, offsetSec: number): Promise<void> {
-    await this.playStation(text, ham, Math.max(0, offsetSec));
+  async playTx(tx: Tx, ham: VirtualHam | null | undefined, at: number): Promise<void> {
+    await this.playStation(tx.text, ham ?? undefined, txOffsetSec(tx, at));
   }
 
   private async playStation(

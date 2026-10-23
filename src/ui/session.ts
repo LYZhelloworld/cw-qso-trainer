@@ -20,6 +20,7 @@ import {
   type SpectrumSnapshot,
 } from "../ham/spectrum.js";
 import { qsbDb, qsbDepthFor, smeterReading, type SMeterReading } from "../ham/smeter.js";
+import { makeTx, txKeyed, txOnAir, type Tx } from "../ham/tx.js";
 import {
   detuneHz,
   inPassband,
@@ -39,17 +40,6 @@ import type { SessionContext, Speaker, TranscriptLine } from "./sessionTypes.js"
 // Re-exported so pages and storage keep importing the transcript vocabulary
 // from the module they already know.
 export type { Speaker, TranscriptLine };
-
-/**
- * One recorded transmission: the message's keying envelope and when it started.
- * The waterfall reads this so a signal is lit exactly while the tone is on the
- * air — no synthetic dots, and no carrier left behind during the listening gap.
- */
-interface TxEnvelope {
-  elements: KeyElement[];
-  startedAt: number;
-  durationMs: number;
-}
 
 /**
  * Presentation-layer session: one band's virtual HAMs plus the operator's QSO
@@ -187,30 +177,18 @@ export class QsoSession implements SessionContext {
    */
   readonly keyingUntil = new Map<string, number>();
   /**
-   * What each calling station is transmitting right now, and when it started.
-   * This is what makes "tune in and you hear it" work: when the operator turns
-   * the dial onto a station that is mid-CQ, the message is played from where it
-   * has already got to instead of waiting for the next one.
+   * What each station is transmitting right now — the keying truth.
+   *
+   * One record per station holds the message, its envelope and when it started.
+   * Everything that needs to know "is there sound coming out of the speaker"
+   * asks this table and nothing else: the waterfall draws `txKeyed` (the real
+   * dots and dashes), the S-meter reads `txOnAir` (the whole over, so the
+   * needle holds instead of flickering), and a mid-message join reads the text
+   * plus its offset. Three maps used to track this (`onAir` for CQ text,
+   * `playingUntil` for a deadline, `airEnvelope` for the envelope) and could
+   * disagree; one table cannot.
    */
-  private readonly onAir = new Map<
-    string,
-    { text: string; startedAt: number; durationMs: number }
-  >();
-  /**
-   * When each station's current transmission runs out (ms). Unlike `onAir`,
-   * which only tracks CQ bursts so the dial can join one mid-message, this
-   * records *any* transmission being played — replies included. The S-meter
-   * reads it: a station with nothing on the air produces no reading.
-   */
-  private readonly playingUntil = new Map<string, number>();
-  /**
-   * What each station's current transmission actually keys, and when it began.
-   * Unlike `onAir` (CQ bursts only, for joining mid-message), this also covers
-   * replies and other overs. It is what makes the waterfall honest: a station
-   * is drawn only while its tone is on, and its dots and dashes are the real
-   * ones from the message — not a seeded pattern that loops forever.
-   */
-  private readonly airEnvelope = new Map<string, TxEnvelope>();
+  private readonly txs = new Map<string, Tx>();
 
   private readonly clock: () => number;
   private readonly startTicking: (cb: () => void) => () => void;
@@ -596,50 +574,37 @@ export class QsoSession implements SessionContext {
   }
 
   /**
-   * Remember what this station is keying and when it started, so the waterfall
-   * can light it exactly while the tone is on.
+   * Record what this station is keying and when it started: the message's real
+   * envelope goes into the keying table, and everything else (waterfall, meter,
+   * playback) reads it from there. Returns the record so the caller can hand
+   * the very same thing to the audio.
    */
-  private notePlaying(ham: VirtualHam | null | undefined, text: string): void {
-    if (!ham) return;
-    const startedAt = this.clock();
-    const elements = this.audio.keyElements(text);
-    const durationMs = elements.reduce((total, e) => total + e.on + e.off, 0);
-    this.playingUntil.set(ham.call, startedAt + durationMs);
-    this.airEnvelope.set(ham.call, { elements, startedAt, durationMs });
-  }
-
-  /** Whether a recorded transmission has its tone on at `at`. */
-  private keyedAt(env: TxEnvelope, at: number): boolean {
-    let t = at - env.startedAt;
-    if (t < 0 || t >= env.durationMs) return false;
-    for (const e of env.elements) {
-      if (t < e.on) return true;
-      t -= e.on;
-      if (t < e.off) return false;
-      t -= e.off;
-    }
-    return false;
+  private notePlaying(ham: VirtualHam | null | undefined, text: string): Tx | null {
+    if (!ham) return null;
+    const tx = makeTx(text, this.audio.keyElements(text), this.clock());
+    this.txs.set(ham.call, tx);
+    return tx;
   }
 
   /**
    * Is this station's over on the air at `at` — i.e. is there sound coming out
    * of the speaker that belongs to it?
    *
-   * Three drivers can put a station on the air, and every consumer must agree
-   * on the answer: a recorded transmission (the envelope's window), a pile-up
-   * caller or a background pair (they only report "keying until"), and a
-   * straight playback booking (`playingUntil`). Asking one question in one
-   * place is what keeps the waterfall and the S-meter from telling the operator
-   * two different stories — audible in one, silent in the other.
+   * Two drivers can put a station on the air, and every consumer must agree on
+   * the answer: a station whose message we recorded (the envelope's window in
+   * the keying table), and one whose driver only reports "keying until" (a
+   * pile-up caller, the background pair). Asking one question in one place is
+   * what keeps the waterfall and the S-meter from telling the operator two
+   * different stories — audible in one, silent in the other.
    */
   private onAirAt(ham: VirtualHam, at: number): boolean {
-    const env = this.airEnvelope.get(ham.call);
-    if (env && at >= env.startedAt && at < env.startedAt + env.durationMs) return true;
+    const tx = this.txs.get(ham.call);
+    if (tx && txOnAir(tx, at)) return true;
     const keying = Math.max(
       this.keyingUntil.get(ham.call) ?? 0,
       this.hamQso.keyingUntilFor(ham.call),
     );
-    return keying > at || (this.playingUntil.get(ham.call) ?? 0) > at;
+    return keying > at;
   }
 
   /**
@@ -647,13 +612,13 @@ export class QsoSession implements SessionContext {
    *
    * Only the waterfall asks this. A panadapter can be honest to the
    * millisecond; a meter has ballistics and holds through the gap between two
-   * dits instead of flickering at the keying rate.
+   * dits instead of flickering at the keying rate. A station with no recorded
+   * envelope (a driver that only reports "keying until") is drawn as one steady
+   * burst for as long as it claims to be keying.
    */
   private toneKeyed(ham: VirtualHam, at: number): boolean {
-    const env = this.airEnvelope.get(ham.call);
-    if (env && at >= env.startedAt && at < env.startedAt + env.durationMs) {
-      return this.keyedAt(env, at);
-    }
+    const tx = this.txs.get(ham.call);
+    if (tx && txOnAir(tx, at)) return txKeyed(tx, at);
     return true;
   }
 
@@ -771,10 +736,10 @@ export class QsoSession implements SessionContext {
         : this.startMachine(target);
     const text = machine.hamCq();
     this.push("ham", text);
-    this.notePlaying(target, text);
     // Non-blocking: do not await the full CQ, otherwise the user could not
     // answer until it finished. The audio is cut by the next user transmission.
-    void this.audio.playHam(text, target);
+    const tx = this.notePlaying(target, text);
+    if (tx) void this.audio.playTx(tx, target, this.now());
     return true;
   }
 
@@ -843,8 +808,8 @@ export class QsoSession implements SessionContext {
         if (agn) {
           await this.wait(replyDelayMs(this.rng));
           this.push("ham", agn);
-          this.notePlaying(this.ham, agn);
-          await this.audio.playHam(agn);
+          const tx = this.notePlaying(this.ham, agn);
+          if (tx) await this.audio.playTx(tx, this.ham, this.now());
           return;
         }
       }
@@ -854,8 +819,8 @@ export class QsoSession implements SessionContext {
         // VIRTUAL-HAM.md: the HAM replies 1–3 s after the user's transmission.
         await this.wait(replyDelayMs(this.rng));
         this.push("ham", reply);
-        this.notePlaying(this.ham, reply);
-        await this.audio.playHam(reply);
+        const tx = this.notePlaying(this.ham, reply);
+        if (tx) await this.audio.playTx(tx, this.ham, this.now());
       }
 
       // QSO complete: the HAM goes back to its own CQ rhythm.
@@ -930,8 +895,8 @@ export class QsoSession implements SessionContext {
     await this.wait(replyDelayMs(this.rng));
     const reply = machine.hamAcceptedSelection();
     this.push("ham", reply);
-    this.notePlaying(this.ham ?? chosen.ham, reply);
-    await this.audio.playHam(reply);
+    const tx = this.notePlaying(this.ham ?? chosen.ham, reply);
+    if (tx) await this.audio.playTx(tx, this.ham ?? chosen.ham, this.now());
   }
 
   // --- log & lifecycle of a QSO --------------------------------------------
@@ -1060,12 +1025,9 @@ export class QsoSession implements SessionContext {
    */
   private noteCq(ham: VirtualHam): void {
     const text = `CQ CQ CQ DE ${ham.call} ${ham.call} PSE K`;
-    const startedAt = this.clock();
-    const elements = this.audio.keyElements(text);
-    const durationMs = elements.reduce((total, e) => total + e.on + e.off, 0);
-    this.onAir.set(ham.call, { text, startedAt, durationMs });
-    this.airEnvelope.set(ham.call, { elements, startedAt, durationMs });
-    this.band.scheduleNextCq(ham.call, durationMs + nextCqGapMs(this.rng));
+    const tx = makeTx(text, this.audio.keyElements(text), this.clock());
+    this.txs.set(ham.call, tx);
+    this.band.scheduleNextCq(ham.call, tx.durationMs + nextCqGapMs(this.rng));
   }
 
   /**
@@ -1082,19 +1044,17 @@ export class QsoSession implements SessionContext {
     if (!this.receiving || this.sending || this.transmitting) return;
     if (this.exchangeInProgress || this.pileup.active) return;
     const now = this.clock();
-    let target: { ham: VirtualHam; text: string; offsetSec: number } | null = null;
+    let target: { ham: VirtualHam; tx: Tx } | null = null;
     for (const entry of this.band.activityState()) {
       if (entry.state === "inQso") continue;
       if (!this.canHear(entry.ham)) continue;
-      const tx = this.onAir.get(entry.ham.call);
-      if (!tx) continue;
-      const elapsed = now - tx.startedAt;
-      if (elapsed < 0 || elapsed >= tx.durationMs) continue;
-      target = { ham: entry.ham, text: tx.text, offsetSec: elapsed / 1000 };
+      const tx = this.txs.get(entry.ham.call);
+      if (!tx || !txOnAir(tx, now)) continue;
+      target = { ham: entry.ham, tx };
       break;
     }
     this.audio.stop();
-    if (target) void this.audio.playHamFrom(target.text, target.ham, target.offsetSec);
+    if (target) void this.audio.playTx(target.tx, target.ham, now);
   }
 
   /** True once the user is actually exchanging with a HAM (not just listening). */
@@ -1167,10 +1127,12 @@ export class QsoSession implements SessionContext {
     return this.audio.callDurationMs(text);
   }
 
-  /** Play a station's transmission (the driver side of `audio.playHam`). */
+  /** Play a station's transmission (the driver side of `audio.playTx`). */
   playHam(text: string, ham?: VirtualHam): Promise<void> {
-    this.notePlaying(ham, text);
-    return this.audio.playHam(text, ham);
+    const tx = this.notePlaying(ham, text);
+    // A line with no station behind it (the operator's own, or a driver without
+    // one) has nothing to key on the band, so it is played straight.
+    return tx ? this.audio.playTx(tx, ham, this.now()) : this.audio.playHam(text, ham);
   }
 
   /** The snapshot `SessionAudio` reads on every call (see `sessionAudio`). */

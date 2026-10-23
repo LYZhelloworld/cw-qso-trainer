@@ -98,6 +98,25 @@ describe("会话 — S 表读数", () => {
     expect(later).not.toBe(first);
   });
 
+  it("同一张键控表：点划间隙里瀑布已经暗了，表针还抬着（表按整条报文算）", async () => {
+    const { session, setTime } = makeSession();
+    const ham = await tuneToOneCalling(session);
+    const dur = session.callDurationMs(`CQ CQ CQ DE ${ham.call} ${ham.call} PSE K`);
+
+    let lit = false;
+    let darkButReading = false;
+    for (let at = 0; at < dur; at += 5) {
+      setTime(at);
+      const sig = session.spectrum().signals.find((s) => s.call === ham.call);
+      expect(sig).toBeDefined();
+      if (sig!.active) lit = true;
+      // 间隙：载波不在（瀑布不画），但这条报文还没发完，表针不该抖下去
+      else if (session.sMeter() !== null) darkButReading = true;
+    }
+    expect(lit).toBe(true);
+    expect(darkButReading).toBe(true);
+  });
+
   it("堆叠应答也进 S 表：有声就该有读数，不管是谁把台放上去的", async () => {
     const { session, tickTo } = makeSession();
     session.seedHams(4);
