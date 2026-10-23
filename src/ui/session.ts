@@ -297,6 +297,12 @@ export class QsoSession implements SessionContext {
   private txTiming: KeyElement[] | null = null;
   private txStartedAt = 0;
   /**
+   * When `spectrum()` was last asked for a line. The waterfall samples once per
+   * line, and a line covers a slice of time — see `txKeyedBetween`. Negative
+   * until the first line is drawn.
+   */
+  private spectrumAt = -1;
+  /**
    * Live keying (straight key / paddles): when the key went down and when it
    * last came up, so the envelope can be appended element by element as the
    * operator keys instead of being known in advance.
@@ -597,9 +603,21 @@ export class QsoSession implements SessionContext {
    * makes it drift across the display instead of moving with the dial.
    */
   spectrum(): SpectrumSnapshot {
+    const at = this.clock();
+    // One line of the waterfall stands for a slice of time, so remember when the
+    // last one was drawn: a dot can be shorter than a line (see
+    // `txKeyedBetween`).
+    const since = this.spectrumAt;
+    this.spectrumAt = at;
+
     // Half-duplex: while the operator's carrier is on, the only signal on the
     // display is his own, at full strength. Everything being received is gone —
     // a transmitter is not listening, so there is nothing else to show.
+    //
+    // It is drawn **keyed**, not as one solid block: the envelope that drives
+    // the monitor tone is the same one read here, so the trace on the waterfall
+    // breaks where the tone breaks. A dash is a dash, and the gap after it is
+    // silent on screen as well as in the speaker.
     if (this.transmitting) {
       return {
         centerHz: this.dialHz,
@@ -607,14 +625,17 @@ export class QsoSession implements SessionContext {
           {
             freqHz: this.dialHz,
             strength: 1,
-            call: this.myCall(),
+            // A callsign-less operator gets a placeholder rather than an empty
+            // string: an empty `call` marks a decorative background carrier,
+            // which the waterfall draws with synthetic keying instead of
+            // following `active`.
+            call: this.myCall() || "ME",
             workable: false,
-            active: true,
+            active: this.txKeyedBetween(since < 0 ? at : since, at),
           },
         ],
       };
     }
-    const now = this.clock();
     const signals: SpectrumSignal[] = [];
     // The roster holds the band's callers. Answerers hold no slot, so they are
     // not on it — but while one of them is transmitting there *is* a carrier,
@@ -631,7 +652,7 @@ export class QsoSession implements SessionContext {
       // real dots and dashes if we recorded the message, one steady burst for a
       // driver that only reports "keying until" (pile-ups, the background
       // pair). Between transmissions there is nothing to see.
-      const active = this.onAirAt(ham, now) && this.toneKeyed(ham, now);
+      const active = this.onAirAt(ham, at) && this.toneKeyed(ham, at);
       signals.push({
         freqHz: ham.freqHz,
         strength: ham.strength,
@@ -714,6 +735,23 @@ export class QsoSession implements SessionContext {
       t -= e.off;
     }
     return false;
+  }
+
+  /**
+   * Whether the operator's carrier was on at any point in `[from, to]`.
+   *
+   * A waterfall line stands for a slice of time, not an instant: at 25 WPM a dit
+   * is 48 ms and a line is 55 ms, so sampling only the line's own timestamp
+   * would drop dots and draw a pattern the operator never sent. Asking the whole
+   * slice keeps every element that was on during it.
+   */
+  private txKeyedBetween(from: number, to: number): boolean {
+    if (!(to > from)) return this.txKeyedAt(to);
+    // ~17 samples per line: fine enough for the shortest element at any speed
+    // the settings allow, cheap enough to run once per line.
+    const step = Math.max(4, (to - from) / 16);
+    for (let t = from; t < to; t += step) if (this.txKeyedAt(t)) return true;
+    return this.txKeyedAt(to);
   }
 
   /**
@@ -929,6 +967,10 @@ export class QsoSession implements SessionContext {
     if (!this.transmitting || !this.txTiming) return;
     if (this.liveDownAt !== null || !this.sending) return;
     const at = this.clock();
+    // The over starts where the key went down, not where the carrier was
+    // opened: the wait between "ready to send" and the first dit is silence on
+    // the air and must not be counted as part of the envelope.
+    if (this.txTiming.length === 0) this.txStartedAt = at;
     // Close the gap on the previous element now that its length is known.
     if (this.liveUpAt !== null && this.txTiming.length > 0) {
       this.txTiming[this.txTiming.length - 1].off = at - this.liveUpAt;

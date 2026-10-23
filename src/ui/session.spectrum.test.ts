@@ -27,6 +27,10 @@ function makeSession(rng: () => number = mulberry32(11)) {
   });
   return {
     session,
+    /** Move the clock without stepping the scheduler. */
+    setTime(ms: number) {
+      t = ms;
+    },
     async tickTo(ms: number) {
       t = ms;
       for (const cb of ticks) cb();
@@ -132,5 +136,84 @@ describe("会话频谱 — 瀑布图的数据源", () => {
     expect(active()).toBe(false);
 
     h.session.dispose();
+  });
+});
+
+describe("会话频谱 — 自己发报时也跟着键控通断", () => {
+  /** The operator's own carrier in the snapshot (half-duplex: the only one). */
+  function mine(session: QsoSession) {
+    return session.spectrum().signals.find((s) => s.workable === false && s.freqHz > 0);
+  }
+
+  it("实时键控：按下才亮，抬起就暗，不是一条连续条带", () => {
+    const { session, setTime } = makeSession();
+    expect(session.beginLiveKeying()).toBe(true);
+
+    // 25 WPM 的点比一行还短，所以瀑布是**按行**（55 ms 一片）取样的：一个点
+    // 加一段长静默再加一个划，画出来应当是"亮—暗—亮"，而不是一条实心条带。
+    const events: Array<[number, () => void]> = [
+      [55, () => session.liveKeyDown()],
+      [110, () => session.liveKeyUp()],
+      [275, () => session.liveKeyDown()],
+      [495, () => session.liveKeyUp()],
+    ];
+    const lit: boolean[] = [];
+    for (let t = 0; t <= 605; t += 55) {
+      setTime(t);
+      while (events.length && events[0][0] <= t) events.shift()![1]();
+      lit.push(Boolean(mine(session)?.active));
+    }
+
+    expect(lit[0]).toBe(false); // 载波开着、键还没按下：没有音频就没有东西可画
+    expect(lit).toContain(true); // 按下去了
+    expect(lit[lit.length - 1]).toBe(false); // 早就松开：暗
+
+    // 暗段之后又亮起来：点与划之间的静默确实画成了空行。
+    const firstDark = lit.indexOf(false, 1);
+    expect(firstDark).toBeGreaterThan(0);
+    expect(lit.slice(firstDark).some(Boolean)).toBe(true);
+  });
+
+  it("发射时只画自己这一路信号，且就在拨轮频率上", () => {
+    const { session, setTime } = makeSession();
+    session.seedHams(4);
+    session.beginLiveKeying();
+    setTime(100);
+    session.liveKeyDown();
+    setTime(150);
+
+    const signals = session.spectrum().signals;
+    // 半双工：发射时不接收，波段上别的台一个都不该出现。
+    expect(signals).toHaveLength(1);
+    expect(signals[0].freqHz).toBe(14_025_000);
+    expect(signals[0].strength).toBe(1);
+    expect(signals[0].call).toBe("BG7XXX");
+    expect(signals[0].active).toBe(true);
+  });
+
+  it("没设呼号时也不退回背景载波的合成点划", () => {
+    let t = 150;
+    const noCall = new QsoSession(
+      14.025,
+      normalizeSettings({ freqMHz: 14.025, myCall: "" }),
+      {
+        rng: mulberry32(3),
+        now: () => t,
+        referenceHz: REF,
+        startTicking: () => () => {},
+        delay: async () => {},
+        pace: async () => {},
+      },
+    );
+    noCall.beginLiveKeying();
+    noCall.liveKeyDown();
+    t = 200;
+
+    const sig = noCall.spectrum().signals[0];
+    // 空呼号原本是"装饰载波"的标记，会导致瀑布改用合成的点划；
+    // 自己发射时必须是真实键控，所以给一个占位呼号。
+    expect(sig.call).not.toBe("");
+    expect(sig.active).toBe(true);
+    noCall.dispose();
   });
 });
