@@ -153,6 +153,22 @@ describe("设置页", () => {
     expect(TONE_MAX).toBe(1200);
   });
 
+  it("侧音开关与音量都在音频与速度里，改动即生效", () => {
+    const { root, host } = makeHost({ sidetone: true, sidetoneVolume: 30 });
+
+    const box = checkboxByLabel(root, "发报侧音");
+    expect(box.checked).toBe(true);
+    box.checked = false;
+    box.dispatchEvent(new Event("change"));
+    expect(host.settings.sidetone).toBe(false);
+
+    const volume = fieldByLabel(root, "侧音音量").querySelector("input")!;
+    expect(volume.value).toBe("30");
+    volume.value = "70";
+    volume.dispatchEvent(new Event("change"));
+    expect(host.settings.sidetoneVolume).toBe(70);
+  });
+
   it("切换难度会更新设置", () => {
     const { root, host } = makeHost();
     const select = fieldByLabel(root, "难度等级").querySelector("select")!;

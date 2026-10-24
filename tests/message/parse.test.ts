@@ -75,6 +75,12 @@ describe("parseMessage", () => {
     expect(p.rst).toBeNull();
   });
 
+  it("rejects a report containing a zero: 509 is not a RST", () => {
+    const p = parseMessage("UR RST 509", ctxBase, "tx", dxccDatabase);
+    expect(p.type).toBe("QUERY");
+    expect(p.rst).toBeNull();
+  });
+
   it("detects end phrases and SK end marker", () => {
     const p = parseMessage("R TU 73 SK", ctxBase, "tx", dxccDatabase);
     expect(p.type).toBe("END");
