@@ -15,6 +15,15 @@
 - `doc/` 下的文档即为**唯一事实来源**（single source of truth）；不要出现「来源：原始设计文档…」这类回溯引用。
 - **文档不复制代码**：接口签名、常量表这类会漂移的内容只写结论与文件位置（如「见 `src/message/parse.ts`」），不要整段贴实现——贴上去的代码一定会和实现脱节。
 
+## 测试目录约定
+
+- 测试统一放在仓库根的 `tests/`，并**镜像 `src/` 的目录结构**：`src/ui/pages/cw.ts` 的测试是 `tests/ui/pages/cw.test.ts`。`src/` 只放生产代码。
+  - 理由：`src/ui` 一层的测试文件数一度超过源文件，同层平铺后既难找实现，也让「这个模块有没有测试」变成翻目录。镜像结构保住了文件之间的一一对应。
+- 不要把所有测试平铺进 `tests/` 根：`keyer.test.ts`（`src/cw` 与 `src/ui`）、`smeter.test.ts`（`src/ham` 与 `src/ui`）重名，扁平化会直接冲突。
+- 测试专用替身放 `tests/support/`（当前有假 Web Audio 图 `fakeContext.ts`、记录调用的假频段 `bandSpy.ts`）。这类文件生产代码零引用，留在 `src/` 里会让生产边界变模糊。
+- 测试对源码一律用相对路径导入（`../../src/audio/bandSynth.js`），不引入路径别名——别名会让测试与构建工具各需要一份解析配置。
+- 需要 DOM 的测试用文件首行的 `// @vitest-environment jsdom` 切换环境，不改全局 `environment`。
+
 ## 语言约定
 
 - 设计文档与面向用户的说明使用中文。
