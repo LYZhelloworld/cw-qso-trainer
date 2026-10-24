@@ -4,6 +4,7 @@ import { App, safeRenderPage } from "../../src/ui/app.js";
 import { renderErrorPanel } from "../../src/ui/errorPanel.js";
 import { DISCLAIMER_TEXT } from "../../src/ui/disclaimer.js";
 import { BANDS } from "../../src/ui/bands.js";
+import { Waterfall } from "../../src/ui/waterfall.js";
 
 const NAV_LABELS = ["电台", "日志", "关于"];
 const ACK_KEY = "cw-qso-trainer:disclaimer-ack";
@@ -334,6 +335,23 @@ describe("环境与电源（关台只是不接收）", () => {
 
     app.setPower(false);
     expect(app.session.isReceiving).toBe(false);
+  });
+
+  it("电源开关同步给瀑布图：关台停滚、开台恢复", () => {
+    const spy = vi.spyOn(Waterfall.prototype, "setActive");
+    try {
+      const { app } = mountApp();
+      // 启动即关台，面板不滚动。
+      expect(spy).toHaveBeenLastCalledWith(false);
+
+      app.setPower(true);
+      expect(spy).toHaveBeenLastCalledWith(true);
+
+      app.setPower(false);
+      expect(spy).toHaveBeenLastCalledWith(false);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("换到别的波段再换回来，原波段没有被拆掉", () => {

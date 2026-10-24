@@ -69,6 +69,20 @@ describe("decodeKeying — Farnsworth (the trap)", () => {
   });
 });
 
+describe("decodeKeying — 单词阈值下限", () => {
+  it("字符间隔紧到 2d 时，4d 的静默仍在词内", () => {
+    // 手键快拍：字符间隔只有 2d，`1.8 x 2d = 3.6d` 低于 5d 下限。若无下限，
+    // 紧随其后的 4d 静默会被当成换词，解出 "ET E"；有下限则仍是 "ETE"。
+    const d = 100;
+    const els: KeyElement[] = [
+      { on: d, off: 2 * d },
+      { on: 3 * d, off: 4 * d },
+      { on: d, off: 0 },
+    ];
+    expect(decodeKeying(els, { unit: d }).text).toBe("ETE");
+  });
+});
+
 describe("decodeKeying — tolerance & errors", () => {
   it("absorbs +/-0.5d timing jitter", () => {
     const text = "TEST";

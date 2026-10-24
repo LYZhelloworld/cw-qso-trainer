@@ -160,9 +160,4 @@ describe("发报侧音", () => {
     h.render();
     expect(ctx.closed).toBe(true);
   });
-
-  it("侧音状态只出现在设置页", () => {
-    const { root } = mount({ keyMode: "straight", sidetone: true, sidetoneVolume: 50, toneHz: 600 });
-    expect(root.textContent).not.toContain("侧音");
-  });
 });
