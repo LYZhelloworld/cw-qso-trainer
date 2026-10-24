@@ -32,4 +32,9 @@ describe("roundFreq", () => {
     expect(roundFreq(14.025 + 0.001)).toBe(14.026);
     expect(roundFreq(0.1 + 0.2)).toBe(0.3);
   });
+
+  it("keeps the finest tuning step: 10 Hz survives the round trip", () => {
+    expect(roundFreq(14.02501)).toBe(14.02501);
+    expect(roundFreq(14.025001)).toBe(14.025); // below 10 Hz is not a step
+  });
 });

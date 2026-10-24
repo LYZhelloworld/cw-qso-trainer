@@ -126,13 +126,15 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
 
   // --- send mode -----------------------------------------------------------
   // Three mutually exclusive ways to put a message on the air. The operating
-  // panel shows only the one that is selected (see `pages/cw`).
+  // panel shows only the one that is selected (see `pages/cw`). Listed in the
+  // order the operator meets them: the message mode first (it is the default),
+  // then the two hand keys.
   const keyModeField = selectRow<KeyMode>(
     "发报模式",
     [
+      ["text", "报文（打字输入，按发送键发出）"],
       ["straight", "直键（手键，实时发报）"],
-      ["iambic", "iambic 双桨（自动键，实时发报）"],
-      ["text", "文本框（输入报文，按发送键发出）"],
+      ["iambic", "双键（iambic 自动键，实时发报）"],
     ],
     s.keyMode,
     (keyMode) => host.updateSettings({ keyMode }),
@@ -241,7 +243,7 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
           : [
               el("div", {
                 class: "hint",
-                text: "文本框模式不使用电键：在操作面板输入报文，按「发送」由电台按当前速度自动拍发。",
+                text: "报文模式不使用电键：在操作面板输入报文，按「发送」由电台按当前速度自动拍发。",
               }),
             ]),
     ),

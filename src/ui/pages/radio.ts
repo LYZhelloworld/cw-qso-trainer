@@ -5,18 +5,19 @@ import { renderSMeter } from "../smeter.js";
 import type { AppHost } from "../app.js";
 
 /**
- * The dial, written the way a rig writes it: MHz . kHz . Hz, so the digits you
- * actually work with (the kHz) keep the same place in the number whether you
- * are on 7 MHz or 28 MHz.
+ * The dial, written the way a rig writes it: MHz . kHz . tens of Hz, so the
+ * digits you actually work with (the kHz) keep the same place in the number
+ * whether you are on 7 MHz or 28 MHz. The last group counts **10 Hz** — the
+ * finest step the dial can be tuned in — so it is two digits wide and reads
+ * like a rig's last digit.
  *
- * `14.025` → `14.025.000`
+ * `14.025` → `14.025.00`, `14.0274` → `14.027.40`
  */
 export function formatDial(freqMHz: number): string {
-  const digits = String(Math.round(freqMHz * 1e6)).padStart(7, "0");
-  const hz = digits.slice(-3);
-  const khz = digits.slice(-6, -3);
-  const mhz = digits.slice(0, -6);
-  return `${mhz}.${khz}.${hz}`;
+  const tens = Math.round(freqMHz * 1e5); // dial in units of 10 Hz
+  const hz10 = String(tens % 100).padStart(2, "0");
+  const khz = String(Math.floor(tens / 100) % 1000).padStart(3, "0");
+  return `${Math.floor(tens / 1e5)}.${khz}.${hz10}`;
 }
 
 /**
@@ -79,8 +80,8 @@ function dial(host: AppHost): HTMLElement {
  *
  * Nothing else is here on purpose. Tuning is done where the band is visible —
  * the wheel over the panadapter (see `Waterfall`) — so the strip carries no
- * knobs: a row of ±1 kHz / ±100 Hz buttons only put a second, worse way to
- * tune next to the one you already have.
+ * knobs: a row of ±Hz buttons only put a second, worse way to tune next to the
+ * one you already have.
  */
 function controls(host: AppHost): HTMLElement {
   const bandIndex = Math.min(Math.max(host.settings.bandIndex, 0), BANDS.length - 1);

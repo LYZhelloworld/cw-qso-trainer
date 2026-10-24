@@ -162,7 +162,7 @@ describe("App 外壳", () => {
 
     expect(app.session).not.toBe(before);
     expect(app.session.freqMHz).toBe(7.025);
-    expect(root.querySelector(".dial-digits")?.textContent).toBe("7.025.000");
+    expect(root.querySelector(".dial-digits")?.textContent).toBe("7.025.00");
     expect(root.querySelector(".rig .rig-band")?.textContent).toBe("40m");
   });
 
@@ -174,6 +174,16 @@ describe("App 外壳", () => {
 
     expect(app.session).toBe(before);
     expect(app.session.freqMHz).toBe(14.026);
+  });
+
+  it("调谐精度是 10 Hz：一格就改读数最后那一位", () => {
+    const { app, root } = mountApp();
+    app.setPower(true);
+
+    app.tuneTo(14_025_010);
+
+    expect(app.settings.freqMHz).toBe(14.02501);
+    expect(root.querySelector(".dial-digits")?.textContent).toBe("14.025.01");
   });
 
   it("电台面板的模式标签显示 CW 边带（40m 及以下 CW-L，20m 及以上 CW-U）", () => {
@@ -417,7 +427,7 @@ describe("安全渲染页面边界", () => {
   });
 });
 
-describe("发送框（文本框模式）", () => {
+describe("发送框（报文模式）", () => {
   /** The operating screen, powered up and in text mode. */
   function textMode(): { app: App; root: HTMLElement } {
     const { app, root } = mountApp();
@@ -446,14 +456,17 @@ describe("发送框（文本框模式）", () => {
     expect(root.querySelector(".send-bar textarea")).toBeNull();
   });
 
-  it("文本框模式与电键模式都留发送条，别的页面不留空条", () => {
+  it("报文模式与电键模式都留发送条，别的页面不留空条", () => {
     const { app, root } = mountApp();
     app.setPower(true);
-    // 默认直键：底部是只读回显框，和文本框模式占同一条位置。
+    // 默认报文模式：底部是可编辑的输入框，和电键模式的回显框占同一条位置。
     expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(false);
+    expect(root.querySelector(".send-bar .send-input")).not.toBeNull();
+    expect(root.querySelector(".send-bar .send-echo")).toBeNull();
 
-    app.updateSettings({ keyMode: "text" });
+    app.updateSettings({ keyMode: "straight" });
     expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(false);
+    expect(root.querySelector(".send-bar .send-echo")).not.toBeNull();
 
     app.go("log");
     expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(true);

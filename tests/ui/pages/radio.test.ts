@@ -85,16 +85,23 @@ afterEach(() => {
 });
 
 describe("频率读数", () => {
-  it("按 MHz.kHz.Hz 分组，kHz 的位置不随波段变化", () => {
-    expect(formatDial(14.025)).toBe("14.025.000");
-    expect(formatDial(7.025)).toBe("7.025.000");
-    expect(formatDial(28.0251)).toBe("28.025.100");
+  it("按 MHz.kHz.十赫兹 分组，kHz 的位置不随波段变化", () => {
+    expect(formatDial(14.025)).toBe("14.025.00");
+    expect(formatDial(7.025)).toBe("7.025.00");
+    expect(formatDial(28.0251)).toBe("28.025.10");
+  });
+
+  it("最后一位是 10 Hz：1 Hz 的零头不显示", () => {
+    // 拨轮最小一格就是 10 Hz，读数也就只到这里。
+    expect(formatDial(14.0274)).toBe("14.027.40");
+    expect(formatDial(14.02741)).toBe("14.027.41");
+    expect(formatDial(14.02740999)).toBe("14.027.41");
   });
 
   it("画面上频率水平居中，单位是 MHz", () => {
     const { root } = makeHost({ bandIndex: 1, freqMHz: 14.025 });
     const dial = root.querySelector(".dial")!;
-    expect(dial.querySelector(".dial-digits")?.textContent).toBe("14.025.000");
+    expect(dial.querySelector(".dial-digits")?.textContent).toBe("14.025.00");
     expect(dial.querySelector(".dial-unit")?.textContent).toBe("MHz");
     // 居中靠版面而不是靠内容：读数块本身是整行居中的一行。
     expect(dial.className).toContain("dial");
@@ -115,7 +122,7 @@ describe("电台页 — 电源", () => {
     const { root } = makeHost({}, false);
 
     expect(root.querySelector(".console.off")).not.toBeNull();
-    expect(root.querySelector(".dial-digits")?.textContent).toBe("14.025.000");
+    expect(root.querySelector(".dial-digits")?.textContent).toBe("14.025.00");
     expect(root.querySelector(".band-tabs")).toBeNull();
     expect(root.querySelector(".send-input")).toBeNull();
     // 开台按钮与待机窗都在机头/瀑布图那边，不在这一页里重复。

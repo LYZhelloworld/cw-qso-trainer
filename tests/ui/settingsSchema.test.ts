@@ -44,6 +44,14 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ iambicMode: "X" }).iambicMode).toBe("A");
   });
 
+  it("sends in message mode by default, and keeps any of the three modes", () => {
+    expect(DEFAULT_SETTINGS.keyMode).toBe("text");
+    expect(normalizeSettings({}).keyMode).toBe("text");
+    expect(normalizeSettings({ keyMode: "straight" }).keyMode).toBe("straight");
+    expect(normalizeSettings({ keyMode: "iambic" }).keyMode).toBe("iambic");
+    expect(normalizeSettings({ keyMode: "bogus" }).keyMode).toBe("text");
+  });
+
   it("边带不存设置：它属于波段，旧版本留下的 cwSideband 会被丢掉", () => {
     const settings = normalizeSettings({ cwSideband: "USB" });
     expect("cwSideband" in settings).toBe(false);
