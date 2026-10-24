@@ -37,7 +37,8 @@
 - QSO 状态机：7 状态 + 转移，消费 `ParsedMessage`（见 [通联过程](./QSO-PROTOCOL.md)）
 
 必须实现并测试的逻辑：
-- 状态机本身对「超时」的确定性转移。当前实现分两处：**HAM 持续呼叫的节奏由波段层调度**（`ham/activity`，台不再有"3 分钟无应答下线"）；而「首次呼叫 15 秒无应答」「发出报文后 5 秒重发」只有状态机侧的钩子（`timeoutFirstCall` / `timeoutResend` / `hamOffline`，有测试覆盖），**尚未接入应用流程**——现流程里对方的回复是在解析用户那一行的同时生成的，没有"等对方开口"的时间窗。
+- 状态机本身对「超时」的确定性转移。当前实现分三层：**HAM 持续呼叫的节奏由波段层调度**（`ham/activity`，台不再有"3 分钟无应答下线"）；**用户与对方之间的等待由会话的两个时钟推进**（`src/ui/sessionPatience.ts`）——自己呼叫后频段安静满 15 秒即收回（`Patience.expireOwnCq`），对方发完一句等 10 秒、重发 2 次仍无人应即放弃（`Patience.servicePartnerWait`）；状态机只保留 `timeoutFirstCall` / `timeoutResend` / `hamOffline` 这三个确定性钩子作为语义接口，由上面两处以注入的时钟调用，不自己持有定时器。
+- 因此「对方发完一句就等你」是有时间窗的：解析用户那一行的同时生成回复，随后由 `servicePartnerWait` 计时，超时重发、再超时结束这次通联。
 
 测试用例（重点，验证"用户输入宽容"基线，参考真实 CW 通联）：
 - 正常流：用户确认的 6 行序列（CQ → HAM 应答 → 用户 R+RST+BK → HAM R+RST+BK → 用户 R+TU73SK → HAM R+TU73SK）

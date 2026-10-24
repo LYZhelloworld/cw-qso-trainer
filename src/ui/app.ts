@@ -271,8 +271,9 @@ export class App implements AppHost {
     // Resume a QSO that a refresh interrupted; never clobber a live one.
     if (on && !this.session.inQso) this.session.restoreStaging();
     this.applyReceiving();
-    // The panadapter is part of the receiver: it scrolls when we are listening
-    // and freezes (keeping its history) when we are not.
+    // The panadapter is part of the receiver: it scrolls while we are listening,
+    // and goes blank when we are not — a receiver that has just been switched on
+    // has no history (see `waterfall.reset`), so no stale trace is kept.
     this.waterfall?.setActive(on);
     this.refresh();
   }

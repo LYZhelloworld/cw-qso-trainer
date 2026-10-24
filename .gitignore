@@ -1,6 +1,3 @@
-# Project-specific (kept from before)
-.workbuddy/
-
 # Node / build tooling
 node_modules/
 dist/
