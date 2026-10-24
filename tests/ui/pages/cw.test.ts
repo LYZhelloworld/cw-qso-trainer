@@ -67,9 +67,10 @@ afterEach(() => {
 });
 
 describe("三种发报模式", () => {
-  it("默认直键模式有电键面板，底部是只读回显框，没有发送按钮", () => {
+  it("直键模式沿用文本框模式的版面，底部是只读回显框", () => {
     const { root } = makeHarness();
-    expect(root.textContent).toContain("发报（直键，实时）");
+    // 页面内容区的文字全部来自机头与瀑布图，这一段只挂回显框。
+    expect(root.textContent).toBe("");
     const echo = root.querySelector<HTMLElement>(".send-echo");
     expect(echo).not.toBeNull();
     // 末尾有块状光标，框本身不是可编辑控件。
@@ -81,17 +82,17 @@ describe("三种发报模式", () => {
     ).not.toContain("发送");
   });
 
-  it("文本模式只有发送框，没有电键面板", () => {
+  it("文本模式只有发送框，底部没有回显框", () => {
     const { root } = makeHarness({ keyMode: "text" });
     expect(root.querySelector<HTMLInputElement>(".send-input")).not.toBeNull();
     expect(root.textContent).toContain("发送");
-    expect(root.textContent).not.toContain("发报（直键");
-    expect(root.textContent).not.toContain("发报（iambic");
+    expect(root.querySelector(".send-echo")).toBeNull();
   });
 
-  it("iambic 模式显示双桨面板和只读回显框", () => {
+  it("iambic 模式沿用同一版面，回显框照旧在", () => {
     const { root } = makeHarness({ keyMode: "iambic" });
-    expect(root.textContent).toContain("发报（iambic 双桨，实时）");
+    // 键名与侧音都属于设置页；页面上一个字都不该出现，这里一并守住。
+    expect(root.textContent).toBe("");
     expect(root.querySelector(".send-echo")).not.toBeNull();
   });
 });
@@ -257,13 +258,6 @@ describe("CW 页 iambic 双桨输入", () => {
     expect(pending()).toBe("");
   });
 
-  it("iambic 模式下展示双桨键位提示", () => {
-    const { root } = makeHarness(IAMBIC);
-    expect(root.textContent).toContain("点键「KeyZ」");
-    expect(root.textContent).toContain("划键「KeyX」");
-    expect(root.textContent).toContain("发报（iambic 双桨，实时）");
-  });
-
   it("发报途中页面被重绘（离开 / 换页）：载波落下，不会卡在发射状态", async () => {
     const { host, session } = makeHarness(IAMBIC);
 
@@ -271,7 +265,7 @@ describe("CW 页 iambic 双桨输入", () => {
     await vi.waitFor(() => expect(session.isTransmitting).toBe(true), { interval: 10 });
     expect(session.isSending).toBe(true);
 
-    // 重绘会拆掉电键面板：没有面板来发 key-up 了，载波必须由这里放下。
+    // 重绘会跑掉页面注册的清理钩子：没有键控逻辑来发 key-up 了，载波必须由这里放下。
     host.refresh();
 
     expect(session.isTransmitting).toBe(false);
@@ -395,7 +389,7 @@ describe("CW 页 iambic 双桨输入", () => {
   });
 
   it("直键模式下 iambic 键位不生效", async () => {
-    const { root, session } = makeHarness({ keyMode: "straight", dotCode: "KeyZ", wpm: 20 });
+    const { session } = makeHarness({ keyMode: "straight", dotCode: "KeyZ", wpm: 20 });
 
     press("KeyZ");
     await sleep(70);
@@ -403,7 +397,6 @@ describe("CW 页 iambic 双桨输入", () => {
     await sleep(400);
 
     expect(sent(session)).toEqual([]);
-    expect(root.textContent).toContain("发报（直键，实时）");
   });
 });
 

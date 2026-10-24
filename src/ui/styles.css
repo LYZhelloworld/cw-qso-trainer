@@ -190,11 +190,6 @@ textarea:focus {
   font-size: 12px;
 }
 
-/* Key down: the pad lights up instead of drawing a frame around itself. */
-.key-area.active {
-  background: rgba(56, 189, 248, 0.07);
-}
-
 table.log {
   width: 100%;
   border-collapse: collapse;
@@ -267,30 +262,6 @@ table.log input {
 .console.off {
   flex: 1 1 auto;
   align-content: center;
-}
-
-/* The key pad, with no card around it: the operator's eye is on the dial and
-   the display, and a bordered box in between them only pushed the picture of
-   the band further down the screen. */
-.key-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  border-radius: 6px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 12px;
-  user-select: none;
-}
-
-.key-head {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 1.5px;
-  color: var(--muted);
-  text-align: center;
 }
 
 .footer {

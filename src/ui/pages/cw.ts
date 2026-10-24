@@ -199,7 +199,12 @@ function renderEchoBar(bar: HTMLElement): {
   };
 }
 
-/** Straight key / paddles: key the over live, no send box — only its echo. */
+/**
+ * Straight key / paddles: key the over live. The bar under the panadapter is
+ * the one text mode types into, read-only, so all three modes share one layout
+ * — dial, band strip, bar. The panel itself is pure wiring (keyboard → rig →
+ * echo); the rest of this function is the missing-callsign notice.
+ */
 function renderLiveKeyPanel(
   host: AppHost,
   root: HTMLElement,
@@ -213,7 +218,7 @@ function renderLiveKeyPanel(
   // empties once the over has gone to the band.
   const echo = renderEchoBar(host.sendBar ?? root);
 
-  const keyPanel = renderKeyPanel({
+  renderKeyPanel({
     settings: host.settings,
     onLeave: (fn) => host.onLeave(fn),
     onBegin: () => session.beginLiveKeying(),
@@ -236,12 +241,4 @@ function renderLiveKeyPanel(
   });
 
   if (warnings.length) root.append(panel("提示", ...warnings));
-  // No card around the key pad: it is a control surface, not a form, and the
-  // box only stood between the dial and the display. No caption under it
-  // either — how the rig behaves is something the RX/TX badge and the meter
-  // already say, and a paragraph there only pushed the panadapter down.
-  root.append(
-    el("h2", { class: "key-head", text: keyPanel.title }),
-    keyPanel.node,
-  );
 }
