@@ -52,6 +52,11 @@ function makeSession(pace: (ms: number) => Promise<void> = async () => {}) {
   };
 }
 
+/** `keyHeld` lives on the transmitter; the test needs to see it directly. */
+function keyHeldOf(session: QsoSession): boolean {
+  return (session as unknown as { keying: { keyHeld: boolean } }).keying.keyHeld;
+}
+
 describe("实时键控（直键 / 双桨）", () => {
   it("第一个键按下就上机：发射中、接收机失聪", () => {
     const { session, band } = makeSession();
@@ -163,6 +168,8 @@ describe("实时键控（直键 / 双桨）", () => {
     expect(session.isTransmitting).toBe(false);
     expect(session.isReceiving).toBe(true);
     expect(band.transmitting.at(-1)).toBe(false);
+    // 载波落下时键不可能还按着：keyHeld 不能残留 true
+    expect(keyHeldOf(session)).toBe(false);
     // 没有留下"永远在发"的锁：再敲一次仍然能上机
     expect(session.beginLiveKeying()).toBe(true);
   });
@@ -178,6 +185,7 @@ describe("实时键控（直键 / 双桨）", () => {
     expect(session.isTransmitting).toBe(false);
     expect(session.isReceiving).toBe(true);
     expect(band.transmitting.at(-1)).toBe(false);
+    expect(keyHeldOf(session)).toBe(false);
     expect(session.beginLiveKeying()).toBe(true);
   });
 

@@ -616,9 +616,9 @@ export class QsoSession implements SessionContext {
    */
   async finishLiveKeying(text: string): Promise<void> {
     if (this.keying.keyHeld) this.keying.keyUp();
-    const epoch = this.keying.currentEpoch;
     const line = text.trim().toUpperCase();
     if (!this.keying.isSending) return;
+    const epoch = this.keying.currentEpoch;
 
     try {
       if (line) this.push("me", line);
@@ -1028,27 +1028,25 @@ export class QsoSession implements SessionContext {
 
   private handleActivity(events: HamActivityEvent[]): void {
     for (const e of events) {
-      // Two ways to put this burst on the air, and both of them key it:
-      // `hamCallsCq` records it with the machine's own wording and opens the
-      // exchange, `noteCq` records it as a plain CQ. The choice below is only
-      // about whether the *exchange* is open to this station — never about
-      // whether the station transmits. Recording without keying is exactly how
-      // a signal ends up drawn on the waterfall and silent in the speaker.
+      // Two ways to put this burst on the air: `hamCallsCq` records it with the
+      // machine's own wording and opens the exchange, `noteCq` records it as a
+      // plain CQ. The branch below only decides whether the *exchange* is open
+      // to this station.
       //
-      // Powered down, half-duplex, outside the passband, or busy with another
-      // contact: the CQ is still keyed onto its carrier. The audio layer
-      // decides what reaches the speaker (filter, mute, half-duplex) and the
-      // band keeps its own rhythm either way.
-      // The operator's carrier is up: the band stands by rather than keying a
-      // CQ that would only be cut a moment later. The station keeps its place
-      // and calls again after a listening gap.
+      // While the operator's carrier is up, the band stands by: the station is
+      // re-timed after a listening gap instead of keying a CQ that would be cut
+      // a moment later.
+      //
+      // Otherwise — powered down, outside the passband, or busy with another
+      // contact — the CQ is still keyed onto its carrier; the audio layer
+      // decides what reaches the speaker (filter, mute) and the band keeps its
+      // own rhythm either way.
       if (this.keying.isTransmitting) {
         this.band.scheduleNextCq(e.ham.call, nextCqGapMs(this.rng));
         continue;
       }
       if (
         !this.receiving ||
-        this.keying.isTransmitting ||
         !this.canHear(e.ham) ||
         this.deafToNewCalls(e.ham)
       ) {
@@ -1082,10 +1080,11 @@ export class QsoSession implements SessionContext {
    * the session knows how long a message takes, so the band's scheduler cannot
    * work this out on its own.
    *
-   * Keyed unconditionally — the band does not go quiet because of what this
-   * receiver happens to be doing. Whether it reaches the speaker is the audio
-   * layer's call (filter, mute, half-duplex), and whether it opens an exchange
-   * is `deafToNewCalls`'s.
+   * Keyed whenever this is called: the band does not go quiet because the rig is
+   * off or busy with another contact. Whether it reaches the speaker is the
+   * audio layer's call (filter, mute), and whether it opens an exchange is
+   * `deafToNewCalls`'s. While the operator's own carrier is up, `handleActivity`
+   * stands the station by instead of calling this.
    */
   private noteCq(ham: VirtualHam): Tx {
     const text = `CQ CQ CQ DE ${ham.call} ${ham.call} PSE K`;
