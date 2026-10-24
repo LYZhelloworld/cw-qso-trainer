@@ -19,7 +19,7 @@
  */
 
 import { DxccDatabase, type DxccEntity } from "../data/dxcc.js";
-import { extractLetterPrefix, validateCallsign } from "../message/parse.js";
+import { validateCallsign } from "../message/parse.js";
 import { VirtualHam, type Difficulty, type HamRole } from "./virtualHam.js";
 import { S9_STRENGTH, strengthForSUnit } from "./smeter.js";
 import {
@@ -202,6 +202,26 @@ function buildCall(
   return `${prefix}${regionDigit}${randomSuffix(rng, suffixLen)}`;
 }
 
+/**
+ * The entity the operator's own callsign belongs to.
+ *
+ * The digit is part of the prefix: `B5` is China, while keeping only the
+ * leading letters leaves `B` — and the first token in the table that starts
+ * with `B` is Spratly's `BM9S`, which puts a Chinese operator on the wrong side
+ * of the South China Sea. Walk the call from the longest prefix down and take
+ * the first one the table knows. That is the same longest-match rule the table
+ * itself is built on, and it fixes B5/B7 as well as A5/E7/S5/T7/Z3 without any
+ * per-country special case.
+ */
+export function resolveUserEntity(myCall: string, db: DxccDatabase): DxccEntity | null {
+  const base = myCall.split("/")[0];
+  for (let len = base.length; len > 0; len -= 1) {
+    const marker = db.resolvePrefix(base.slice(0, len));
+    if (marker) return db.entity(marker) ?? null;
+  }
+  return null;
+}
+
 export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
   const rng = opts.rng ?? Math.random;
   const difficulty = opts.difficulty ?? pickDifficulty(rng);
@@ -215,9 +235,7 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
   const freqHz = () => (role === "answerer" ? 0 : placeFreq(referenceHz, spreadHz, atHz, rng));
 
   // User context (QTH ≈ centroid of the user's own DXCC entity).
-  const uLetterPrefix = extractLetterPrefix(opts.myCall);
-  const uEntityMarker = db.resolvePrefix(uLetterPrefix);
-  const uEnt = uEntityMarker ? db.entity(uEntityMarker) : undefined;
+  const uEnt = resolveUserEntity(opts.myCall, db) ?? undefined;
   const uRegionDigit = (opts.myCall.match(/[0-9]/) ?? [])[0] ?? null;
   const uContinent = uEnt?.continent ?? null;
   const uQth = uEnt ? { lat: uEnt.lat, lon: uEnt.lon } : { lat: 0, lon: 0 };
