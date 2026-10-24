@@ -91,6 +91,7 @@ describe("三种发报模式", () => {
 
   it("iambic 模式沿用同一版面，回显框照旧在", () => {
     const { root } = makeHarness({ keyMode: "iambic" });
+    // 键名与侧音都属于设置页；页面上一个字都不该出现，这里一并守住。
     expect(root.textContent).toBe("");
     expect(root.querySelector(".send-echo")).not.toBeNull();
   });
@@ -255,13 +256,6 @@ describe("CW 页 iambic 双桨输入", () => {
     // 字符间隔过后，符号被解成 E。
     await vi.waitFor(() => expect(text()).toBe("E"), { timeout: 2000, interval: 20 });
     expect(pending()).toBe("");
-  });
-
-  it("iambic 的键位只存在于设置里，不出现在版面上", () => {
-    const { root } = makeHarness(IAMBIC);
-    // 键名是设置项，页面只管波段与报文。
-    expect(root.textContent).not.toContain("KeyZ");
-    expect(root.textContent).not.toContain("KeyX");
   });
 
   it("发报途中页面被重绘（离开 / 换页）：载波落下，不会卡在发射状态", async () => {
