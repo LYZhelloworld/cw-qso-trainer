@@ -200,10 +200,10 @@ function renderEchoBar(bar: HTMLElement): {
 }
 
 /**
- * Straight key / paddles: key the over live. Nothing is mounted on the
- * operating page — the panel is pure wiring (keyboard → rig → echo) — so the
- * page looks exactly as it does in text mode: dial, band strip, and the bar
- * under the panadapter, which is the same box, read-only.
+ * Straight key / paddles: key the over live. The bar under the panadapter is
+ * the one text mode types into, read-only, so all three modes share one layout
+ * — dial, band strip, bar. The panel itself is pure wiring (keyboard → rig →
+ * echo); the rest of this function is the missing-callsign notice.
  */
 function renderLiveKeyPanel(
   host: AppHost,
@@ -241,8 +241,4 @@ function renderLiveKeyPanel(
   });
 
   if (warnings.length) root.append(panel("提示", ...warnings));
-  // Nothing else goes on the page: no heading, no key list, no sidetone
-  // readout. The bar under the panadapter is the operator's message in all
-  // three modes, and how the rig behaves is already said by the RX/TX badge
-  // and the meter — captions here only pushed the panadapter down.
 }

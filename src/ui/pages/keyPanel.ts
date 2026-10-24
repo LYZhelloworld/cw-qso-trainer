@@ -6,11 +6,10 @@ import type { AppSettings } from "../settingsSchema.js";
 /**
  * The keying panel: straight key or iambic paddles, keyed in real time.
  *
- * **It draws nothing.** There is no heading, no key-list, no sidetone readout:
- * the operator's message lives in the same bar the text mode types into, under
- * the panadapter (`onEcho`), and how the rig is behaving is already said by the
- * RX/TX badge and the meter. A caption above the panadapter only pushed the
- * display down and repeated what the panel could not tell you anyway.
+ * Wiring rather than a widget: it listens to the keyboard and reports to the
+ * session. Everything the operator sees while keying belongs to the rig around
+ * it — the message fills the same bar the text mode types into (`onEcho`), and
+ * the key phases show up in the RX/TX badge, the meter and the panadapter.
  *
  * This is not a text-entry widget. In the two key modes the operator is on the
  * air from the first element: the panel asks the session to open the carrier
@@ -59,10 +58,7 @@ export interface KeyPanelOptions {
  */
 const OVER_IDLE_MS = 1500;
 
-/**
- * Wire a key to the rig. Nothing is returned: the panel has no chrome to mount,
- * and the session owns every visible consequence of keying.
- */
+/** Wire a key to the rig; what it shows goes through the session, not a node. */
 export function renderKeyPanel(opts: KeyPanelOptions): void {
   const { settings, onLeave } = opts;
   const useIambic = settings.keyMode === "iambic";

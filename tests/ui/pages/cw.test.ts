@@ -67,9 +67,9 @@ afterEach(() => {
 });
 
 describe("三种发报模式", () => {
-  it("直键模式不在操作屏上留文案，只有底部的只读回显框，没有发送按钮", () => {
+  it("直键模式沿用文本框模式的版面，底部是只读回显框", () => {
     const { root } = makeHarness();
-    // 与文本框模式同一块版面：拨轮、波段细带之外不再有标题、键位说明或侧音读数。
+    // 页面内容区的文字全部来自机头与瀑布图，这一段只挂回显框。
     expect(root.textContent).toBe("");
     const echo = root.querySelector<HTMLElement>(".send-echo");
     expect(echo).not.toBeNull();
@@ -82,14 +82,14 @@ describe("三种发报模式", () => {
     ).not.toContain("发送");
   });
 
-  it("文本模式只有发送框，没有电键面板", () => {
+  it("文本模式只有发送框，底部没有回显框", () => {
     const { root } = makeHarness({ keyMode: "text" });
     expect(root.querySelector<HTMLInputElement>(".send-input")).not.toBeNull();
     expect(root.textContent).toContain("发送");
     expect(root.querySelector(".send-echo")).toBeNull();
   });
 
-  it("iambic 模式同样不留文案，回显框照旧在", () => {
+  it("iambic 模式沿用同一版面，回显框照旧在", () => {
     const { root } = makeHarness({ keyMode: "iambic" });
     expect(root.textContent).toBe("");
     expect(root.querySelector(".send-echo")).not.toBeNull();
@@ -257,10 +257,11 @@ describe("CW 页 iambic 双桨输入", () => {
     expect(pending()).toBe("");
   });
 
-  it("iambic 模式也不在版面上留键位提示", () => {
+  it("iambic 的键位只存在于设置里，不出现在版面上", () => {
     const { root } = makeHarness(IAMBIC);
-    // 键位在设置里配，版面上重复一遍只会把瀑布图往下挤。
-    expect(root.textContent).toBe("");
+    // 键名是设置项，页面只管波段与报文。
+    expect(root.textContent).not.toContain("KeyZ");
+    expect(root.textContent).not.toContain("KeyX");
   });
 
   it("发报途中页面被重绘（离开 / 换页）：载波落下，不会卡在发射状态", async () => {
