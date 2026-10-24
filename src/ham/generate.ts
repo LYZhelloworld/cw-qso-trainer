@@ -11,8 +11,9 @@
  *        CAT5 (  1): everything else.
  *   2. Within the chosen category, pick an entity/prefix and build the call.
  *
- * The user's QTH is approximated by the centroid of their own callsign's DXCC
- * entity (see the dxcc.json coordinate_note). The "region digit" is scoped to
+ * The user's QTH is the centroid of their callsign's DXCC entity — the dataset
+ * carries one point per entity, so distances are rough inside a large country.
+ * The "region digit" is scoped to
  * the entity (it does not cross countries), per VIRTUAL-HAM.md. The suffix is
  * purely random. An injectable RNG keeps generation deterministic in tests.
  */
@@ -91,11 +92,15 @@ export function haversineKm(
 /** Letter prefixes of an entity that fit CALL_RE (1-2 letters, resolve back). */
 function entityPrefixes(ent: DxccEntity, db: DxccDatabase): string[] {
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const p of ent.prefixes) {
     const letterPrefix = p.replace(/[0-9].*$/, "");
-    if (/^[A-Z]{1,2}$/.test(letterPrefix) && db.resolvePrefix(letterPrefix) === ent.dxcc) {
-      out.push(letterPrefix);
-    }
+    if (!/^[A-Z]{1,2}$/.test(letterPrefix) || seen.has(letterPrefix)) continue;
+    seen.add(letterPrefix);
+    // The dataset lists whole callsign ranges (`BG7A`, `BG9X`) that all strip to
+    // the same letter prefix; keeping one of each stops a single prefix from
+    // crowding out the rest of the entity's allocation.
+    if (db.resolvePrefix(letterPrefix) === ent.dxcc) out.push(letterPrefix);
   }
   return out;
 }

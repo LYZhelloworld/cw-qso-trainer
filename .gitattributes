@@ -1,0 +1,3 @@
+# cty.dat is upstream data: keep its bytes (including CRLF) out of line-ending
+# normalisation so the checksum printed by "npm run update:cty" matches the published file.
+data/cty.dat -text

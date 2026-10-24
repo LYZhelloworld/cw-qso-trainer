@@ -1,18 +1,15 @@
-import dxccJson from "../../data/dxcc.json";
+import ctyRaw from "../../data/cty.dat?raw";
+import { parseCty } from "./cty.js";
 
 export interface DxccEntity {
   dxcc: string;
   lat: number;
   lon: number;
   prefixes: string[];
-  /** Continent approximated from lat/lon (coarse; for the trainer's weighting). */
   continent: string;
 }
 
 export interface DxccData {
-  source: string;
-  coordinate_note: string;
-  count: number;
   entities: Record<string, DxccEntity>;
 }
 
@@ -20,11 +17,15 @@ export interface DxccData {
  * DXCC dataset access. Builds an in-memory prefix -> DXCC-marker index and
  * answers "is this letter prefix valid?" queries used by callsign validation.
  *
- * Matching rule (per MESSAGE-PARSING.md / QSO-PROTOCOL.md): a callsign's letter
- * prefix (letters before the first digit, operation suffix `/...` removed) is
- * valid if it equals some known prefix token exactly, OR is a head substring of
- * one (e.g. `B` is the head of `BA`/`BD`/`BG`/...). We only validate format —
- * we never record or expose which country/region a prefix belongs to.
+ * The dataset is `data/cty.dat` parsed at module load. Its prefix entries are
+ * callsign *starts*: the United States is listed as `AA`–`AK`, `K`, `N`, `W`
+ * and nothing else, because `KA`/`WA`/`N6` are already covered by `K`/`W`/`N`.
+ * So a letter prefix is valid when it equals a token, when a token extends it
+ * (`B` → `BA`), or when it extends a token (`KA` → `K`). Checking only the
+ * first direction would reject real callsigns such as KA1ABC.
+ *
+ * We only validate format — we never record or expose which country or region
+ * a prefix belongs to.
  */
 export class DxccDatabase {
   private readonly entities: Record<string, DxccEntity>;
@@ -34,7 +35,8 @@ export class DxccDatabase {
     this.entities = data.entities;
     for (const [marker, entity] of Object.entries(this.entities)) {
       for (const prefix of entity.prefixes) {
-        // First marker wins; all real prefixes map unambiguously for validation.
+        // First marker wins: the format expects a top-to-bottom scan and says a
+        // duplicate callsign encountered later is simply ignored.
         if (!this.prefixToMarker.has(prefix)) {
           this.prefixToMarker.set(prefix, marker);
         }
@@ -42,21 +44,27 @@ export class DxccDatabase {
     }
   }
 
-  /** All known prefix tokens (for head-substring matching). */
+  /** All known prefix tokens (for prefix matching). */
   get allPrefixes(): readonly string[] {
     return [...this.prefixToMarker.keys()];
   }
 
   /**
-   * Resolve a letter prefix to a DXCC marker, or null if it matches nothing.
-   * Exact match first, then head-substring (some known prefix starts with it).
+   * Resolve a letter prefix to a DXCC marker, or null if it matches nothing:
+   * exact token, then a token that starts with it, then a token it starts with.
    */
   resolvePrefix(letterPrefix: string): string | null {
     const lp = letterPrefix.toUpperCase();
+    if (!lp) return null;
+
     const exact = this.prefixToMarker.get(lp);
     if (exact !== undefined) return exact;
-    for (const token of this.prefixToMarker.keys()) {
-      if (token.startsWith(lp)) return this.prefixToMarker.get(token)!;
+
+    for (const [token, marker] of this.prefixToMarker) {
+      if (token.startsWith(lp)) return marker;
+    }
+    for (const [token, marker] of this.prefixToMarker) {
+      if (lp.startsWith(token)) return marker;
     }
     return null;
   }
@@ -76,5 +84,5 @@ export class DxccDatabase {
   }
 }
 
-// Singleton built from the bundled dataset (data/dxcc.json).
-export const dxccDatabase = new DxccDatabase(dxccJson as unknown as DxccData);
+// Singleton built from the bundled dataset (data/cty.dat).
+export const dxccDatabase = new DxccDatabase(parseCty(ctyRaw));
