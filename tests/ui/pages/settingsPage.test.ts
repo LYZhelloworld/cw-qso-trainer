@@ -114,6 +114,20 @@ describe("设置页", () => {
     expect(warn?.textContent).toContain("不在 DXCC 表中");
   });
 
+  it("省份字母前缀配任意数字区都算已知（BD4AB 不该被警告）", () => {
+    const { root } = makeHost({ myCall: "" });
+    const input = fieldByLabel(root, "本方呼号").querySelector("input")!;
+
+    // 设置页交来的是「字母 + 数字区」(`BD4`)，表里给的是更宽的 `BD`——命中靠的是
+    // 「前缀以 token 开头」这一向，`BG7` 那种则靠「token 以前缀开头」。
+    input.value = "BD4AB";
+    input.dispatchEvent(new Event("input"));
+
+    expect(fieldByLabel(root, "本方呼号").querySelector(".ok-text")?.textContent).toBe(
+      "呼号格式正确",
+    );
+  });
+
   it("表外前缀（如 QQ7）仍可用于练习，仅提示 .warn 而非错误", () => {
     const { root } = makeHost({ myCall: "" });
     const input = fieldByLabel(root, "本方呼号").querySelector("input")!;
