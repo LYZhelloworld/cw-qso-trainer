@@ -63,9 +63,9 @@ export interface QsoMachineOptions {
  * Timer semantics are modelled explicitly rather than with real timers, so the
  * logic stays deterministic and unit-testable. The 「超时」 hooks below are that
  * deterministic *interface*; the session owns the clock that drives them:
- * `timeoutFirstCall` is mirrored by `QsoSession.expireOwnCq`, and
- * `timeoutResend` by `QsoSession.servicePartnerWait` — the partner repeating
- * itself when the operator stays silent, then giving up.
+ * `timeoutFirstCall` is mirrored by `Patience.expireOwnCq` and `timeoutResend`
+ * by `Patience.servicePartnerWait` (both in `src/ui/sessionPatience.ts`) — the
+ * partner repeating itself when the operator stays silent, then giving up.
  */
 export class QsoMachine {
   state: QsoState = "IDLE";

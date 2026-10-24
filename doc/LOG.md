@@ -50,15 +50,17 @@
 
 ### 存储方案
 
-- Web：IndexedDB（日志） + localStorage（设置）
-- Tauri：SQLite 或 JSON 文件
+- 日志：IndexedDB（`src/ui/storage/logStore.ts`）
+- 设置：localStorage，单键 JSON（`src/ui/storage/settingsStore.ts`）
+- 未完成的一次通联：localStorage 暂存（`src/ui/storage/qsoStaging.ts`）
+- 两端**跑的是同一套 Web 存储**，没有原生侧数据库：Tauri 版不写 Rust 存储代码，只用 `src-tauri/tauri.conf.json` 的 `appDirectoriesOverride: "./app-data"` 把 WebView2 的数据目录（含 IndexedDB 与 localStorage）落到 exe 旁的 `app-data/`，所以把 exe 与该目录一起拷走即可带走全部设置与日志。
 
 ### 数据类型
 
 | 数据 | 存储 | 说明 |
 |---|---|---|
-| 用户设置 | localStorage / 配置文件 | 单键 JSON、整份覆盖 |
-| 日志 | IndexedDB / SQLite | 自增主键，可改可清，**无导出** |
+| 用户设置 | localStorage | 单键 JSON、整份覆盖 |
+| 日志 | IndexedDB | 自增主键，可改可清，**无导出** |
 | 未完成的一次通联 | localStorage（暂存） | 逐行写入，刷新可续；完成或失败即清除 |
 | 前缀表 `data/dxcc.json` | 静态资源 | 随应用打包，只读 |
 

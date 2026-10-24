@@ -6,8 +6,8 @@ import type { QsbOptions, QrmOptions, QrnOptions } from "./render.js";
  * Per AUDIO-ENVIRONMENT.md:
  *
  * | 等级   | 底噪 | QSB      | QRM/QRN | 接收不全 |
- * | 新手   | 低   | 无       | 无      | 0%       |
- * | 进阶   | 中   | 慢衰落   | 偶发    | 1%       |
+ * | 新手   | 无   | 无       | 无      | 0%       |
+ * | 进阶   | 低   | 慢衰落   | 偶发    | 1%       |
  * | 硬核   | 高   | 快衰落   | 较多    | 5%       |
  * | 自定义 | 可调 | 可调     | 可调    | 可调     |
  *
