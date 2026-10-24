@@ -9,7 +9,7 @@ export default defineConfig({
   cacheDir: ".vitest-cache",
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["tests/**/*.test.ts"],
   },
   server: {
     // `tauri dev` waits for this exact port. Failing loudly beats opening the
