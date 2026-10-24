@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { VirtualHam, MISS_PROBABILITY } from "../../src/ham/virtualHam.js";
 import { generateVirtualHam, haversineKm, resolveUserEntity } from "../../src/ham/generate.js";
 import { Frequency } from "../../src/ham/frequency.js";
-import { BAND_SIGNAL_SPREAD_HZ, SIGNAL_GRID_HZ } from "../../src/ham/spectrum.js";
+import { BAND_SIGNAL_SPREAD_HZ, SIGNAL_STEP_HZ } from "../../src/ham/spectrum.js";
 import { dxccDatabase } from "../../src/data/dxcc.js";
 
 /** Deterministic PRNG so distribution tests are reproducible. */
@@ -157,7 +157,7 @@ describe("Frequency", () => {
     expect(f.activityState()[0].ham).toBe(ham);
   });
 
-  it("波段上摆满台时也不会两台共用一个频率槽", () => {
+  it("波段上的台落在 10 Hz 网格上，不再对齐整千赫", () => {
     const f = new Frequency(14.0, dxccDatabase);
     const rng = mulberry32(99);
     for (let i = 0; i < 12; i += 1) f.spawnHam("BG7XXX", "novice", rng);
@@ -165,10 +165,13 @@ describe("Frequency", () => {
     const hams = f.listHams();
     expect(hams).toHaveLength(12);
     const freqs = hams.map((h) => h.freqHz);
+    // 同一位置不放两台（频率完全相同才算撞车）。
     expect(new Set(freqs).size).toBe(12);
     for (const hz of freqs) {
-      expect(hz % SIGNAL_GRID_HZ).toBe(0); // 都在 1 kHz 网格上
+      expect(hz % SIGNAL_STEP_HZ).toBe(0); // 都在 10 Hz 网格上
       expect(Math.abs(hz - 14_000_000)).toBeLessThanOrEqual(BAND_SIGNAL_SPREAD_HZ);
     }
+    // 12 台全部刚好落在整千赫上的概率是 (1/100)^12——实际为 0。
+    expect(freqs.some((hz) => hz % 1_000 !== 0)).toBe(true);
   });
 });

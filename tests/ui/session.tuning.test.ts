@@ -181,7 +181,7 @@ describe("CW 通带与裙边：出了通带先变弱，再消失", () => {
     await s.hamCallsCq(ham);
     expect(s.partnerToneHz()).toBe(700);
 
-    tuneBelow(s, ham, 1000); // 1 kHz 一步（40 m/20 m 都是这个步进）
+    tuneBelow(s, ham, 1000); // 整整 1 kHz：远超 500 Hz 通带
 
     expect(s.partnerDetuneHz()).toBe(1000); // 位置关系仍然读得出来
     expect(s.partnerInPassband()).toBe(false);

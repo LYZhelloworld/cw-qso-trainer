@@ -33,23 +33,28 @@ export const SPECTRUM_SPAN_HZ = 20_000;
 export const BAND_SIGNAL_SPREAD_HZ = 25_000;
 
 /**
- * Every station on a band sits on this grid (1 kHz).
+ * Where stations may sit: the 10 Hz grid the dial itself tunes in.
  *
- * Operators pick round frequencies — 7.010, 7.011, never 7.010.3 — and the
- * spacing has to be at least the receiver's CW passband (500 Hz, see
- * `ham/tuning`) or two stations would both fall inside it and interfere. 1 kHz
- * satisfies that with room to spare: tune onto any station and its neighbour is
- * already filtered out.
+ * Real operators do not land on round kilohertz — 14.025.43 is as ordinary a
+ * spot as 14.025.00 — so stations are scattered to the same resolution the
+ * receiver can tune. Two things follow, and both are deliberate:
+ *
+ *  - the panadapter shows blobs at arbitrary offsets, not a tidy comb;
+ *  - **no spacing is guaranteed**. Two stations can sit close enough to share
+ *    the passband, and then both are heard at once: the S-meter reads the
+ *    stronger one, and `Tuning.nearestUsable` treats the one closest to zero
+ *    beat as the partner. That is what a real band sounds like, and it is why
+ *    the operator zero-beats by ear instead of trusting the readout.
  */
-export const SIGNAL_GRID_HZ = 1_000;
+export const SIGNAL_STEP_HZ = 10;
 
-/** Snap a frequency onto the band's station grid (nearest 1 kHz). */
-export function snapToGrid(hz: number): number {
-  return Math.round(hz / SIGNAL_GRID_HZ) * SIGNAL_GRID_HZ;
+/** Snap a frequency onto the band's station grid (nearest 10 Hz). */
+export function snapToStep(hz: number): number {
+  return Math.round(hz / SIGNAL_STEP_HZ) * SIGNAL_STEP_HZ;
 }
 
-/** How many grid slots fit in ±`BAND_SIGNAL_SPREAD_HZ`. */
-export const SIGNAL_GRID_SLOTS = Math.floor(BAND_SIGNAL_SPREAD_HZ / SIGNAL_GRID_HZ);
+/** How many 10 Hz steps fit in ±`BAND_SIGNAL_SPREAD_HZ`. */
+export const SIGNAL_STEP_SLOTS = Math.floor(BAND_SIGNAL_SPREAD_HZ / SIGNAL_STEP_HZ);
 
 /**
  * True when a signal at `hz` is inside the waterfall window centred on
@@ -115,12 +120,12 @@ export function buildBackgroundSignals(
   count?: number,
 ): SpectrumSignal[] {
   const n = count ?? 8 + Math.floor(rng() * 8); // 8..15
-  const base = snapToGrid(referenceHz);
+  const base = snapToStep(referenceHz);
   const out: SpectrumSignal[] = [];
   for (let i = 0; i < n; i += 1) {
-    const slots = Math.round((rng() * 2 - 1) * SIGNAL_GRID_SLOTS);
+    const steps = Math.round((rng() * 2 - 1) * SIGNAL_STEP_SLOTS);
     out.push({
-      freqHz: base + slots * SIGNAL_GRID_HZ,
+      freqHz: base + steps * SIGNAL_STEP_HZ,
       strength: 0.12 + rng() * 0.26, // deliberately weak
       call: "",
       workable: false,

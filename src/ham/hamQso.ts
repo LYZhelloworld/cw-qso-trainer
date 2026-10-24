@@ -10,8 +10,8 @@
  *
  * The exchange is co-channel: the answering station tunes onto the caller's
  * frequency, exactly as a real operator would. That is what makes it something
- * the operator can tune in and listen to (and why the 1 kHz band grid does not
- * apply to the pair while they are working each other).
+ * the operator can tune in and listen to; both sides share one carrier, so the
+ * waterfall shows a single bright column while they work each other.
  *
  * Pure logic: no DOM, no audio, no timers.
  */

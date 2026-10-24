@@ -222,8 +222,8 @@ describe("随时发报", () => {
     const { session, tickTo } = makeSession(band);
     session.seedHams(1);
     const ham = session.listHams()[0];
-    // 台站落在 1 kHz 的槽位上，可能恰好就在默认拨轮上；先停到旁边 3 kHz，
-    // 这样"还没调过去"才是真的听不到。
+    // 台站可能恰好就落在默认拨轮上；先停到旁边 3 kHz，这样"还没调过去"
+    // 才是真的听不到。
     session.retune(ham.freqHz / 1e6 + 0.003);
     session.start();
 

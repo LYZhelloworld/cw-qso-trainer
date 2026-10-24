@@ -234,7 +234,7 @@ describe("波段规模", () => {
     expect(hams.length).toBeGreaterThanOrEqual(12);
     expect(hams.length).toBeLessThanOrEqual(18);
     const freqs = hams.map((x) => x.freqHz);
-    expect(new Set(freqs).size).toBe(freqs.length); // 没有两台挤在同一个槽上
+    expect(new Set(freqs).size).toBe(freqs.length); // 没有两台落在同一个频点上
   });
 
   it("显式设定的台数就是这个波段的台数（不会有人下线被补位）", async () => {

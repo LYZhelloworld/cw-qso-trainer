@@ -41,12 +41,13 @@ export const RESUME_CQ_DELAY_MAX_MS = 6_000;
  * A real CW band segment is busy, and — this is the point — wider than any one
  * screen: the stations are scattered over ±25 kHz (`ham/spectrum`) while the
  * waterfall shows ±10 kHz, so the operator meets new stations by tuning rather
- * than by looking at a list. 12–18 stations over 51 grid slots is roughly one
- * every 3 kHz: enough to keep hunting, thin enough that a 500 Hz passband is
- * usually empty until you land on somebody.
+ * than by looking at a list. 12–18 stations over ±25 kHz is roughly one every
+ * 3 kHz: enough to keep hunting, thin enough that a 500 Hz passband is usually
+ * empty until you land on somebody — though nothing forbids two of them from
+ * landing inside it together.
  *
- * Only callers count here. The stations that merely answer CQ hold no slot and
- * are not part of this number — that pool is far larger and lives in
+ * Only callers count here. The stations that merely answer CQ hold no frequency
+ * and are not part of this number — that pool is far larger and lives in
  * `ham/answerers`.
  */
 export const ACTIVE_HAMS_MIN = 12;

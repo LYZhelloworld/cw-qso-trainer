@@ -120,7 +120,7 @@ describe("CW 接收通带（500 Hz，中心是拨轮）", () => {
     expect(inPassband(HIGH - PASSBAND_HALF_HZ, HIGH)).toBe(true);
     expect(inPassband(HIGH + PASSBAND_HALF_HZ + 1, HIGH)).toBe(false);
     expect(inPassband(HIGH - PASSBAND_HALF_HZ - 1, HIGH)).toBe(false);
-    // 隔着一整格（1 kHz）——正是邻台的位置——必然在通带之外
+    // 隔开 1 kHz 必然在通带之外
     expect(inPassband(HIGH + 1000, HIGH)).toBe(false);
   });
 

@@ -80,7 +80,7 @@ describe("用户发 CQ 后的堆叠", () => {
     await h.session.userCallsCq();
     const callers = h.session.pileupCallers();
     expect(callers.length).toBeGreaterThanOrEqual(2);
-    // 它们不占频率槽：频段上还是那 4 台。
+    // 它们不占频率：频段上还是那 4 台。
     expect(
       h.session
         .hamActivity()

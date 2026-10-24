@@ -80,7 +80,7 @@ const MAX_ROWS_PER_FRAME = 6;
 const WHEEL_NOTCH = 100;
 /** Tuning step in Hz per notch: the finest step the dial shows (10 Hz). */
 const WHEEL_STEP_HZ = 10;
-/** Coarse step in Hz while Shift is held (the 1 kHz station grid). */
+/** Coarse step in Hz while Shift is held: one kilohertz, a fast sweep. */
 const WHEEL_SHIFT_STEP_HZ = 1_000;
 
 // --- colour map ------------------------------------------------------------
@@ -579,8 +579,8 @@ export class Waterfall {
 
   /**
    * The knob. Scrolling up tunes up, one **10 Hz** notch at a time; holding
-   * Shift makes it 1 kHz, the grid the band's stations sit on. Trackpads send a
-   * stream of small deltas, so travel accumulates until it is worth a notch.
+   * Shift makes it 1 kHz, a coarse sweep. Trackpads send a stream of small
+   * deltas, so travel accumulates until it is worth a notch.
    *
    * The step is applied to the *dial* (`targetHz`), not to the eased display
    * centre: the operator turns a knob, and the picture catches up afterwards.

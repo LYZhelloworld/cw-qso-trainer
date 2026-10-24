@@ -1,9 +1,10 @@
 /**
- * Frequency: models a band slot where multiple virtual HAMs are active. It
- * spawns weighted virtual HAMs (via generateVirtualHam), owns their CQ rhythm
- * (via HamActivity), and holds the band's much larger population of listeners
- * (via AnswererPool) — so a HAM that goes offline is gone from both the roster
- * and the schedule, while a station that only ever answers a CQ holds no slot.
+ * Frequency: models one band where multiple virtual HAMs are active. It spawns
+ * weighted virtual HAMs (via generateVirtualHam), owns their CQ rhythm (via
+ * HamActivity), and holds the band's much larger population of listeners (via
+ * AnswererPool) — so a HAM that goes offline is gone from both the roster and
+ * the schedule, while a station that only ever answers a CQ holds no frequency
+ * of its own.
  *
  * The band's own HAM-to-HAM exchanges are *not* modelled here: they are
  * scheduled by `QsoSession` on top of this roster (see `ham/hamQso`).
@@ -12,7 +13,6 @@
 import { DxccDatabase } from "../data/dxcc.js";
 import { AnswererPool, answererPoolSize } from "./answerers.js";
 import { generateVirtualHam } from "./generate.js";
-import { SIGNAL_GRID_HZ, SIGNAL_GRID_SLOTS, snapToGrid } from "./spectrum.js";
 import { VirtualHam, type Difficulty, type HamRole } from "./virtualHam.js";
 import {
   HamActivity,
@@ -74,47 +74,17 @@ export class Frequency {
     firstCqDelayMs?: number,
     atHz?: number,
   ): VirtualHam {
-    const source = rng ?? Math.random;
     let ham = this.generate(myCall, difficulty, rng, atHz);
-    // Redraw on a collision with a HAM already on this frequency — a shared
-    // callsign would be silently dropped by activity.add(), and a shared
-    // frequency slot would put two stations in one waterfall column. A station
-    // deliberately placed with `atHz` is exempt: the operator asked for that
-    // exact spot.
+    // Redraw when the callsign is already on the frequency — a duplicate would
+    // be silently dropped by activity.add() — or when the new station landed on
+    // the very same 10 Hz position as another. A station deliberately placed
+    // with `atHz` is exempt from the frequency test: the operator asked for
+    // that exact spot.
     for (let attempt = 0; attempt < 16 && this.collides(ham, atHz); attempt += 1) {
       ham = this.generate(myCall, difficulty, rng, atHz);
     }
-    // A busy band (12–18 stations share 51 grid slots) can exhaust the redraws.
-    // Rather than dropping the station on top of another, move it to a slot that
-    // is still free. Only stations placed by the generator get moved — an `atHz`
-    // station was put somewhere on purpose.
-    if (atHz === undefined && this.collides(ham, atHz)) {
-      const free = this.freeSlotHz(source);
-      if (free !== null) {
-        for (let attempt = 0; attempt < 16 && this.collides(ham, atHz); attempt += 1) {
-          ham = this.generate(myCall, difficulty, rng, free);
-        }
-      }
-    }
     this.activity.add(ham, firstCqDelayMs);
     return ham;
-  }
-
-  /**
-   * A 1 kHz grid slot near the band reference that no station occupies, or null
-   * when the band is genuinely full. Picks among the free slots at random so a
-   * crowded band still spreads its stations out.
-   */
-  freeSlotHz(rng: () => number = Math.random): number | null {
-    const base = snapToGrid(this.referenceHz);
-    const taken = new Set(this.activity.list().map((e) => e.ham.freqHz));
-    const free: number[] = [];
-    for (let step = -SIGNAL_GRID_SLOTS; step <= SIGNAL_GRID_SLOTS; step += 1) {
-      const hz = base + step * SIGNAL_GRID_HZ;
-      if (!taken.has(hz)) free.push(hz);
-    }
-    if (free.length === 0) return null;
-    return free[Math.min(free.length - 1, Math.floor(rng() * free.length))];
   }
 
   /** True when this station clashes with one already on the frequency. */
@@ -150,7 +120,7 @@ export class Frequency {
    * They are **not** put on the roster and not given a frequency: an answerer
    * only becomes audible while it is transmitting, and the station it answers
    * decides where (a pile-up is co-channel). The pool is deliberately much
-   * larger than the band's slot count, so this is not limited by the spectrum.
+   * larger than the spectrum can show at once, so it is not limited by the band.
    *
    * `taken` is the calls on the band already; a listener must not share one.
    */

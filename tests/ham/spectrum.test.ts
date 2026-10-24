@@ -4,8 +4,8 @@ import {
   buildBackgroundSignals,
   inSpectrumWindow,
   mulberry32,
-  SIGNAL_GRID_HZ,
-  snapToGrid,
+  SIGNAL_STEP_HZ,
+  snapToStep,
   SPECTRUM_SPAN_HZ,
 } from "../../src/ham/spectrum.js";
 
@@ -17,11 +17,13 @@ describe("spectrum constants", () => {
     expect(SPECTRUM_SPAN_HZ / 2).toBe(10_000);
   });
 
-  it("snaps stations onto the 1 kHz grid operators actually use", () => {
-    expect(SIGNAL_GRID_HZ).toBe(1_000);
-    expect(snapToGrid(14_025_400)).toBe(14_025_000);
-    expect(snapToGrid(14_025_600)).toBe(14_026_000);
-    expect(snapToGrid(REF)).toBe(REF);
+  it("snaps stations onto the 10 Hz grid the dial tunes in", () => {
+    expect(SIGNAL_STEP_HZ).toBe(10);
+    expect(snapToStep(14_025_404)).toBe(14_025_400);
+    expect(snapToStep(14_025_405)).toBe(14_025_410);
+    expect(snapToStep(REF)).toBe(REF);
+    // 不再是整千赫：14.025.43 这种落点的最后一位能保住。
+    expect(snapToStep(14_025_430)).toBe(14_025_430);
   });
 });
 
@@ -60,7 +62,7 @@ describe("buildBackgroundSignals", () => {
     expect(signals.length).toBeLessThanOrEqual(15);
     for (const s of signals) {
       expect(Math.abs(s.freqHz - REF)).toBeLessThanOrEqual(BAND_SIGNAL_SPREAD_HZ);
-      expect(s.freqHz % SIGNAL_GRID_HZ).toBe(0); // 装饰载波也在 1 kHz 网格上
+      expect(s.freqHz % SIGNAL_STEP_HZ).toBe(0); // 装饰载波也在 10 Hz 网格上
       expect(s.strength).toBeGreaterThan(0);
       expect(s.strength).toBeLessThan(0.45); // weak by design
       expect(s.workable).toBe(false); // decorative: never a QSO partner

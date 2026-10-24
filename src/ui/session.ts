@@ -1169,7 +1169,7 @@ export class QsoSession implements SessionContext {
   /**
    * The station has finished transmitting. A caller goes back to its own CQ
    * rhythm on the band; an answerer goes back to the listening pool, because it
-   * never held a slot in the first place.
+   * never had a frequency of its own in the first place.
    */
   private endStation(ham: VirtualHam): void {
     if (ham.role === "answerer") this.band.releaseAnswerer(ham);
