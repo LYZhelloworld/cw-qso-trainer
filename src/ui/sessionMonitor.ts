@@ -355,6 +355,12 @@ export class BandMonitor {
   /** Our carrier is down: nothing of ours is on the air any more. */
   endOwnOver(): void {
     this.txTiming = null;
+    // A carrier-down means no key can still be held — including the abrupt
+    // paths (`cancel` on leaving the page, `reset` on a band switch) that never
+    // run `keyUp`. Leaving the flag set would make `keyHeld` lie after the rig
+    // has already come down.
+    this.liveDownAt = null;
+    this.liveUpAt = null;
   }
 
   /**
