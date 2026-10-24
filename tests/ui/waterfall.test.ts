@@ -388,6 +388,42 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.dispose();
   });
 
+  it("粗调落到最近的整 kHz：14.025.04 向上是 14.026.00，向下是 14.024.00", () => {
+    const up = makeCanvas();
+    const wfUp = new Waterfall(up, { context: null, now: () => 0 });
+    wfUp.setSource(() => snapshot(CENTER + 40));
+    wfUp.advance(0);
+    const tunedUp: number[] = [];
+    wfUp.onTune = (hz) => tunedUp.push(hz);
+    up.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, shiftKey: true }));
+    expect(tunedUp).toEqual([CENTER + 1_000]);
+    wfUp.dispose();
+
+    const down = makeCanvas();
+    const wfDown = new Waterfall(down, { context: null, now: () => 0 });
+    wfDown.setSource(() => snapshot(CENTER + 40));
+    wfDown.advance(0);
+    const tunedDown: number[] = [];
+    wfDown.onTune = (hz) => tunedDown.push(hz);
+    down.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, shiftKey: true }));
+    expect(tunedDown).toEqual([CENTER - 1_000]);
+    wfDown.dispose();
+  });
+
+  it("粗调不会把 10 Hz 的零头带上去：细调仍旧按 10 Hz 走", () => {
+    const canvas = makeCanvas();
+    const wf = new Waterfall(canvas, { context: null, now: () => 0 });
+    wf.setSource(() => snapshot(CENTER + 40));
+    wf.advance(0);
+
+    const tuned: number[] = [];
+    wf.onTune = (hz) => tuned.push(hz);
+    canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+
+    expect(tuned).toEqual([CENTER + 50]); // 细调保留零头
+    wf.dispose();
+  });
+
   it("一次滚几格就调几步", () => {
     const canvas = makeCanvas();
     const wf = new Waterfall(canvas, { context: null, now: () => 0 });
