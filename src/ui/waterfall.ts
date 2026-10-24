@@ -610,10 +610,10 @@ export class Waterfall {
 
     const base = this.targetHz > 0 ? this.targetHz : this.displayCenterHz;
     const stepHz = coarse ? WHEEL_SHIFT_STEP_HZ : WHEEL_STEP_HZ;
-    // Coarse tuning lands on a whole kilohertz: anchor the step on the nearest
-    // kHz first, the way a rig's 1 kHz step leaves the dial on a round number
-    // instead of 40 Hz past it. 14.025.04 → up 14.026.00, down 14.024.00.
-    const anchor = coarse ? Math.round(base / stepHz) * stepHz : base;
+    // Coarse tuning moves the kilohertz digit and drops the rest, like a rig's
+    // 1 kHz step: 14.025.04 → up 14.026.00, down 14.024.00. Truncate, not round
+    // — rounding 14.026.65 up to 027 first would then overshoot to 14.028.00.
+    const anchor = coarse ? Math.floor(base / stepHz) * stepHz : base;
     const next = anchor + steps * stepHz;
     // Anticipate the tune: several notches can land within one frame, and each
     // must build on the previous one rather than on the dial as it was. The

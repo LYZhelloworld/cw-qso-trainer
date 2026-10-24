@@ -388,7 +388,7 @@ describe("瀑布图 — 组件生命周期", () => {
     wf.dispose();
   });
 
-  it("粗调落到最近的整 kHz：14.025.04 向上是 14.026.00，向下是 14.024.00", () => {
+  it("粗调截到整 kHz 再走一格：14.025.04 向上是 14.026.00，向下是 14.024.00", () => {
     const up = makeCanvas();
     const wfUp = new Waterfall(up, { context: null, now: () => 0 });
     wfUp.setSource(() => snapshot(CENTER + 40));
@@ -407,6 +407,29 @@ describe("瀑布图 — 组件生命周期", () => {
     wfDown.onTune = (hz) => tunedDown.push(hz);
     down.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, shiftKey: true }));
     expect(tunedDown).toEqual([CENTER - 1_000]);
+    wfDown.dispose();
+  });
+
+  it("14.026.65 向上是 14.027.00，不是四舍五入后的 14.028.00", () => {
+    const up = makeCanvas();
+    const wfUp = new Waterfall(up, { context: null, now: () => 0 });
+    wfUp.setSource(() => snapshot(CENTER + 1_650)); // 14.026.65
+    wfUp.advance(0);
+    const tunedUp: number[] = [];
+    wfUp.onTune = (hz) => tunedUp.push(hz);
+    up.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, shiftKey: true }));
+    expect(tunedUp).toEqual([CENTER + 2_000]);
+    wfUp.dispose();
+
+    // 同一条规则的另一半：整千赫是 026，向下就是 025（不是就近的 026）。
+    const down = makeCanvas();
+    const wfDown = new Waterfall(down, { context: null, now: () => 0 });
+    wfDown.setSource(() => snapshot(CENTER + 1_650));
+    wfDown.advance(0);
+    const tunedDown: number[] = [];
+    wfDown.onTune = (hz) => tunedDown.push(hz);
+    down.dispatchEvent(new WheelEvent("wheel", { deltaY: 100, shiftKey: true }));
+    expect(tunedDown).toEqual([CENTER]);
     wfDown.dispose();
   });
 
