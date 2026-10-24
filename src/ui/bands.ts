@@ -20,7 +20,10 @@ export function clampToBand(freqMHz: number, band: Band): number {
   return Math.min(band.maxMHz, Math.max(band.minMHz, freqMHz));
 }
 
-/** Round to 4 decimals — avoids float drift like 14.024999999 after stepping. */
+/**
+ * Round to 5 decimals (10 Hz) — the finest tuning step — so stepping never
+ * leaves float drift like 14.024999999 behind.
+ */
 export function roundFreq(freqMHz: number): number {
-  return Math.round(freqMHz * 10000) / 10000;
+  return Math.round(freqMHz * 100000) / 100000;
 }

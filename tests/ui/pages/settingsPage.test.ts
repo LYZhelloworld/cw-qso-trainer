@@ -227,32 +227,41 @@ describe("设置页", () => {
     expect(host.settings.farnsworthEnabled).toBe(true);
   });
 
-  it("发报模式默认直键，可切到 iambic 或文本模式", () => {
-    const { root, host } = makeHost();
-    // 默认直键：只显示一个直键按键，不暴露 iambic 专属控件
-    expect(fieldByLabel(root, "发报模式").querySelector("select")!.value).toBe("straight");
-    expect(root.textContent).toContain("直键按键");
-    expect(root.textContent).not.toContain("点键：");
+  it("发报模式默认报文，选项顺序为报文 / 直键 / 双键", () => {
+    const { root } = makeHost();
+    const select = fieldByLabel(root, "发报模式").querySelector("select")!;
+    expect(select.value).toBe("text");
+    expect(Array.from(select.options).map((o) => o.value)).toEqual([
+      "text",
+      "straight",
+      "iambic",
+    ]);
+    // 默认的报文模式不绑电键：只有一句说明，没有直键按键。
+    expect(root.textContent).toContain("报文模式不使用电键");
+    expect(root.textContent).not.toContain("直键按键");
+  });
 
-    const mode = fieldByLabel(root, "发报模式").querySelector("select")!;
-    mode.value = "iambic";
-    mode.dispatchEvent(new Event("change"));
+  it("发报模式可在三种模式间切换", () => {
+    const { root, host } = makeHost();
+    const mode = (): HTMLSelectElement =>
+      fieldByLabel(root, "发报模式").querySelector("select")!;
+
+    mode().value = "iambic";
+    mode().dispatchEvent(new Event("change"));
 
     expect(host.settings.keyMode).toBe("iambic");
-    const after = fieldByLabel(root, "发报模式").querySelector("select")!.value;
-    expect(after).toBe("iambic");
+    expect(mode().value).toBe("iambic");
     expect(root.textContent).toContain("点键：");
     expect(root.textContent).toContain("划键：");
     expect(root.textContent).toContain("squeeze");
 
-    // 第三种模式：文本框发报，不绑电键。
-    fieldByLabel(root, "发报模式").querySelector("select")!.value = "text";
-    fieldByLabel(root, "发报模式")
-      .querySelector("select")!
-      .dispatchEvent(new Event("change"));
+    mode().value = "straight";
+    mode().dispatchEvent(new Event("change"));
 
-    expect(host.settings.keyMode).toBe("text");
-    expect(root.textContent).toContain("文本框模式不使用电键");
+    expect(host.settings.keyMode).toBe("straight");
+    expect(mode().value).toBe("straight");
+    expect(root.textContent).toContain("直键按键");
+    expect(root.textContent).not.toContain("点键：");
   });
 
   it("iambic 模式 A/B 可切换并持久化到设置", () => {

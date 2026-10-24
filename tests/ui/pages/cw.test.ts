@@ -67,8 +67,8 @@ afterEach(() => {
 });
 
 describe("三种发报模式", () => {
-  it("直键模式沿用文本框模式的版面，底部是只读回显框", () => {
-    const { root } = makeHarness();
+  it("直键模式沿用报文模式的版面，底部是只读回显框", () => {
+    const { root } = makeHarness({ keyMode: "straight" });
     // 页面内容区的文字全部来自机头与瀑布图，这一段只挂回显框。
     expect(root.textContent).toBe("");
     const echo = root.querySelector<HTMLElement>(".send-echo");
@@ -148,7 +148,7 @@ describe("通联面板", () => {
   });
 
   it("离开页面时注销键盘监听（清理钩子已注册）", () => {
-    const harness = makeHarness();
+    const harness = makeHarness({ keyMode: "straight" });
     expect(harness.cleanups()).toBeGreaterThan(0);
   });
 

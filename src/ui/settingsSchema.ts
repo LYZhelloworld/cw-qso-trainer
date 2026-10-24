@@ -67,7 +67,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   difficulty: "novice",
   freqMHz: 14.025,
   bandIndex: 1,
-  keyMode: "straight",
+  // The message mode: typing what you want to send is the easiest way in, and
+  // the key modes stay one setting away for anyone practising hand keying.
+  keyMode: "text",
   keyCode: "Space",
   // Z/X: adjacent, so both can be squeezed at once; no browser shortcut grabs
   // them and they are barely used while typing.
@@ -120,7 +122,9 @@ export function normalizeSettings(raw: unknown): AppSettings {
         : DEFAULT_SETTINGS.freqMHz,
     bandIndex,
     keyMode:
-      r.keyMode === "iambic" || r.keyMode === "text" ? r.keyMode : "straight",
+      r.keyMode === "straight" || r.keyMode === "iambic" || r.keyMode === "text"
+        ? r.keyMode
+        : DEFAULT_SETTINGS.keyMode,
     keyCode: typeof r.keyCode === "string" && r.keyCode.length > 0 ? r.keyCode : DEFAULT_SETTINGS.keyCode,
     dotCode:
       typeof r.dotCode === "string" && r.dotCode.length > 0

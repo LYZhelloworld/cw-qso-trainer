@@ -12,7 +12,7 @@
 
 ## 键盘输入与 CW 发送（发送侧 keyer）
 
-> **已实现（2026-10-14）**：核心在 `src/cw/keyer.ts` 的 `IambicKeyer` —— Mode A/B、点划记忆（squeeze）、快速连按排队、自动 3d 字符间隔与**按沉默时长分词**均已落地。它的时钟与驱动全部由外部注入（每个方法都接收 `now`），因此行为完全确定、可单测。UI 接线见 `src/ui/keyer.ts` 的 `IambicKeyerInput`，界面面板见 `src/ui/pages/keyPanel.ts`，设置页可切换「直键 / iambic」并绑定点划键位。
+> **已实现（2026-10-14）**：核心在 `src/cw/keyer.ts` 的 `IambicKeyer` —— Mode A/B、点划记忆（squeeze）、快速连按排队、自动 3d 字符间隔与**按沉默时长分词**均已落地。它的时钟与驱动全部由外部注入（每个方法都接收 `now`），因此行为完全确定、可单测。UI 接线见 `src/ui/keyer.ts` 的 `IambicKeyerInput`，界面面板见 `src/ui/pages/keyPanel.ts`，设置页可切换「报文 / 直键 / 双键」并绑定点划键位。
 >
 > **侧音**也已实现（`src/audio/sidetone.ts`，详见 [音频与电磁环境](./AUDIO-ENVIRONMENT.md) 的「发报侧音」）：它不走报文音频，而是常驻振荡器实时开关，按下即响、松开即停。
 
