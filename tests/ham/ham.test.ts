@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { VirtualHam, MISS_PROBABILITY } from "../../src/ham/virtualHam.js";
-import { generateVirtualHam, haversineKm } from "../../src/ham/generate.js";
+import { generateVirtualHam, haversineKm, resolveUserEntity } from "../../src/ham/generate.js";
 import { Frequency } from "../../src/ham/frequency.js";
 import { BAND_SIGNAL_SPREAD_HZ, SIGNAL_GRID_HZ } from "../../src/ham/spectrum.js";
 import { dxccDatabase } from "../../src/data/dxcc.js";
@@ -100,6 +100,51 @@ describe("generateVirtualHam — validity & weighting", () => {
   it("builds a HAM whose reported RST is a valid RST token", () => {
     const ham = generateVirtualHam({ myCall: "BG7XXX", db: dxccDatabase, rng: mulberry32(1) });
     expect(ham.report).toMatch(/^[1-5][1-9][1-9]$/);
+  });
+});
+
+describe("generateVirtualHam — 用户呼号的实体解析", () => {
+  const entity = (call: string): string | null =>
+    resolveUserEntity(call, dxccDatabase)?.dxcc ?? null;
+
+  it("按最长前缀解析：B5/B7 归中国，而不是单字母 B", () => {
+    // Regression: stripping the digit left "B", whose first table match is
+    // Spratly's BM9S — a Chinese operator ended up in the South China Sea.
+    expect(entity("B5")).toBe("BY");
+    expect(entity("B7ABC")).toBe("BY");
+    expect(entity("B5/P")).toBe("BY");
+  });
+
+  it("同类「单字母 + 数字」呼号也落到正确实体", () => {
+    expect(entity("A5ABC")).toBe("A5");
+    expect(entity("E7ABC")).toBe("E7");
+    expect(entity("S5ABC")).toBe("S5");
+    expect(entity("T7ABC")).toBe("T7");
+    expect(entity("Z3ABC")).toBe("Z3");
+  });
+
+  it("常见前缀不受影响", () => {
+    expect(entity("BG7XXX")).toBe("BY");
+    expect(entity("K1ABC")).toBe("K");
+    expect(entity("W1AW")).toBe("K");
+    expect(entity("JA1ABC")).toBe("JA");
+    expect(entity("M0ABC")).toBe("G");
+  });
+
+  it("查不到时返回 null", () => {
+    expect(entity("QQ7ABC")).toBeNull();
+  });
+
+  it("B5 用户的台现在会从中国生成", () => {
+    const rng = mulberry32(5);
+    let china = 0;
+    const n = 100;
+    for (let i = 0; i < n; i++) {
+      const ham = generateVirtualHam({ myCall: "B5", db: dxccDatabase, rng });
+      if (dxccDatabase.resolvePrefix(ham.call.replace(/[0-9].*$/, "")) === "BY") china += 1;
+    }
+    // Before the fix this was 0/300: CAT1/CAT2 had no usable Chinese prefix.
+    expect(china / n).toBeGreaterThan(0.5);
   });
 });
 

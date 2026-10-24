@@ -2,6 +2,13 @@
 
 项目规则。设计文档与 `doc/README.md` 之外的约定放在此处。
 
+## 开发流程
+
+- 改动以**最新的 `master`** 为基准：先 `git fetch`，再从 `origin/master` 创建新分支；分支名用 `feat/`、`fix/`、`docs/` 等前缀（如 `fix/qth-prefix`）。
+- 改完先跑三件套（`npx tsc --noEmit`、全量 `npx vitest run`、`npx vite build`），再请用户确认提交信息。
+- 经用户同意后，用 `gh pr create` 开 PR（base `master`），交给用户 review。
+- **不得自行合并 PR**：合并只能由用户在 GitHub 上手动完成。
+
 ## 文档维护约定
 
 - **入库的只有成品文档**：`doc/` 放**设计类成品**（对实现的规范），仓库根只留 `README.md` 与 `AGENTS.md`。
