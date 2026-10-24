@@ -17,15 +17,15 @@ export type Difficulty = "novice" | "intermediate" | "hardcore";
 /**
  * Which of the band's two populations a station belongs to (VIRTUAL-HAM.md).
  *
- *  - `caller` — sits on a 1 kHz slot and calls CQ on its own rhythm. These are
+ *  - `caller` — sits on a frequency and calls CQ on its own rhythm. These are
  *    the stations the waterfall and the activity list show, and their number is
- *    bounded by the spectrum: one per slot.
+ *    bounded by the spectrum: one frequency each.
  *  - `answerer` — one of the stations listening on the band. It never calls CQ,
- *    holds no slot and is invisible until it answers somebody, so this
- *    population can be far larger than the band can hold.
+ *    holds no frequency of its own and is invisible until it answers somebody,
+ *    so this population can be far larger than the band can hold.
  *
- * The distinction is not cosmetic: only a *caller* may be placed on a slot, and
- * only an *answerer* may be drawn from the pool when a CQ needs an answer.
+ * The distinction is not cosmetic: only a *caller* may be placed on the band,
+ * and only an *answerer* may be drawn from the pool when a CQ needs an answer.
  */
 export type HamRole = "caller" | "answerer";
 

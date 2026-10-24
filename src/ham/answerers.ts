@@ -5,12 +5,13 @@
  * seen on a waterfall:
  *
  *  - **Callers** sit on a frequency and call CQ. They are transmitting, so they
- *    are visible, countable and bounded by the spectrum (one per 1 kHz slot —
- *    see `ham/activity` and `ham/frequency`).
- *  - **Answerers** are listening. They never call CQ, they hold no slot, and
- *    nothing about them is visible until they key up to answer somebody. Their
- *    number has nothing to do with how many frequencies the band has: it is the
- *    number of hams *listening*, which is far larger than the spectrum can hold.
+ *    are visible and countable (one per frequency — see `ham/activity` and
+ *    `ham/frequency`).
+ *  - **Answerers** are listening. They never call CQ, they hold no frequency,
+ *    and nothing about them is visible until they key up to answer somebody.
+ *    Their number has nothing to do with how many frequencies the band has: it
+ *    is the number of hams *listening*, which is far larger than the spectrum
+ *    can hold.
  *
  * This module models that second population as a pool. A station is drawn when
  * a CQ needs an answer (the operator's own CQ, or another station's CQ in a
@@ -27,7 +28,7 @@ import type { VirtualHam } from "./virtualHam.js";
 /**
  * How many stations are listening on one band, waiting for a CQ to answer.
  *
- * Deliberately far above the band's slot count (51 at ±25 kHz / 1 kHz): that
+ * Deliberately far above the number of stations a waterfall window shows: that
  * number is a property of the *spectrum*, and these stations are not on it.
  */
 export const ANSWERER_POOL_MIN = 80;

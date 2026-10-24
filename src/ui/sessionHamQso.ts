@@ -128,9 +128,10 @@ export class HamQsoDriver {
    *
    * Both halves come from different populations: the caller is a station on the
    * spectrum, the answerer is drawn from the listening pool. The answerer is not
-   * on the band and gets no slot of its own; it is set on the caller's frequency
-   * for the length of the exchange, which is what makes it co-channel — and
-   * therefore something the operator can listen to on a single dial setting.
+   * on the band and has no frequency of its own; it is set on the caller's
+   * frequency for the length of the exchange, which is what makes it co-channel
+   * — and therefore something the operator can listen to on a single dial
+   * setting.
    *
    * Skipped while the operator has a QSO or a pile-up of their own: their
    * exchange takes precedence, and with one audio channel the two would only

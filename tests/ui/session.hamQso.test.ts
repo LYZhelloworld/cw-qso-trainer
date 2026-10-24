@@ -102,9 +102,9 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
 
     const caller = await h.untilExchange();
     expect(before).toContain(caller.call); // 呼叫方本来就是频段上的台
-    // 应答方不占频率槽：频段名单仍是原来那 4 台，没有多出一台。
+    // 应答方不占频率：频段名单仍是原来那 4 台，没有多出一台。
     expect(h.session.hamActivity().map((e) => e.ham.call).sort()).toEqual([...before].sort());
-    expect(caller.freqHz % 1_000).toBe(0);
+    expect(caller.freqHz % 10).toBe(0); // 台站落在 10 Hz 网格上
   });
 
   it("调过去就能听到完整的 6 行；应答方从来不在频段名单上", async () => {
@@ -203,7 +203,7 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
     expect(nearest?.call).not.toBe(caller.call);
   });
 
-  it("结束后频段原样：还是那几台，各占一个槽，没有多出来的台", async () => {
+  it("结束后频段原样：还是那几台，各有自己的频点，没有多出来的台", async () => {
     const h = makeSession();
     const before = h.session.seedHams(4).map((x) => [x.call, x.freqHz] as const);
     h.session.start();
@@ -213,7 +213,7 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
 
     const after = h.session.hamActivity();
     expect(after).toHaveLength(before.length);
-    expect(new Set(after.map((e) => e.ham.freqHz)).size).toBe(before.length); // 各占一个槽
+    expect(new Set(after.map((e) => e.ham.freqHz)).size).toBe(before.length); // 频点各不相同
     for (const [call, freqHz] of before) {
       expect(after.find((e) => e.ham.call === call)?.ham.freqHz).toBe(freqHz);
     }

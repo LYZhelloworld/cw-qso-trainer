@@ -155,8 +155,8 @@ export class BandMonitor {
     }
 
     const signals: SpectrumSignal[] = [];
-    // The roster holds the band's callers. Answerers hold no slot, so they are
-    // not on it — but while one of them is transmitting there *is* a carrier,
+    // The roster holds the band's callers. Answerers hold no frequency, so they
+    // are not on it — but while one of them is transmitting there *is* a carrier,
     // and that is exactly what the operator hears. Add the ones currently on the
     // air: the pile-up answering us, and a partner that came out of the pool.
     const onAir: VirtualHam[] = this.ctx.pileupCallers();

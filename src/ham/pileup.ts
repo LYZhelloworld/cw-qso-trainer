@@ -36,8 +36,9 @@ export const PILEUP_MAX_CALLS = 4;
 export interface PileupCaller {
   /**
    * One of the band's *listeners* (see `ham/answerers`), borrowed from the pool
-   * for the duration of the pile-up. It holds no slot: it is audible only while
-   * it transmits, and when the pile-up ends it goes back to listening.
+   * for the duration of the pile-up. It holds no frequency of its own: it is
+   * audible only while it transmits, and when the pile-up ends it goes back to
+   * listening.
    */
   ham: VirtualHam;
   /** Absolute time of its next transmission. */

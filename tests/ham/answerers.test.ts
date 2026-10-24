@@ -22,7 +22,8 @@ describe("守听池规模", () => {
     expect(answererPoolSize(() => 2)).toBe(ANSWERER_POOL_MAX);
   });
 
-  it("远高于频道能容纳的台数（51 个 1 kHz 槽位）", () => {
+  it("远高于频谱窗口里同时能站下的台数", () => {
+    // 窗口 ±10 kHz、台间平均 3 kHz，一屏十来台；守听池是另一个数量级。
     expect(ANSWERER_POOL_MIN).toBeGreaterThan(51);
   });
 });

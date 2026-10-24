@@ -24,9 +24,9 @@ import { VirtualHam, type Difficulty, type HamRole } from "./virtualHam.js";
 import { S9_STRENGTH, strengthForSUnit } from "./smeter.js";
 import {
   BAND_SIGNAL_SPREAD_HZ,
-  SIGNAL_GRID_HZ,
-  SIGNAL_GRID_SLOTS,
-  snapToGrid,
+  SIGNAL_STEP_HZ,
+  SIGNAL_STEP_SLOTS,
+  snapToStep,
 } from "./spectrum.js";
 
 export interface GenerateOptions {
@@ -36,8 +36,8 @@ export interface GenerateOptions {
   /** Injectable RNG for deterministic tests (defaults to Math.random). */
   rng?: () => number;
   /**
-   * The band's reference frequency in Hz. The new station is placed on the
-   * nearest 1 kHz grid slot within ±`spreadHz` of it, which is where the
+   * The band's reference frequency in Hz. The new station is placed within
+   * ±`spreadHz` of it, on the 10 Hz grid the dial uses — which is where the
    * waterfall will draw it. Omit for a station that is not placed on any
    * spectrum (freqHz stays 0).
    */
@@ -45,16 +45,16 @@ export interface GenerateOptions {
   /** Scatter around `referenceHz` (defaults to the band's signal spread). */
   spreadHz?: number;
   /**
-   * Put the station exactly here (Hz, snapped to the grid) instead of
-   * scattering it. Used when a station has to answer the operator *on the
-   * operator's frequency* — see `QsoSession.userCallsCq`.
+   * Put the station exactly here (Hz, snapped to 10 Hz) instead of scattering
+   * it. Used when a station has to answer the operator *on the operator's
+   * frequency* — see `QsoSession.userCallsCq`.
    */
   atHz?: number;
   /**
    * Which population the new station belongs to. An `answerer` is never placed
-   * on the band: it holds no slot and only appears when it answers a CQ, so no
-   * frequency is generated for it (the caller sets it while the station is
-   * transmitting).
+   * on the band: it holds no frequency of its own and only appears when it
+   * answers a CQ, so no frequency is generated for it (the caller sets it while
+   * the station is transmitting).
    */
   role?: HamRole;
 }
@@ -170,11 +170,11 @@ function strengthFromReport(report: string, call: string): number {
 }
 
 /**
- * Place a station on the band: an absolute frequency on the 1 kHz grid, within
+ * Place a station on the band: an absolute frequency on the 10 Hz grid, within
  * ±`spreadHz` of the band reference. Without a reference the station is simply
  * not placed (freqHz = 0); with `atHz` it goes exactly there.
  *
- * Draws exactly one number from the RNG either way, so adding this grid did not
+ * Draws exactly one number from the RNG either way, so changing the grid did not
  * shift the sequence that generates callsigns and reports.
  */
 function placeFreq(
@@ -183,11 +183,11 @@ function placeFreq(
   atHz: number | undefined,
   rng: () => number,
 ): number {
-  if (atHz !== undefined) return snapToGrid(atHz);
+  if (atHz !== undefined) return snapToStep(atHz);
   if (referenceHz === undefined) return 0;
-  const slots = Math.max(1, Math.round(spreadHz / SIGNAL_GRID_HZ));
-  const steps = Math.round((rng() * 2 - 1) * Math.min(slots, SIGNAL_GRID_SLOTS));
-  return snapToGrid(referenceHz) + steps * SIGNAL_GRID_HZ;
+  const steps = Math.max(1, Math.round(spreadHz / SIGNAL_STEP_HZ));
+  const offset = Math.round((rng() * 2 - 1) * Math.min(steps, SIGNAL_STEP_SLOTS));
+  return snapToStep(referenceHz) + offset * SIGNAL_STEP_HZ;
 }
 
 function buildCall(
@@ -230,8 +230,8 @@ export function generateVirtualHam(opts: GenerateOptions): VirtualHam {
   const spreadHz = opts.spreadHz ?? BAND_SIGNAL_SPREAD_HZ;
   const atHz = opts.atHz;
   const role = opts.role ?? "caller";
-  // An answerer has no slot: it is only audible while it is answering someone,
-  // and the station it answers decides the frequency.
+  // An answerer has no frequency of its own: it is only audible while it is
+  // answering someone, and the station it answers decides where it sits.
   const freqHz = () => (role === "answerer" ? 0 : placeFreq(referenceHz, spreadHz, atHz, rng));
 
   // User context (QTH ≈ centroid of the user's own DXCC entity).

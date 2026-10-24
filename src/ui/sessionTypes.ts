@@ -70,9 +70,9 @@ export interface SessionContext {
   myCall(): string;
   /** The station being worked, if there is one. */
   partner(): VirtualHam | null;
-  /** Every station holding a slot on this band. */
+  /** Every station on this band's roster (the callers). */
   listHams(): VirtualHam[];
-  /** The stations answering our CQ (they hold no slot on the roster). */
+  /** The stations answering our CQ (they are not on the roster). */
   pileupCallers(): VirtualHam[];
   /** Can this station be worked from where the dial is? See `sessionTuning`. */
   canHear(ham: VirtualHam): boolean;
