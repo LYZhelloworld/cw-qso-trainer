@@ -32,7 +32,7 @@
 - 虚拟 HAM 用确定性脚本驱动（固定应答逻辑，不随机）
 
 本步实际落地三件套（不只是状态机）：
-- 数据层：`data/dxcc.json` 加载 + 前缀 → 实体查表（展开 `prefixes`、首部子串匹配）
+- 数据层：`data/cty.dat` 解析 + 前缀 → 实体查表（展开 `prefixes`、多向前缀匹配）
 - 报文解析：文本 → `ParsedMessage`（见 [报文解析](./MESSAGE-PARSING.md)）：CQ 去重、呼号 ITU 格式 + 前缀表校验、RST 整 token 校验、省略呼号判断、BK / PSE K 处理、用户输入宽容容错
 - QSO 状态机：7 状态 + 转移，消费 `ParsedMessage`（见 [通联过程](./QSO-PROTOCOL.md)）
 

@@ -44,6 +44,20 @@ npm run desktop:build  # 打出免安装 exe：src-tauri/target/release/cw-qso-t
 
 首次运行会在 exe 旁生成 `app-data/`（WebView2 数据、设置、日志）——把 exe 和这个文件夹一起拷走，数据和练习记录就都在。exe 要放在**可写目录**（不要放 `Program Files`）；未签名，首次运行可能弹 SmartScreen 提示。
 
+## 呼号数据
+
+虚拟电台的呼号前缀与地理位置来自业余无线电通用的国家文件 [`data/cty.dat`](./data/cty.dat)——由 Jim Reisert AD1C 维护、[country-files.com](https://www.country-files.com/cty/) 发布，每周更新。文件随仓库入库，构建时直接内联，**构建与运行都不联网**。
+
+刷新它是一次显式动作：
+
+```powershell
+npm run update:cty
+```
+
+脚本先下载到临时文件，校验结构（八段冒号字段、坐标可解析）与记录数（≥300 条）通过后才原子替换；校验失败或网络不可用时保留原文件。也可以从 [bigcty 页](https://www.country-files.com/bigcty/) 手动下载覆盖 `data/cty.dat`。
+
+文件里的国家 / 地区名称在解析时即被丢弃，只留下经纬度、大洲与前缀——这是「不显示对方是谁」的一部分。
+
 ## 免责声明
 
 > 本软件仅供练习使用。其中生成的呼号为虚拟呼号，可能与现实存在的呼号重复，不代表真实的无线电环境，也不能作为真实的通联记录。

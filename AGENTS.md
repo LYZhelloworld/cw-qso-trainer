@@ -24,6 +24,12 @@
 - 测试对源码一律用相对路径导入（`../../src/audio/bandSynth.js`），不引入路径别名——别名会让测试与构建工具各需要一份解析配置。
 - 需要 DOM 的测试用文件首行的 `// @vitest-environment jsdom` 切换环境，不改全局 `environment`。
 
+## 数据文件
+
+- `data/cty.dat` 是 country-files.com 发布的原始国家文件，**逐字节保持上游格式**：不改编、不加注释、不手工修补个别记录。它是定长 ASCII 记录格式，任何非记录行都会被解析器当成数据。
+- 刷新用 `npm run update:cty`（`scripts/update-cty.mjs`），脚本先校验结构与记录数、通过后才覆盖。也可以从上游手动下载覆盖，但同样不要编辑内容。
+- 构建与运行都不联网：数据在构建时内联，`src/data/cty.ts` 负责解析。
+
 ## 语言约定
 
 - 设计文档与面向用户的说明使用中文。
