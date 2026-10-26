@@ -7,6 +7,8 @@ import { LOG_WATERMARK } from "../../../src/ui/disclaimer.js";
 import { normalizeSettings } from "../../../src/ui/settingsSchema.js";
 import { QsoSession } from "../../../src/ui/session.js";
 import type { LogRecord } from "../../../src/ui/logRecord.js";
+import { buildLogRecord } from "../../../src/ui/logRecord.js";
+import { emptyEntry } from "../../../src/ui/entryModel.js";
 import type { AppHost, PageId } from "../../../src/ui/app.js";
 
 const HEADERS = ["DATE", "TIME_UTC", "CALL", "FREQ_MHZ", "MODE", "RST_RX", "RST_TX", "操作"];
@@ -152,7 +154,7 @@ describe("日志页（IndexedDB 可用）", () => {
     expect(root.textContent).toContain("日志不可导出为 ADIF / CSV / JSON");
   });
 
-  it("完整跑通一次 QSO 后自动产生一条符合条件的日志", async () => {
+  it("通联跑通后，按操作者填的呼号与 RST 记下一条日志", async () => {
     const settings = normalizeSettings({ myCall: "BG7XXX", difficulty: "novice" });
     // No real waiting: this case is about the log record, not the HAM's answer
     // timing. Leaving the 1–3 s reply delays real would push it past the
@@ -171,15 +173,19 @@ describe("日志页（IndexedDB 可用）", () => {
 
     expect(session.state).toBe("LOGGED");
 
-    const record = session.pendingLog();
+    // The row comes from what the operator wrote down, not from the machine —
+    // and the dial is read at the moment they sign off.
+    const record = buildLogRecord(
+      { ...emptyEntry("run"), call: peer, rstTx: "599", rstRx: "579" },
+      session.freqMHz,
+    );
     expect(record).not.toBeNull();
     expect(record!.call).toBe(peer);
     expect(record!.mode).toBe("CW");
     expect(record!.freqMHz).toBe((station.freqHz / 1e6).toFixed(4));
+    expect(record!.rstRx).toBe("579");
 
     await addLog(record!);
-    session.markLogged();
-    expect(session.pendingLog()).toBeNull(); // 防重复写入
 
     const rows = await listLogs();
     expect(rows.length).toBe(1);

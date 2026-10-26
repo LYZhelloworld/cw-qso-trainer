@@ -436,15 +436,37 @@ describe("发送框（报文模式）", () => {
     return { app, root };
   }
 
-  it("放在瀑布图下面：紧跟显示器，在页脚之前", () => {
+  it("放在瀑布图下面：显示器 → 录入行 → 发送框 → 页脚", () => {
     const { root } = textMode();
     const bar = root.querySelector<HTMLElement>(".send-bar")!;
     const scope = root.querySelector<HTMLElement>(".rig-scope")!;
+    const entry = root.querySelector<HTMLElement>(".entry-bar")!;
     const footer = root.querySelector<HTMLElement>(".footer")!;
 
     expect(bar.hidden).toBe(false);
-    expect(scope.nextElementSibling).toBe(bar);
+    expect(entry.hidden).toBe(false);
+    expect(scope.nextElementSibling).toBe(entry);
+    expect(entry.nextElementSibling).toBe(bar);
     expect(bar.nextElementSibling).toBe(footer);
+  });
+
+  it("录入行只在开台的电台页上出现", () => {
+    const { app, root } = mountApp();
+    expect(root.querySelector<HTMLElement>(".entry-bar")!.hidden).toBe(true); // 关台
+    app.setPower(true);
+    expect(root.querySelector<HTMLElement>(".entry-bar")!.hidden).toBe(false);
+    app.go("log");
+    expect(root.querySelector<HTMLElement>(".entry-bar")!.hidden).toBe(true);
+  });
+
+  it("快速报文发送期间把报文显示在发送框里，发完清空", async () => {
+    const { app, root } = textMode();
+    const input = root.querySelector<HTMLInputElement>(".send-bar .send-input")!;
+
+    app.showOutgoing("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    expect(input.value).toBe("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    // 没有真的在发报（载波没起来），下一个节拍就清掉。
+    await vi.waitFor(() => expect(input.value).toBe(""));
   });
 
   it("是单行输入框，不是多行文本框", () => {
@@ -470,6 +492,44 @@ describe("发送框（报文模式）", () => {
 
     app.go("log");
     expect(root.querySelector<HTMLElement>(".send-bar")!.hidden).toBe(true);
+  });
+});
+
+describe("运行方式：默认 S&P，一调频率就回 S&P", () => {
+  function litKey(root: HTMLElement): string[] {
+    return Array.from(root.querySelectorAll(".qm-key.active .qm-fkey")).map(
+      (n) => n.textContent ?? "",
+    );
+  }
+
+  it("开台就停在 S&P，灯亮 F4", () => {
+    const { app, root } = mountApp();
+
+    app.setPower(true);
+
+    expect(app.entry.mode).toBe("s&p");
+    expect(litKey(root)).toEqual(["F4"]);
+  });
+
+  it("同波段调谐、换波段都把人送回 S&P", () => {
+    const { app } = mountApp();
+
+    app.entry.mode = "run";
+    app.updateSettings({ freqMHz: 14.026 });
+    expect(app.entry.mode).toBe("s&p");
+
+    app.entry.mode = "run";
+    app.updateSettings({ bandIndex: 0, freqMHz: 7.025 });
+    expect(app.entry.mode).toBe("s&p");
+  });
+
+  it("改别的设置不动运行方式", () => {
+    const { app } = mountApp();
+
+    app.entry.mode = "run";
+    app.updateSettings({ wpm: 30 });
+
+    expect(app.entry.mode).toBe("run");
   });
 });
 

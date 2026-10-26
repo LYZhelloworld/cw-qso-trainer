@@ -1,66 +1,44 @@
-import { describe, it, expect } from "vitest";
-import type { QsoLog } from "../../src/qso/stateMachine.js";
-import { canWriteLog, deriveLogRecord, formatFreqMHz, type LogGate } from "../../src/ui/logRecord.js";
+import { describe, expect, it } from "vitest";
+import { buildLogRecord, formatFreqMHz } from "../../src/ui/logRecord.js";
+import { emptyEntry, type EntryValues } from "../../src/ui/entryModel.js";
 
-const completeGate: LogGate = {
-  state: "LOGGED",
-  callsignsConfirmed: true,
-  rstRx: "599",
-  rstTx: "599",
-  peerEndHeard: true,
-  userEndSent: true,
-};
+function entry(patch: Partial<EntryValues> = {}): EntryValues {
+  return { ...emptyEntry("run"), ...patch };
+}
 
-const completeQso: QsoLog = {
-  myCall: "BG7XXX",
-  peerCall: "JA1ABC",
-  rstRx: "599",
-  rstTx: "579",
-  date: "2026-10-14T12:34:56.000Z",
-};
-
-describe("canWriteLog", () => {
-  it("is true only when all six LOG.md conditions hold", () => {
-    expect(canWriteLog(completeGate)).toBe(true);
-  });
-
-  it("requires the LOGGED state", () => {
-    expect(canWriteLog({ ...completeGate, state: "SIGNOFF" })).toBe(false);
-    expect(canWriteLog({ ...completeGate, state: "EXCHANGE" })).toBe(false);
-  });
-
-  it("requires confirmed callsigns", () => {
-    expect(canWriteLog({ ...completeGate, callsignsConfirmed: false })).toBe(false);
-  });
-
-  it("requires both RSTs", () => {
-    expect(canWriteLog({ ...completeGate, rstRx: null })).toBe(false);
-    expect(canWriteLog({ ...completeGate, rstTx: null })).toBe(false);
-  });
-
-  it("requires both ends to have been exchanged", () => {
-    expect(canWriteLog({ ...completeGate, peerEndHeard: false })).toBe(false);
-    expect(canWriteLog({ ...completeGate, userEndSent: false })).toBe(false);
-  });
-});
-
-describe("deriveLogRecord", () => {
-  it("maps a completed QSO onto the LOG.md log fields", () => {
-    const rec = deriveLogRecord(completeQso, 14.025, new Date("2026-10-14T12:34:56.000Z"));
+describe("buildLogRecord", () => {
+  it("maps the operator's row onto the LOG.md log fields", () => {
+    const rec = buildLogRecord(
+      entry({ call: "ja1abc", rstTx: "599", rstRx: "579" }),
+      14.025,
+      new Date("2026-10-14T12:34:56.000Z"),
+    );
     expect(rec).not.toBeNull();
     expect(rec?.date).toBe("2026-10-14");
     expect(rec?.timeUtc).toBe("12:34:56");
-    expect(rec?.call).toBe("JA1ABC");
+    expect(rec?.call).toBe("JA1ABC"); // upper-cased, as a logbook writes it
     expect(rec?.freqMHz).toBe("14.0250");
     expect(rec?.mode).toBe("CW");
-    expect(rec?.rstRx).toBe("599");
-    expect(rec?.rstTx).toBe("579");
+    expect(rec?.rstRx).toBe("579");
+    expect(rec?.rstTx).toBe("599");
   });
 
-  it("returns null when the exchange is incomplete", () => {
-    expect(deriveLogRecord({ ...completeQso, peerCall: null }, 14.025)).toBeNull();
-    expect(deriveLogRecord({ ...completeQso, rstRx: null }, 14.025)).toBeNull();
-    expect(deriveLogRecord({ ...completeQso, rstTx: null }, 14.025)).toBeNull();
+  it("records the dial as it stands when the operator signs off", () => {
+    const rec = buildLogRecord(
+      entry({ call: "JA1ABC", rstTx: "599", rstRx: "599" }),
+      7.0123,
+    );
+    expect(rec?.freqMHz).toBe("7.0123");
+  });
+
+  it("refuses a row that is not finished", () => {
+    const now = new Date("2026-10-14T12:34:56.000Z");
+    expect(buildLogRecord(entry({ rstTx: "599", rstRx: "599" }), 14.025, now)).toBeNull();
+    expect(buildLogRecord(entry({ call: "JA1ABC", rstRx: "599" }), 14.025, now)).toBeNull();
+    expect(buildLogRecord(entry({ call: "JA1ABC", rstTx: "599" }), 14.025, now)).toBeNull();
+    expect(
+      buildLogRecord(entry({ call: "JA1ABC", rstTx: "599", rstRx: "59" }), 14.025, now),
+    ).toBeNull();
   });
 });
 

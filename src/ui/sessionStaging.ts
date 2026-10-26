@@ -19,7 +19,6 @@ export interface RestoredQso {
   machine: QsoMachine;
   lines: TranscriptLine[];
   draft: string;
-  logWritten: boolean;
 }
 
 /** States worth resuming. A finished or failed QSO is not a conversation. */
@@ -35,7 +34,6 @@ export function saveStagingFor(view: {
   freqMHz: number;
   lines: TranscriptLine[];
   draft: string;
-  logWritten: boolean;
   machine: QsoMachine | null;
   ham: VirtualHam | null;
 }): void {
@@ -48,7 +46,6 @@ export function saveStagingFor(view: {
     freqMHz: view.freqMHz,
     lines: view.lines,
     draft: view.draft,
-    logWritten: view.logWritten,
     machine: machine ? machine.snapshot() : null,
     ham: ham
       ? {
@@ -91,6 +88,5 @@ export function loadRestorable(freqMHz: number, myCall: string): RestoredQso | n
     machine: QsoMachine.fromSnapshot(staged.machine, { myCall, ham, db: dxccDatabase }),
     lines: staged.lines,
     draft: staged.draft,
-    logWritten: staged.logWritten,
   };
 }

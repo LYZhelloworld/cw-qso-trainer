@@ -22,7 +22,10 @@ export function renderLog(host: AppHost, root: HTMLElement): void {
     }
     if (rows.length === 0) {
       body.append(
-        el("div", { class: "hint", text: "暂无日志记录。完成一次完整通联后会自动写入。" }),
+        el("div", {
+          class: "hint",
+          text: "暂无日志记录。在电台页填好对方呼号与两个 RST、按回车发出结束语，就会记到这里的。",
+        }),
       );
       return;
     }

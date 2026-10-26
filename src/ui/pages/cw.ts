@@ -1,5 +1,4 @@
 import { button, el, panel } from "../dom.js";
-import { addLog } from "../storage/logStore.js";
 import type { AppHost } from "../app.js";
 import { renderKeyPanel } from "./keyPanel.js";
 
@@ -14,20 +13,13 @@ import { renderKeyPanel } from "./keyPanel.js";
  *    the operator stops keying.
  *
  * Which one appears is a setting (`keyMode`), not a control on this page.
- * There is deliberately no transcript, no station named, no status readout and
- * no "start a QSO" button: you find out what the band did by listening.
+ *
+ * What goes out this way is a message, not a log entry: the log is written by
+ * hand from the entry row (`entryPanel.ts`), so a QSO neither starts nor ends
+ * with a form to fill in.
  */
 export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
-  const session = host.session;
   const settings = host.settings;
-
-  const flushLog = async (): Promise<void> => {
-    const record = session.pendingLog();
-    if (!record) return;
-    await addLog(record);
-    session.markLogged();
-    session.note("通联完成，已写入日志");
-  };
 
   // Without a callsign your own CQ is not your callsign, and the log would lie.
   const warnings: HTMLElement[] = [];
@@ -42,10 +34,10 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
     // The bar itself is mounted by the App under the panadapter; only the
     // warnings have anywhere to go on this page.
     if (warnings.length) root.append(panel("提示", ...warnings));
-    renderSendBar(host, host.sendBar ?? root, flushLog);
+    renderSendBar(host, host.sendBar ?? root);
     return;
   }
-  renderLiveKeyPanel(host, root, warnings, flushLog);
+  renderLiveKeyPanel(host, root, warnings);
 }
 
 /**
@@ -56,11 +48,7 @@ export function renderQsoPanel(host: AppHost, root: HTMLElement): void {
  * in the middle of the operating page. Enter keys it; the box stays focused so
  * the next over can be typed straight away.
  */
-function renderSendBar(
-  host: AppHost,
-  bar: HTMLElement,
-  flushLog: () => Promise<void>,
-): void {
+function renderSendBar(host: AppHost, bar: HTMLElement): void {
   const session = host.session;
 
   const input = el("input", {
@@ -143,7 +131,6 @@ function renderSendBar(
     void (async () => {
       try {
         await session.userSend(text);
-        await flushLog();
       } finally {
         sendBtn.disabled = false;
       }
@@ -209,7 +196,6 @@ function renderLiveKeyPanel(
   host: AppHost,
   root: HTMLElement,
   warnings: HTMLElement[],
-  flushLog: () => Promise<void>,
 ): void {
   const session = host.session;
 
@@ -227,7 +213,6 @@ function renderLiveKeyPanel(
     onOver: (text) => {
       void (async () => {
         await session.finishLiveKeying(text);
-        await flushLog();
         // A new over may have started while this one's reply was still being
         // played (break-in). Rebuilding the page now would tear down the key
         // panel the operator is using, so leave it alone: the new over's own

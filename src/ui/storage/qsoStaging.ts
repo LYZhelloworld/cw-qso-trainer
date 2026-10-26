@@ -29,7 +29,6 @@ export interface StagedQso {
   freqMHz: number;
   lines: TranscriptLine[];
   draft: string;
-  logWritten: boolean;
   machine: MachineSnapshot | null;
   ham: HamSnapshot | null;
 }

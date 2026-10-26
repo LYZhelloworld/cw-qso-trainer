@@ -144,7 +144,7 @@ interface QsoContext {
 | `EXCHANGE` | 任一子条件重试达到 3 | — | `FAILED` | — |
 | `SIGNOFF` | 收到对方结束语 | 含 TU / 73 / SK | `SIGNOFF` | `peerEndHeard = true` |
 | `SIGNOFF` | 用户发送结束语 | 含 TU / 73 / SK | `SIGNOFF` | `userEndSent = true` |
-| `SIGNOFF` | 双方结束语齐全 | — | `LOGGED` | 写日志 |
+| `SIGNOFF` | 双方结束语齐全 | — | `LOGGED` | —（日志由操作者手记，见下） |
 | `SIGNOFF` | （超时）发出报文后 5 秒内无有效回应 | — | `SIGNOFF` | 虚拟 HAM 重发，`SIGNOFF` 重试 +1 |
 | `SIGNOFF` | `SIGNOFF` 重试达到 3 | — | `FAILED` | — |
 | `LOGGED` | — | — | `IDLE` | 清空上下文 |
@@ -178,6 +178,8 @@ interface QsoContext {
 
 > 严格模式要求**双方都交换 RST**：即使被叫方也须回报 RST，否则 `rstRx` 或 `rstTx` 为 `null`，无法进入 `LOGGED`。上方「报文示例」已据此体现。
 
+`LOGGED` 只表示**会话认为这次通联完成了**，它不再写日志：日志由操作者在录入行手记，与状态机是否走到 `LOGGED` 无关（见 [日志与存储](./LOG.md) 的「写入条件」）。两者是两条独立的线——状态机管空中的对答，录入行管纸面的记录。
+
 关于结束语：
 
 - 每方至少发送 `TU` / `73` / `SK` 之一即可
@@ -188,7 +190,7 @@ interface QsoContext {
 ### 失败条件
 
 - 任一子条件（`CALL` / `RST` / `COPY` / `SIGNOFF`）重试达到 3 次
-- `FAILED` 不写日志；状态随后回到 `IDLE`
+- `FAILED` 不写日志；状态随后回到 `IDLE`（日志本也不受影响：写不写由操作者决定）
 
 ### 重试规则
 

@@ -55,6 +55,9 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   if (!powered) return;
 
   page.append(controls(host));
+  // The quick keys and the log boxes are not here: they sit in the shell,
+  // under the panadapter (`App.entryRoot`), so the order on screen is the order
+  // of the contact. This page is only the receiver — meter, dial, band strip.
   // Always there, from the moment the rig is on: an operator transmits whenever
   // they want to, not after clicking "start a QSO". Whether anybody answers is
   // up to what the message says and who is listening (see `userSend`).

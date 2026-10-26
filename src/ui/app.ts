@@ -11,12 +11,17 @@ import { normalizeSettings, type AppSettings } from "./settingsSchema.js";
 import { renderAbout } from "./pages/about.js";
 import { renderLog } from "./pages/logPage.js";
 import { renderRadio } from "./pages/radio.js";
+import { renderEntryPanel } from "./pages/entryPanel.js";
 import { renderSettingsPanel } from "./pages/settingsPage.js";
 import { renderErrorPanel } from "./errorPanel.js";
 import { BANDS, clampToBand, roundFreq } from "./bands.js";
 import { otherSideband, type Sideband } from "../ham/tuning.js";
 import { Waterfall } from "./waterfall.js";
 import { RigFace, type ScopeView } from "./rigFace.js";
+import { emptyEntry, type EntryValues } from "./entryModel.js";
+import { loadModeMessages } from "./modeFileLoader.js";
+import { parseBundledMode } from "../data/modeMessages.js";
+import type { ModeMessages } from "../message/modeFile.js";
 
 export type PageId = "radio" | "log" | "about";
 
@@ -46,6 +51,20 @@ export interface AppHost {
    * Optional: pages render the bar inside themselves when there is no shell.
    */
   readonly sendBar?: HTMLElement;
+  /**
+   * Show a message in the send bar while its carrier is up, and clear it when
+   * the key drops. Used by the quick messages: what they key out was never
+   * typed, so the bar under the display is the only place it can be seen going
+   * out. Optional so lightweight test hosts can omit it.
+   */
+  showOutgoing?(text: string): void;
+  /**
+   * The current mode's eight quick messages (`doc/MESSAGES.md`), and the log
+   * entry row the operator is filling in. Optional so lightweight test hosts do
+   * not have to carry them; the entry panel simply does not render without.
+   */
+  readonly modeMessages?: ModeMessages;
+  readonly entry?: EntryValues;
 }
 
 type PageRenderer = (host: AppHost, root: HTMLElement) => void;
@@ -116,6 +135,21 @@ export class App implements AppHost {
     isTransmitting: () => this.session.isTransmitting,
   });
   private readonly navRoot = el("nav", { class: "nav" });
+  /**
+   * The eight quick messages, and the row being filled in under them.
+   *
+   * The message set starts as the bundled default so the keys are there on the
+   * first frame; `start()` then looks for the operator's own copy of the file
+   * and swaps it in if there is one. The entry row is deliberately *not* per
+   * band: it is one row on one piece of paper, and turning the dial must not
+   * lose what has already been copied.
+   *
+   * It opens in S&P: a station that has just been switched on is listening its
+   * way along the band, not calling CQ. Run is something the operator declares —
+   * by choosing it, or by putting F1 on the air — and every retune takes it back.
+   */
+  modeMessages: ModeMessages = parseBundledMode().config;
+  readonly entry: EntryValues = emptyEntry("s&p");
   /** The operating screen. Scrolls on its own; the rig stays put. */
   private readonly pageRoot = el("div", { class: "page-area" });
   /**
@@ -124,6 +158,15 @@ export class App implements AppHost {
    * operating screen. Pages fill it (see `renderQsoPanel`); empty = hidden.
    */
   private readonly sendRoot = el("div", { class: "send-bar" });
+  /**
+   * The operating row — eight quick messages and the three log boxes. Its own
+   * element between the panadapter and the send bar: the screen reads top to
+   * bottom as the contact does (what is on the band, what you say next, what is
+   * going out), and it keeps the display's full width.
+   */
+  private readonly entryRoot = el("div", { class: "entry-bar" });
+  /** Bumped per preview so an earlier send cannot clear a later one. */
+  private outgoingToken = 0;
   private waterfall: Waterfall | null = null;
   private cleanups: Array<() => void> = [];
 
@@ -206,8 +249,9 @@ export class App implements AppHost {
     this.root.append(
       this.pageRoot,
       this.rig.scopeRoot,
-      // Order matters: the bar sits *under* the panadapter, the way a message
-      // keyer sits under the display it is keying onto.
+      // Order matters: the row you operate with sits under the display it is
+      // keying onto, and the send bar under that.
+      this.entryRoot,
       this.sendRoot,
       el("div", { class: "footer", text: DISCLAIMER_TEXT }),
     );
@@ -229,6 +273,26 @@ export class App implements AppHost {
     this.renderNav();
     this.renderPage();
     if (!hasAcknowledgedDisclaimer()) this.showDisclaimerModal();
+    void this.applyModeMessages();
+  }
+
+  /**
+   * Swap in the operator's own message file, if the desktop build can read one.
+   *
+   * Deliberately fire-and-forget and after the first paint: the bundled default
+   * is already on screen, so a slow or missing file never holds the app up. A
+   * file that cannot be used leaves the default in place and says why in the
+   * console — the alternative is an operating panel with dead keys and no
+   * explanation.
+   */
+  private async applyModeMessages(): Promise<void> {
+    const loaded = await loadModeMessages();
+    if (loaded.problems.length > 0) {
+      console.warn(`[模式配置] ${loaded.config.id}：`, ...loaded.problems);
+    }
+    if (loaded.source === "bundled") return;
+    this.modeMessages = loaded.config;
+    this.refresh();
   }
 
   /**
@@ -300,6 +364,13 @@ export class App implements AppHost {
     this.settings = merged;
     saveSettings(merged);
     for (const s of this.sessions) s.updateSettings(merged);
+
+    if (bandChanged || freqChanged) {
+      // Tuning is searching: a new frequency is a new patch of the band, and the
+      // operator is listening their way across it again rather than sitting on
+      // it calling CQ. What has already been copied into the row stays.
+      this.entry.mode = "s&p";
+    }
 
     if (bandChanged) {
       // Tuning away abandons the QSO on the old band — its partner goes back to
@@ -421,9 +492,10 @@ export class App implements AppHost {
     this.runCleanups();
     clear(this.pageRoot);
     clear(this.sendRoot);
+    clear(this.entryRoot);
     // The panadapter belongs to the receiver, not to any one page: it stays for
     // the operating screen and steps aside for the log and the credits, which
-    // want the height. The send bar follows the same rule.
+    // want the height. The entry row and the send bar follow the same rule.
     this.rig.scopeRoot.hidden = this.page !== "radio";
     // On the operating screen the page is content-sized so the panadapter can
     // take the rest of the window; everywhere else the page takes the room the
@@ -435,9 +507,63 @@ export class App implements AppHost {
       console.error(`[App] 渲染页面 ${def.id} 出错：`, err);
       renderErrorPanel(this.pageRoot, def.id, err, () => this.refresh());
     });
+    // The operating row is only worth showing when there is a rig to operate:
+    // on the log, on the credits and with the power off it would be a row of
+    // keys that cannot key anything.
+    const showEntry = this.page === "radio" && this.powerOn;
+    if (showEntry) {
+      try {
+        renderEntryPanel(this, this.entryRoot);
+      } catch (err) {
+        // Same rule as the page: a broken row must not take the radio with it.
+        console.error("[App] 渲染录入行出错：", err);
+      }
+    }
+    this.entryRoot.hidden = !showEntry || this.entryRoot.childElementCount === 0;
     // Nothing was put in it (key mode, powered down, or another page): collapse
     // the strip instead of leaving an empty gap under the display.
     this.sendRoot.hidden = this.sendRoot.childElementCount === 0;
+  }
+
+  /**
+   * Put a message in the send bar while its carrier is up, then take it away.
+   *
+   * The eight quick keys key out a message the operator never typed, so this is
+   * the only place it can be seen going out. `userSend` deliberately outlives
+   * the over — it plays the other station's reply too — so the signal to clear
+   * is the carrier coming down, not the promise resolving.
+   */
+  showOutgoing(text: string): void {
+    const box = this.sendRoot.querySelector<HTMLElement>(".send-input");
+    if (!box) return;
+    const token = ++this.outgoingToken;
+    this.paintOutgoing(box, text);
+    const tick = (): void => {
+      if (token !== this.outgoingToken) return;
+      if (!this.session.isTransmitting) {
+        this.paintOutgoing(box, "");
+        return;
+      }
+      setTimeout(tick, 60);
+    };
+    setTimeout(tick, 60);
+  }
+
+  /** Write (or with `""` clear) the send bar's text, whichever kind it is. */
+  private paintOutgoing(box: HTMLElement, text: string): void {
+    if (!box.isConnected) return;
+    if (box instanceof HTMLInputElement) {
+      box.value = text;
+      // The box mirrors the draft; a quick message is not a draft, so the row
+      // is emptied with it rather than reappearing on the next re-render.
+      if (text === "") this.session.setDraft("");
+      return;
+    }
+    // Key modes: the bar is the read-only echo, filled by the key panel.
+    const echo = box.querySelector(".echo-text");
+    if (echo) echo.textContent = text;
+    const pending = box.querySelector(".echo-pending");
+    if (pending) pending.textContent = "";
   }
 
   private runCleanups(): void {

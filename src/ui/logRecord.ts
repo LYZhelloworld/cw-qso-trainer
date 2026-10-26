@@ -1,8 +1,13 @@
-import type { QsoLog, QsoState } from "../qso/stateMachine.js";
+import { canLog, normaliseCall, type EntryValues } from "./entryModel.js";
 
 /**
  * Log book rows shown on the log page, mirroring the field table in LOG.md:
  * DATE / TIME_UTC / CALL / FREQ_MHZ / MODE / RST_RX / RST_TX.
+ *
+ * The row is built from **what the operator wrote down** — the three boxes on
+ * the operating screen — not from the state machine's idea of the QSO. A real
+ * logbook is the operator's own record; if they mis-copied a call, the log
+ * holds the mis-copied call, and the band never gets a vote.
  *
  * Pure data + derivation (no DOM, no storage) so it stays unit-testable.
  */
@@ -24,50 +29,31 @@ export interface LogRecord {
   rstTx: string;
 }
 
-/** The conditions LOG.md requires before a QSO is written to the log. */
-export interface LogGate {
-  state: QsoState;
-  callsignsConfirmed: boolean;
-  rstRx: string | null;
-  rstTx: string | null;
-  peerEndHeard: boolean;
-  userEndSent: boolean;
-}
-
-export function canWriteLog(g: LogGate): boolean {
-  return (
-    g.state === "LOGGED" &&
-    g.callsignsConfirmed &&
-    g.rstRx !== null &&
-    g.rstTx !== null &&
-    g.peerEndHeard &&
-    g.userEndSent
-  );
-}
-
 export function formatFreqMHz(freqMHz: number): string {
   return freqMHz.toFixed(4);
 }
 
 /**
- * Derive a log row from the machine's final QsoLog plus the working frequency.
- * Returns null when the exchange is incomplete — `canWriteLog` should be checked
- * first; this is the defensive second gate.
+ * Turn a completed entry row into a log row.
+ *
+ * The moment is "now" — when the operator signs off — and the frequency is the
+ * dial at that moment, which is what a paper log would say. Null when the row
+ * is not complete (`canLog`), so a half-filled row can never reach the log.
  */
-export function deriveLogRecord(
-  qso: QsoLog,
+export function buildLogRecord(
+  entry: EntryValues,
   freqMHz: number,
   now: Date = new Date(),
 ): LogRecord | null {
-  if (!qso.peerCall || !qso.rstRx || !qso.rstTx) return null;
+  if (!canLog(entry)) return null;
   const iso = now.toISOString();
   return {
     date: iso.slice(0, 10),
     timeUtc: iso.slice(11, 19),
-    call: qso.peerCall,
+    call: normaliseCall(entry.call),
     freqMHz: formatFreqMHz(freqMHz),
     mode: "CW",
-    rstRx: qso.rstRx,
-    rstTx: qso.rstTx,
+    rstRx: entry.rstRx.trim(),
+    rstTx: entry.rstTx.trim(),
   };
 }

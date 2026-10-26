@@ -853,6 +853,160 @@ table.log input {
   border-radius: 10px;
 }
 
+/* --- the operating row: quick messages + the log entry -------------------- */
+
+/*
+ * The one block on the operating screen that is *typed into* rather than
+ * listened to. It sits under the panadapter and above the send bar — what is on
+ * the band, what you say next, what is going out — and takes the display's full
+ * width so its columns line up with it. It stays as short as it can be: two
+ * rows of keys, one row of boxes, and a hint line whose height is always
+ * reserved (a line that appears and disappears would resize the panadapter on
+ * every mistake).
+ */
+.entry-bar {
+  flex: 0 0 auto;
+}
+
+.entry-bar[hidden] {
+  display: none;
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entry-mode {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+}
+
+.mode-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mode-opt input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.mode-opt:hover {
+  color: var(--text);
+}
+
+/* Four per row, two rows — every key the same width, height and gap. */
+.qm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.qm-key {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.qm-key .qm-fkey {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.qm-key .qm-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qm-key:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+/* The only dead key is one with no message at all (F8 in the default file).
+   Every other key answers a press — if only by naming the box still missing —
+   so a grey key here always means "nothing to send", never "not yet". */
+.qm-key:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The next thing to say, lit like a lamp on the rig. */
+.qm-key.active {
+  background: #0d2a3a;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.qm-key.active .qm-fkey {
+  color: var(--accent);
+}
+
+.entry-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 6px;
+}
+
+/* The box is its own label: three of them in one line, each saying what it is
+   in the placeholder. The class is on the input itself. */
+.entry-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+.entry-field::placeholder {
+  color: #55636f;
+  letter-spacing: 0;
+}
+
+.entry-field:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.entry-field.bad {
+  border-color: var(--danger);
+}
+
+/* Always one line tall: see the note on `.entry`. */
+.entry-hint {
+  min-height: 14px;
+  line-height: 14px;
+  font-size: 11px;
+  color: var(--danger);
+  text-align: center;
+}
+
 /* --- settings sheet ------------------------------------------------------ */
 
 .modal-overlay {
