@@ -476,6 +476,13 @@ describe("发出去的报文", () => {
     await vi.waitFor(() => expect(shown).toEqual(["R TU 73 SK"]));
   });
 
+  it("我发 RST 改成 579 时，F2 发出去的是短码 5BN", async () => {
+    const { root, sent } = makeHarness({ ...emptyEntry("run"), call: "JA1ABC" });
+    type(box(root, "我方 RST"), "579");
+    press(box(root, "我方 RST"), "Enter");
+    await vi.waitFor(() => expect(sent).toEqual(["R UR RST 5BN 5BN BK"]));
+  });
+
   it("回车发 F3 时当场落账，不等这句发完，也不等对方回 73", async () => {
     const { root, sent, releaseSend } = makeHarness(emptyEntry("run"), { holdSend: true });
     type(box(root, "对方呼号"), "JA1ABC");

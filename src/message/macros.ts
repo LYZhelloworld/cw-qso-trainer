@@ -50,11 +50,29 @@ export interface ExpandResult {
 const MACRO_RE = /\{([A-Za-z]+)\}/g;
 
 /**
- * CW shorthand for a report: `9` is sent as `N`, so 599 is `5NN` and 579 is
- * `57N`. Only 9 — the other digits keep their shape in CW.
+ * CW "cut numbers": the digits that have a shorter, conventional letter form on
+ * the air, after the IARU manual's table (0 = T, 1 = A, 2 = U, 3 = V, 7 = B,
+ * 8 = D, 9 = N).
+ *
+ * `4`, `5` and `6` keep their digits. Cutting is about the air only: the log
+ * keeps the digits the operator typed.
  */
-export function shortRst(full: string): string {
-  return full.replace(/9/g, "N");
+export const CUT_NUMBERS: Readonly<Record<string, string>> = {
+  "0": "T",
+  "1": "A",
+  "2": "U",
+  "3": "V",
+  "7": "B",
+  "8": "D",
+  "9": "N",
+};
+
+/**
+ * Send every digit that has a cut form as that form: `599` → `5NN`, `579` →
+ * `5BN`, `339` → `VVN`. Digits without a form keep their shape.
+ */
+export function cutNumbers(text: string): string {
+  return text.replace(/[0-9]/g, (digit) => CUT_NUMBERS[digit] ?? digit);
 }
 
 /** Expand one template. Unknown or empty macros are reported, not guessed. */
@@ -66,11 +84,13 @@ export function expandMacros(
   const byName: Record<MacroName, string> = {
     MYCALL: values.myCall.trim(),
     THEIRCALL: values.theirCall.trim(),
-    RST: shortRst(values.rstFull.trim()),
+    // Reports and exchanges go out as cut numbers; the full-width macros stay
+    // as typed, so a mode file can always ask for plain digits.
+    RST: cutNumbers(values.rstFull.trim()),
     RSTFULL: values.rstFull.trim(),
     // The contest exchange is empty in DX mode by definition, so an empty value
     // here is not a missing one.
-    EXCH: (values.exch ?? "").trim(),
+    EXCH: cutNumbers((values.exch ?? "").trim()),
   };
 
   const missing: string[] = [];

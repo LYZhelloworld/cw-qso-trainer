@@ -244,6 +244,19 @@ describe("QsoMachine — reports exchanged both ways", () => {
     expect(m.getLog()?.rstTx).toBe("599");
   });
 
+  it("understands a report sent in cut numbers", () => {
+    // What the quick-message keys actually key: 579 goes out as 5BN. If the
+    // parser cannot read that back, our report never registers, the HAM never
+    // signs off, and the contact hangs with both sides waiting.
+    const m = newMachine();
+    m.hamCq();
+    m.userSend("JA1ABC DE BG7XXX K");
+
+    expect(m.userSend("R UR RST 5BN BK")).toEqual(["R TU 73 SK"]);
+    expect(m.ctx.rstTx).toBe("579");
+    expect(m.state).toBe("SIGNOFF");
+  });
+
   it("does not parrot a second report either", () => {
     const m = newMachine();
     m.hamCq();
