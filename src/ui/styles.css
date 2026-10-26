@@ -528,44 +528,45 @@ table.log input {
 }
 
 .smeter-track {
-  display: flex;
+  position: relative;
   height: 16px;
   border: 1px solid var(--border);
   border-radius: 3px;
-  background: #0e1922;
+  /* The unlit scale is tinted the way the lit bar will be: blue to S9, red past
+     it. Painted on the track so the boundary stays put no matter how far the
+     needle has gone. */
+  background: linear-gradient(
+    90deg,
+    rgba(47, 123, 246, 0.1) 0 60%,
+    rgba(255, 59, 48, 0.1) 60% 100%
+  );
   overflow: hidden;
 }
 
-.smeter-seg {
-  position: relative;
-  height: 100%;
-}
-
-.smeter-seg.s {
-  width: 60%;
-  background: rgba(47, 123, 246, 0.1);
-}
-
-.smeter-seg.over {
-  width: 40%;
-  background: rgba(255, 59, 48, 0.1);
-  border-left: 1px solid var(--border);
-}
-
+/* The lit part of the bar: one element, so exactly one edge ever moves. The
+   blue/red split is drawn inside it at the track's S9 mark (60 %) — expressed
+   as a percentage of the fill's own width, which is why the stop is a variable
+   that `smeter.ts` recomputes as the needle moves. */
 .smeter-fill {
-  display: block;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
   width: 0;
+  background: linear-gradient(
+    90deg,
+    #1d5fd6 0%,
+    #62a8ff var(--s9-stop, 100%),
+    #ff6a5e var(--s9-stop, 100%),
+    #ff2d20 100%
+  );
+  box-shadow: 0 0 8px rgba(79, 157, 255, 0.5);
   transition: width 60ms linear;
 }
 
-.smeter-seg.s .smeter-fill {
-  background: linear-gradient(90deg, #1d5fd6, #62a8ff);
-  box-shadow: 0 0 8px rgba(79, 157, 255, 0.5);
-}
-
-.smeter-seg.over .smeter-fill {
-  background: linear-gradient(90deg, #ff6a5e, #ff2d20);
+/* One glow, and it follows the needle: blue while the reading is an S number,
+   red once it is over S9. */
+.smeter-fill.over {
   box-shadow: 0 0 8px rgba(255, 59, 48, 0.55);
 }
 

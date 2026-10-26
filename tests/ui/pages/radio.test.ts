@@ -69,9 +69,9 @@ function findButton(root: HTMLElement, text: string): HTMLButtonElement {
   return found;
 }
 
-/** The fill width of one S-meter segment, as a percentage. */
-function fillWidth(root: HTMLElement, segment: "s" | "over"): number {
-  const fill = root.querySelector<HTMLElement>(`.smeter-seg.${segment} .smeter-fill`)!;
+/** The lit width of the S-meter bar, as a percentage of the whole track. */
+function fillWidth(root: HTMLElement): number {
+  const fill = root.querySelector<HTMLElement>(".smeter-track .smeter-fill")!;
   return Number.parseFloat(fill.style.width);
 }
 
@@ -188,12 +188,11 @@ describe("电台页 — 波段与调谐", () => {
 });
 
 describe("电台页 — S 表", () => {
-  it("是一条横条，分成 S 段与 S9 之后的红段", () => {
+  it("是一条横条：一条填充，蓝红分界画在 S9 上", () => {
     const { root } = makeHost({ myCall: "BG7XXX" });
 
     expect(root.querySelector(".smeter-track")).not.toBeNull();
-    expect(root.querySelector(".smeter-seg.s")).not.toBeNull();
-    expect(root.querySelector(".smeter-seg.over")).not.toBeNull();
+    expect(root.querySelectorAll(".smeter-track .smeter-fill")).toHaveLength(1);
     const ticks = Array.from(root.querySelectorAll(".smeter-tick")).map((t) => t.textContent);
     expect(ticks).toEqual(["S1", "S3", "S5", "S7", "S9", "+20", "+40", "+60"]);
   });
@@ -202,12 +201,11 @@ describe("电台页 — S 表", () => {
     const { root } = makeHost({ myCall: "BG7XXX" });
 
     expect(root.querySelector(".smeter-read")?.textContent).toBe("—");
-    expect(fillWidth(root, "s")).toBe(0);
-    expect(fillWidth(root, "over")).toBe(0);
+    expect(fillWidth(root)).toBe(0);
     expect(root.querySelector(".smeter")?.classList.contains("quiet")).toBe(true);
   });
 
-  it("S 段是蓝色，S9 之后才点亮红色段", () => {
+  it("S 段是蓝色：整条亮到 S 刻度对应的位置", () => {
     const { root, host } = makeHost({ myCall: "BG7XXX" });
     (host.session as unknown as { sMeter: () => unknown }).sMeter = () => ({
       dbm: -85,
@@ -218,8 +216,8 @@ describe("电台页 — S 表", () => {
     host.refresh();
 
     expect(root.querySelector(".smeter-read")?.textContent).toBe("S7");
-    expect(fillWidth(root, "s")).toBeCloseTo(75, 1);
-    expect(fillWidth(root, "over")).toBe(0);
+    // S7 走到蓝段的 75%，也就是整条的 45%。
+    expect(fillWidth(root)).toBeCloseTo(45, 1);
   });
 
   it("超过 S9 时读数带 dB，红段按 60 dB 满格", () => {
@@ -233,8 +231,8 @@ describe("电台页 — S 表", () => {
     host.refresh();
 
     expect(root.querySelector(".smeter-read")?.textContent).toBe("S9+20");
-    expect(fillWidth(root, "s")).toBeCloseTo(100, 1);
-    expect(fillWidth(root, "over")).toBeCloseTo(33.3, 1);
+    // 整条 = 蓝段 60% + 红段 33.3% × 40%。
+    expect(fillWidth(root)).toBeCloseTo(73.3, 1);
   });
 });
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderSMeter, scalePosition, smeterBar, OVER_DB_SPAN } from "../../src/ui/smeter.js";
+import { renderSMeter, scalePosition, smeterBar, barWidth, OVER_DB_SPAN } from "../../src/ui/smeter.js";
 import type { SMeterReading } from "../../src/ham/smeter.js";
 
 const reading = (s: number, overDb = 0): SMeterReading => ({
@@ -48,14 +48,23 @@ describe("S 表刻度", () => {
     expect(scalePosition(9)).toBe(60);
     expect(scalePosition(9, 60)).toBe(100);
   });
+
+  it("整条的长度只有一个数：S 段 60%，红段 40%", () => {
+    expect(barWidth(smeterBar(reading(1)))).toBe(0);
+    expect(barWidth(smeterBar(reading(5)))).toBeCloseTo(0.3, 5);
+    expect(barWidth(smeterBar(reading(9)))).toBeCloseTo(0.6, 5);
+    expect(barWidth(smeterBar(reading(9, 30)))).toBeCloseTo(0.8, 5);
+    expect(barWidth(smeterBar(reading(9, OVER_DB_SPAN)))).toBeCloseTo(1, 5);
+  });
 });
 
 describe("S 表横条", () => {
-  it("渲染出蓝、红两段与刻度标注", () => {
+  it("只有一条填充：蓝红分界是画在里面的，不是两条各自动", () => {
     const meter = renderSMeter({ reading: () => null, onLeave: () => {} });
 
-    expect(meter.querySelector(".smeter-seg.s")).not.toBeNull();
-    expect(meter.querySelector(".smeter-seg.over")).not.toBeNull();
+    // 曾经的毛病就在这两条上：两条各自过渡、各自发光，过了 S9 看着像两根条。
+    expect(meter.querySelectorAll(".smeter-fill")).toHaveLength(1);
+    expect(meter.querySelector(".smeter-seg")).toBeNull();
     const ticks = Array.from(meter.querySelectorAll(".smeter-tick")).map((t) => t.textContent);
     expect(ticks).toEqual(["S1", "S3", "S5", "S7", "S9", "+20", "+40", "+60"]);
     expect(meter.querySelector(".smeter-tick.s9")?.textContent).toBe("S9");
@@ -69,28 +78,30 @@ describe("S 表横条", () => {
     expect(meter.querySelector(".smeter-label")).toBeNull();
   });
 
-  it("读数变化时两段填充跟着走", () => {
+  it("读数变化时只有这一条在长，颜色分界始终钉在 S9 上", () => {
     vi.useFakeTimers();
     let current: SMeterReading | null = reading(9, 30);
     const meter = renderSMeter({ reading: () => current, onLeave: () => {} });
-    const blue = meter.querySelector<HTMLElement>(".smeter-seg.s .smeter-fill")!;
-    const red = meter.querySelector<HTMLElement>(".smeter-seg.over .smeter-fill")!;
+    const fill = meter.querySelector<HTMLElement>(".smeter-fill")!;
 
-    // 先画一次：S9 全亮，S9+30 半条红
+    // S9+30：整条 80%（蓝 60% + 红 20%），分界落在自身宽度的 75% 处 = 60% 刻度。
     expect(meter.querySelector(".smeter-read")?.textContent).toBe("S9+30");
-    expect(width(blue)).toBeCloseTo(100, 1);
-    expect(width(red)).toBeCloseTo(50, 1);
+    expect(width(fill)).toBeCloseTo(80, 1);
+    expect(fill.style.getPropertyValue("--s9-stop")).toBe("75%");
+    expect(fill.classList.contains("over")).toBe(true);
 
     current = null;
     vi.advanceTimersByTime(60);
     expect(meter.querySelector(".smeter-read")?.textContent).toBe("—");
-    expect(width(red)).toBe(0);
+    expect(width(fill)).toBe(0);
     expect(meter.classList.contains("quiet")).toBe(true);
 
+    // 回到 S5：只有蓝，分界退到末端，红一点不露。
     current = reading(5);
     vi.advanceTimersByTime(60);
-    expect(width(blue)).toBeCloseTo(50, 1);
-    expect(width(red)).toBe(0);
+    expect(width(fill)).toBeCloseTo(30, 1);
+    expect(fill.style.getPropertyValue("--s9-stop")).toBe("100%");
+    expect(fill.classList.contains("over")).toBe(false);
     expect(meter.classList.contains("quiet")).toBe(false);
   });
 

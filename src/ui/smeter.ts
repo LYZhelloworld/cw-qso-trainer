@@ -11,6 +11,8 @@ import type { SMeterReading } from "../ham/smeter.js";
  *  - The S half takes 60 % of the width — nine units spread over most of the
  *    bar — and the over-S9 half takes the remaining 40 % for 60 dB. That is the
  *    conventional ICOMs' layout and keeps S9 at a glance-able, always-same spot.
+ *  - It is one bar with one moving edge: the colour change is painted inside the
+ *    fill, not a second element growing behind the first.
  *
  * Everything here is driven by the same `SMeterReading` the audio uses (see
  * `ham/smeter`), so the bar agrees with the speaker: no sound, no needle.
@@ -42,6 +44,16 @@ export function smeterBar(reading: SMeterReading | null): SMeterBar {
   const sFill = Math.min(1, Math.max(0, (reading.s - 1) / 8));
   const overFill = Math.min(1, Math.max(0, reading.overDb / OVER_DB_SPAN));
   return { sFill, overFill, label: reading.label, live: true };
+}
+
+/**
+ * How much of the whole bar is lit, 0..1.
+ *
+ * One number, because the bar is one element: the S half takes `S_SEGMENT` of
+ * the width for nine units, the red half the rest for 60 dB.
+ */
+export function barWidth(bar: SMeterBar): number {
+  return bar.sFill * S_SEGMENT + bar.overFill * (1 - S_SEGMENT);
 }
 
 /** Where a scale label sits across the whole bar (0..100 %). */
@@ -89,13 +101,13 @@ export function renderSMeter(host: SMeterHost): HTMLElement {
   wrap.append(readout);
 
   const track = el("div", { class: "smeter-track" });
-  const sSegment = el("div", { class: "smeter-seg s" });
-  const sFill = el("i", { class: "smeter-fill" });
-  sSegment.append(sFill);
-  const overSegment = el("div", { class: "smeter-seg over" });
-  const overFill = el("i", { class: "smeter-fill" });
-  overSegment.append(overFill);
-  track.append(sSegment, overSegment);
+  // One fill, so there is only ever one edge moving. The bar used to be two
+  // fills (blue up to S9, red past it), each with its own width transition and
+  // its own glow: crossing S9 animated both edges at once and both lit up, and
+  // the needle read as two bars. Now a single element grows and the blue/red
+  // split is painted inside it, pinned to the track's own S9 mark.
+  const fill = el("i", { class: "smeter-fill" });
+  track.append(fill);
 
   const scale = el("div", { class: "smeter-scale" });
   for (const tick of SCALE) {
@@ -114,9 +126,15 @@ export function renderSMeter(host: SMeterHost): HTMLElement {
 
   const draw = (): void => {
     const bar = smeterBar(host.reading());
+    const pct = barWidth(bar) * 100;
     readout.textContent = bar.label;
-    sFill.style.width = `${(bar.sFill * 100).toFixed(1)}%`;
-    overFill.style.width = `${(bar.overFill * 100).toFixed(1)}%`;
+    fill.style.width = `${pct.toFixed(1)}%`;
+    // S9 sits at 60 % of the *track*, which is this many percent of the fill's
+    // own width — the gradient is in the element's coordinates, the scale is in
+    // the track's, so the stop has to follow the width.
+    fill.style.setProperty("--s9-stop", `${pct > 60 ? (60 / pct) * 100 : 100}%`);
+    // One glow, and it takes the colour of whatever the needle is standing in.
+    fill.classList.toggle("over", bar.overFill > 0);
     wrap.classList.toggle("quiet", !bar.live);
     wrap.setAttribute("aria-valuetext", bar.label);
     wrap.title = bar.live ? `信号强度 ${bar.label}` : "滤波器里没有信号";
