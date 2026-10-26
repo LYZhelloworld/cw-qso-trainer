@@ -1,16 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { expandMacros, macroValuesFrom, shortRst } from "../../src/message/macros.js";
+import { CUT_NUMBERS, cutNumbers, expandMacros, macroValuesFrom } from "../../src/message/macros.js";
 
 const values = macroValuesFrom("BG7XXX", "JA1ABC", "599");
 
-describe("shortRst", () => {
-  it("sends 9 as N, leaving other digits alone", () => {
-    expect(shortRst("599")).toBe("5NN");
-    expect(shortRst("579")).toBe("57N");
-    expect(shortRst("449")).toBe("44N");
-    expect(shortRst("559")).toBe("55N");
-    expect(shortRst("555")).toBe("555");
-    expect(shortRst("")).toBe("");
+describe("cutNumbers", () => {
+  it("sends every digit that has a cut form as that form", () => {
+    expect(cutNumbers("599")).toBe("5NN");
+    expect(cutNumbers("579")).toBe("5BN");
+    expect(cutNumbers("339")).toBe("VVN");
+    expect(cutNumbers("129")).toBe("AUN");
+    expect(cutNumbers("508")).toBe("5TD");
+  });
+
+  it("leaves the digits that have no cut form alone", () => {
+    // 4 and 6 are never cut; 5 is left in full so that 599 stays 5NN and not
+    // ENN (see CUT_NUMBERS).
+    expect(cutNumbers("449")).toBe("44N");
+    expect(cutNumbers("569")).toBe("56N");
+    expect(cutNumbers("555")).toBe("555");
+  });
+
+  it("touches digits only — letters in the text stay", () => {
+    expect(cutNumbers("R UR RST 599 K")).toBe("R UR RST 5NN K");
+    expect(cutNumbers("")).toBe("");
+  });
+
+  it("takes a different table, so the operator's own usage can be plugged in", () => {
+    expect(cutNumbers("599", { ...CUT_NUMBERS, "5": "E" })).toBe("ENN");
   });
 });
 
@@ -23,6 +39,12 @@ describe("expandMacros", () => {
 
   it("keeps RSTFULL at full length", () => {
     expect(expandMacros("UR RST {RSTFULL}", values).text).toBe("UR RST 599");
+  });
+
+  it("cuts the report on the air, but never in {RSTFULL}", () => {
+    const v = macroValuesFrom("BG7XXX", "JA1ABC", "579");
+    expect(expandMacros("R UR RST {RST} {RST} BK", v).text).toBe("R UR RST 5BN 5BN BK");
+    expect(expandMacros("UR RST {RSTFULL}", v).text).toBe("UR RST 579");
   });
 
   it("accepts lower-case macro names", () => {
@@ -45,6 +67,11 @@ describe("expandMacros", () => {
     const r = expandMacros("TU {EXCH} SK", values);
     expect(r.missing).toEqual([]);
     expect(r.text).toBe("TU SK");
+  });
+
+  it("cuts the contest exchange as well, so serials and zones are ready", () => {
+    const v = { myCall: "BG7XXX", theirCall: "JA1ABC", rstFull: "599", exch: "05" };
+    expect(expandMacros("NR {EXCH} BK", v).text).toBe("NR T5 BK");
   });
 
   it("reports an unknown macro instead of silently eating it", () => {

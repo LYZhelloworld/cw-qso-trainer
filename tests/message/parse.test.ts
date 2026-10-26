@@ -22,6 +22,14 @@ describe("normalize", () => {
   it("folds 5NN -> 599", () => {
     expect(normalize("UR RST 5NN")).toBe("UR RST 599");
   });
+  it("reads the other cut numbers back as digits", () => {
+    expect(normalize("UR RST 5BN 5BN")).toBe("UR RST 579 579");
+    expect(normalize("UR RST VVN")).toBe("UR RST 339");
+  });
+  it("leaves a word that happens to be all cut letters alone", () => {
+    // A, N and D all stand for digits; only the RST slot may unfold them.
+    expect(normalize("AND TU")).toBe("AND TU");
+  });
   it("folds TNX/THX -> TU and <SK> -> SK", () => {
     expect(normalize("TNX THX <SK>")).toBe("TU TU SK");
   });
@@ -60,6 +68,14 @@ describe("parseMessage", () => {
     expect(p.rst).toBe("599");
     expect(p.end).toBe("BK");
     expect(p.callsigns).toEqual(["JA1ABC", "BG7XXX"]);
+  });
+
+  it("understands a cut report on the air", () => {
+    // What F2 actually keys when the operator sends 579 — and what the peer
+    // model has to read back as a report, or the contact never closes.
+    const p = parseMessage("R UR RST 5BN 5BN BK", ctxBase, "tx", dxccDatabase);
+    expect(p.type).toBe("RST");
+    expect(p.rst).toBe("579");
   });
 
   it("marks omitted callsign after confirmation", () => {

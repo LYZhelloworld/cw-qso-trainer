@@ -1,4 +1,5 @@
 import { DxccDatabase } from "../data/dxcc.js";
+import { CUT_NUMBERS } from "./macros.js";
 
 export type MessageType = "CQ" | "CALL" | "RST" | "END" | "QUERY" | "UNKNOWN";
 export type EndMarker = "PSE_K" | "K" | "BK" | "SK" | null;
@@ -33,6 +34,21 @@ export const CALL_RE = /^[A-Z]{1,2}[0-9][A-Z]{0,4}(?:\/[A-Z0-9]{1,4})?$/;
 // RST is validated as a whole token, never as a substring of the message.
 export const RST_RE = /^[1-5][1-9][1-9]$/;
 
+/** The digits behind the cut letters, derived so the two tables cannot drift. */
+const UNCUT: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(CUT_NUMBERS).map(([digit, letter]) => [letter, digit]),
+);
+
+/**
+ * Read one cut number back as digits: `5NN` → `599`, `5BN` → `579`, `VVN` →
+ * `339`. A token that does not unfold into a legal report is left alone.
+ */
+function uncut(token: string): string {
+  if (!/^[A-Z0-9]{3}$/.test(token)) return token;
+  const digits = [...token].map((c) => UNCUT[c] ?? c).join("");
+  return RST_RE.test(digits) ? digits : token;
+}
+
 /** Letters before the first digit, with any `/...` operation suffix removed. */
 export function extractLetterPrefix(callsign: string): string {
   const base = callsign.split("/")[0];
@@ -48,7 +64,17 @@ export function validateCallsign(token: string, db: DxccDatabase): boolean {
 /** Normalize a raw CW text: uppercase, collapse spaces, fold common variants. */
 export function normalize(text: string): string {
   let t = text.toUpperCase().replace(/\s+/g, " ").trim();
-  t = t.replace(/5NN/g, "599");
+  // Cut numbers read back as digits — the rest of the parser knows nothing
+  // else. Only where a report can actually sit: right after the RST keyword,
+  // and in a token that already starts with a digit (no word does; folding
+  // every three-letter token would read `AND` as `198`).
+  t = t.replace(/\bRST ([A-Z0-9]{3})(?: ([A-Z0-9]{3}))?/g, (_all, a: string, b?: string) =>
+    b === undefined ? `RST ${uncut(a)}` : `RST ${uncut(a)} ${uncut(b)}`,
+  );
+  t = t
+    .split(" ")
+    .map((token) => (/^[1-5]/.test(token) ? uncut(token) : token))
+    .join(" ");
   t = t.replace(/\bTNX\b|\bTHX\b/g, "TU");
   t = t.replace(/<SK>/g, "SK");
   return t;
