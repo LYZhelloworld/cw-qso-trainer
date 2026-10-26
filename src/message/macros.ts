@@ -54,14 +54,8 @@ const MACRO_RE = /\{([A-Za-z]+)\}/g;
  * the air, after the IARU manual's table (0 = T, 1 = A, 2 = U, 3 = V, 7 = B,
  * 8 = D, 9 = N).
  *
- * Two digits are absent on purpose:
- *  - `4` and `6` have no cut form at all — every published list sends them in
- *    full.
- *  - `5` does have one (`E`), but cutting it turns the one report everybody
- *    sends into `ENN`: nobody expects it, and the peer model reads `5NN`. Add
- *    `"5": "E"` here to opt in; nothing else has to change.
- *
- * Cutting is about the air only: the log keeps the digits the operator typed.
+ * `4`, `5` and `6` keep their digits. Cutting is about the air only: the log
+ * keeps the digits the operator typed.
  */
 export const CUT_NUMBERS: Readonly<Record<string, string>> = {
   "0": "T",
@@ -77,11 +71,8 @@ export const CUT_NUMBERS: Readonly<Record<string, string>> = {
  * Send every digit that has a cut form as that form: `599` → `5NN`, `579` →
  * `5BN`, `339` → `VVN`. Digits without a form keep their shape.
  */
-export function cutNumbers(
-  text: string,
-  table: Readonly<Record<string, string>> = CUT_NUMBERS,
-): string {
-  return text.replace(/[0-9]/g, (digit) => table[digit] ?? digit);
+export function cutNumbers(text: string): string {
+  return text.replace(/[0-9]/g, (digit) => CUT_NUMBERS[digit] ?? digit);
 }
 
 /** Expand one template. Unknown or empty macros are reported, not guessed. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CUT_NUMBERS, cutNumbers, expandMacros, macroValuesFrom } from "../../src/message/macros.js";
+import { cutNumbers, expandMacros, macroValuesFrom } from "../../src/message/macros.js";
 
 const values = macroValuesFrom("BG7XXX", "JA1ABC", "599");
 
@@ -12,9 +12,7 @@ describe("cutNumbers", () => {
     expect(cutNumbers("508")).toBe("5TD");
   });
 
-  it("leaves the digits that have no cut form alone", () => {
-    // 4 and 6 are never cut; 5 is left in full so that 599 stays 5NN and not
-    // ENN (see CUT_NUMBERS).
+  it("leaves 4, 5 and 6 in full", () => {
     expect(cutNumbers("449")).toBe("44N");
     expect(cutNumbers("569")).toBe("56N");
     expect(cutNumbers("555")).toBe("555");
@@ -23,10 +21,6 @@ describe("cutNumbers", () => {
   it("touches digits only — letters in the text stay", () => {
     expect(cutNumbers("R UR RST 599 K")).toBe("R UR RST 5NN K");
     expect(cutNumbers("")).toBe("");
-  });
-
-  it("takes a different table, so the operator's own usage can be plugged in", () => {
-    expect(cutNumbers("599", { ...CUT_NUMBERS, "5": "E" })).toBe("ENN");
   });
 });
 
