@@ -10,7 +10,10 @@ import type { QsoSession } from "../../../src/ui/session.js";
 import type { AppHost, PageId } from "../../../src/ui/app.js";
 
 /** The panel is wiring: what would go on the air is recorded, not keyed. */
-function makeHarness(entry: EntryValues = emptyEntry(), opts: { holdSend?: boolean } = {}) {
+function makeHarness(
+  entry: EntryValues = emptyEntry("run"),
+  opts: { holdSend?: boolean } = {},
+) {
   const root = document.createElement("div");
   document.body.append(root);
   const sent: string[] = [];
@@ -106,6 +109,11 @@ function hint(root: HTMLElement): string {
   return root.querySelector(".entry-hint")?.textContent ?? "";
 }
 
+/** Esc is handled on the document, not on a box: the whole page is in scope. */
+function escape(): void {
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+}
+
 beforeEach(async () => {
   // fake-indexeddb persists for the whole file: each case starts with an empty book.
   await clearLogs();
@@ -153,9 +161,9 @@ describe("八个快速报文键", () => {
 
   it("缺值的键照发：缺的那一段就是空的，不弹提示", async () => {
     const { root, sent } = makeHarness();
-    keys(root)[1].click(); // F2 需要 {THEIRCALL} 和 {RST}
+    keys(root)[1].click(); // F2 需要 {RST}
     // 空着就空着发出去，和手写一条报文没有区别；程序不替操作者补内容。
-    await vi.waitFor(() => expect(sent).toEqual(["DE BG7XXX R UR RST K"]));
+    await vi.waitFor(() => expect(sent).toEqual(["R UR RST BK"]));
     expect(hint(root)).toBe("");
   });
 
@@ -164,18 +172,18 @@ describe("八个快速报文键", () => {
     const all = keys(root);
     expect(all[0].title).toBe("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
     expect(all[2].title).toBe("R TU 73 SK");
-    expect(all[1].title).toBe("{THEIRCALL} DE BG7XXX R UR RST {RST} {RST} K");
+    expect(all[1].title).toBe("R UR RST {RST} {RST} BK");
     expect(all[1].title).not.toContain("还缺");
     expect(all[7].title).toContain("没有报文");
   });
 
   it("点一下就把报文发出去，宏在按下的那一刻展开", async () => {
-    const { root, sent, entry } = makeHarness({ ...emptyEntry(), call: "JA1ABC" });
+    const { root, sent, entry } = makeHarness({ ...emptyEntry("run"), call: "JA1ABC" });
     entry.rstTx = "599";
     type(box(root, "对方呼号"), "JA1ABC");
     keys(root)[1].click();
     await vi.waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toBe("JA1ABC DE BG7XXX R UR RST 5NN 5NN K");
+    expect(sent[0]).toBe("R UR RST 5NN 5NN BK");
   });
 
   it("F1–F8 是快捷键，和点击等价", async () => {
@@ -207,6 +215,35 @@ describe("高亮跟着该说的下一句走", () => {
     expect(activeKeys(root)).toEqual(["F4"]);
   });
 
+  it("S&P：填了呼号还是亮 F4，先报自己呼号；RST 有了才轮到 F2", () => {
+    const { root } = makeHarness({ ...emptyEntry("s&p") });
+    type(box(root, "对方呼号"), "JA1ABC");
+    expect(activeKeys(root)).toEqual(["F4"]);
+    type(box(root, "我方 RST"), "579");
+    expect(activeKeys(root)).toEqual(["F2"]);
+  });
+
+  it("按 F1 就是宣布自己在 Run：灯和单选框一起换过去", () => {
+    const { root, entry } = makeHarness({ ...emptyEntry("s&p") });
+    keys(root)[0].click();
+    expect(entry.mode).toBe("run");
+    expect(activeKeys(root)).toEqual(["F1"]);
+    const radios = root.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    expect(radios[0].checked).toBe(true); // Run 在前，S&P 在后
+  });
+
+  it("S&P 里按一下 F4 也算走完这一步：599 填上，灯转向 F2", async () => {
+    const { root, entry } = makeHarness({ ...emptyEntry("s&p") });
+    type(box(root, "对方呼号"), "JA1ABC");
+    expect(activeKeys(root)).toEqual(["F4"]);
+
+    keys(root)[3].click(); // F4，用鼠标按的，不是回车
+
+    await vi.waitFor(() => expect(entry.rstTx).toBe("599"));
+    expect(box(root, "我方 RST").value).toBe("599");
+    expect(activeKeys(root)).toEqual(["F2"]);
+  });
+
   it("填了呼号就亮 F2", () => {
     const { root } = makeHarness();
     type(box(root, "对方呼号"), "ja1abc");
@@ -215,8 +252,15 @@ describe("高亮跟着该说的下一句走", () => {
     expect(box(root, "对方呼号").value).toBe("JA1ABC");
   });
 
-  it("对方 RST 填好就亮 F3", () => {
-    const { root } = makeHarness({ ...emptyEntry(), call: "JA1ABC" });
+  it("对方 RST 填了、我方报告还没发：灯仍是 F2", () => {
+    const { root } = makeHarness({ ...emptyEntry("run"), call: "JA1ABC" });
+    type(box(root, "对方 RST"), "579");
+    // 他连呼号带报告一起过来的情形：抄下来不等于可以收尾，我方还欠一句。
+    expect(activeKeys(root)).toEqual(["F2"]);
+  });
+
+  it("我方报告发过之后，对方 RST 填好就亮 F3", () => {
+    const { root } = makeHarness({ ...emptyEntry("run"), call: "JA1ABC", reportSent: true });
     type(box(root, "对方 RST"), "579");
     expect(activeKeys(root)).toEqual(["F3"]);
   });
@@ -247,13 +291,43 @@ describe("回车与空格的分别", () => {
     expect(hint(root)).toBe("");
   });
 
+  it("S&P 的一整次通联：F4 报自己呼号、抄下对方 RST、再 F2 报我的、F3 收尾", async () => {
+    const { root, sent } = makeHarness({ ...emptyEntry("s&p") });
+
+    type(box(root, "对方呼号"), "JA1ABC");
+    press(box(root, "对方呼号"), "Enter");
+
+    await vi.waitFor(() => expect(sent).toEqual(["JA1ABC DE BG7XXX"]));
+    // 自己这句发完，接着要抄的是**对方**的报告：光标停在那个框上。
+    await vi.waitFor(() => expect(document.activeElement).toBe(box(root, "对方 RST")));
+    // 我方 RST 先垫上 599，等轮到 F2 时已经就绪。
+    expect(box(root, "我方 RST").value).toBe("599");
+    expect(activeKeys(root)).toEqual(["F2"]);
+
+    // 抄下对方的 599：我方报告还没发出去，灯仍停在 F2。
+    type(box(root, "对方 RST"), "579");
+    expect(activeKeys(root)).toEqual(["F2"]);
+
+    press(box(root, "对方 RST"), "Enter");
+    await vi.waitFor(() => expect(sent.at(-1)).toBe("R UR RST 5NN 5NN BK"));
+    expect(activeKeys(root)).toEqual(["F3"]);
+
+    press(box(root, "对方 RST"), "Enter");
+
+    await vi.waitFor(async () => expect(await listLogs()).toHaveLength(1));
+    expect(sent).toHaveLength(3);
+    expect(sent.at(-1)).toBe("R TU 73 SK");
+    const rows = await listLogs();
+    expect(rows[0]).toMatchObject({ call: "JA1ABC", rstTx: "599", rstRx: "579" });
+  });
+
   it("呼号填好按回车：自动填 599、发 F2、光标跳到对方 RST", async () => {
     const { root, sent, entry } = makeHarness();
     type(box(root, "对方呼号"), "JA1ABC");
     press(box(root, "对方呼号"), "Enter");
     expect(entry.rstTx).toBe("599");
     await vi.waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toBe("JA1ABC DE BG7XXX R UR RST 5NN 5NN K");
+    expect(sent[0]).toBe("R UR RST 5NN 5NN BK");
     expect(box(root, "我方 RST").value).toBe("599");
     await vi.waitFor(() => expect(document.activeElement).toBe(box(root, "对方 RST")));
   });
@@ -268,7 +342,7 @@ describe("回车与空格的分别", () => {
   });
 
   it("已有 RST 不被 599 覆盖", async () => {
-    const { root, entry } = makeHarness({ ...emptyEntry(), call: "JA1ABC", rstTx: "579" });
+    const { root, entry } = makeHarness({ ...emptyEntry("run"), call: "JA1ABC", rstTx: "579" });
     press(box(root, "对方呼号"), "Enter");
     expect(entry.rstTx).toBe("579");
     expect(box(root, "我方 RST").value).toBe("579");
@@ -306,14 +380,92 @@ describe("回车与空格的分别", () => {
     expect(activeKeys(root)).toEqual(["F1"]);
   });
 
+  it("他连呼号带报告一起过来：先把我方报告发完，才收尾", async () => {
+    const { root, sent } = makeHarness();
+    type(box(root, "对方呼号"), "JA1ABC");
+    type(box(root, "对方 RST"), "579");
+    // 两份报告都抄下了，但我方一句还没发：回车还是 F2，不是 F3。
+    press(box(root, "对方 RST"), "Enter");
+    await vi.waitFor(() => expect(sent).toEqual(["R UR RST 5NN 5NN BK"]));
+    expect(activeKeys(root)).toEqual(["F3"]);
+    expect(await listLogs()).toHaveLength(0);
+
+    press(box(root, "对方 RST"), "Enter");
+    await vi.waitFor(async () => expect(await listLogs()).toHaveLength(1));
+    expect(sent.at(-1)).toBe("R TU 73 SK");
+  });
+
   it("RST 不完整就不发、不记，并指出是哪个框", async () => {
-    const { root, sent } = makeHarness({ ...emptyEntry(), call: "JA1ABC", rstRx: "579" });
+    const { root, sent } = makeHarness({
+      ...emptyEntry("run"),
+      call: "JA1ABC",
+      rstRx: "579",
+      reportSent: true,
+    });
     press(box(root, "对方 RST"), "Enter");
     await Promise.resolve();
     expect(sent).toEqual([]);
     expect(await listLogs()).toHaveLength(0);
     expect(hint(root)).toContain("我方 RST");
     expect(root.querySelector(".entry-field.bad")).not.toBeNull();
+  });
+});
+
+describe("Esc：放弃这个台", () => {
+  it("三个框一起清空，什么都不发、不记，灯回起点", async () => {
+    const { root, sent, entry } = makeHarness();
+    type(box(root, "对方呼号"), "JA1ABC");
+    type(box(root, "我方 RST"), "599");
+    type(box(root, "对方 RST"), "579");
+
+    escape();
+
+    expect(box(root, "对方呼号").value).toBe("");
+    expect(box(root, "我方 RST").value).toBe("");
+    expect(box(root, "对方 RST").value).toBe("");
+    expect(entry).toMatchObject({ call: "", rstTx: "", rstRx: "", reportSent: false });
+    expect(activeKeys(root)).toEqual(["F1"]);
+    expect(document.activeElement).toBe(box(root, "对方呼号"));
+    expect(sent).toEqual([]);
+    expect(await listLogs()).toHaveLength(0);
+  });
+
+  it("S&P 下清空之后灯回 F4：模式是操作者选的，不跟着清掉", () => {
+    const { root, entry } = makeHarness({ ...emptyEntry("s&p") });
+    type(box(root, "对方呼号"), "JA1ABC");
+    type(box(root, "我方 RST"), "599");
+
+    escape();
+
+    expect(entry.mode).toBe("s&p");
+    expect(activeKeys(root)).toEqual(["F4"]);
+  });
+
+  it("发报期间也清得掉：已经发出去的收不回，框可以先空出来", async () => {
+    const { root, sent, host, entry } = makeHarness();
+    type(box(root, "对方呼号"), "JA1ABC");
+    press(box(root, "对方呼号"), "Enter"); // F2 出去了
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    (host.session as unknown as { isSending: boolean }).isSending = true;
+
+    escape();
+
+    expect(entry.call).toBe("");
+    expect(box(root, "对方呼号").value).toBe("");
+    expect(sent).toHaveLength(1);
+  });
+
+  it("弹窗开着的时候不抢键", () => {
+    const { root } = makeHarness();
+    type(box(root, "对方呼号"), "JA1ABC");
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    document.body.append(overlay);
+
+    escape();
+
+    expect(box(root, "对方呼号").value).toBe("JA1ABC");
+    overlay.remove();
   });
 });
 
@@ -325,14 +477,14 @@ describe("发出去的报文", () => {
   });
 
   it("回车发 F3 时当场落账，不等这句发完，也不等对方回 73", async () => {
-    const { root, sent, releaseSend } = makeHarness(emptyEntry(), { holdSend: true });
+    const { root, sent, releaseSend } = makeHarness(emptyEntry("run"), { holdSend: true });
     type(box(root, "对方呼号"), "JA1ABC");
     press(box(root, "对方呼号"), "Enter"); // F2：卡在发报里没出来
     type(box(root, "对方 RST"), "579");
     press(box(root, "对方 RST"), "Enter"); // F3：发出去的同时落账
 
     await vi.waitFor(async () => expect(await listLogs()).toHaveLength(1));
-    expect(sent).toEqual(["JA1ABC DE BG7XXX R UR RST 5NN 5NN K", "R TU 73 SK"]);
+    expect(sent).toEqual(["R UR RST 5NN 5NN BK", "R TU 73 SK"]);
     releaseSend();
   });
 });

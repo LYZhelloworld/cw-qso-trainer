@@ -47,8 +47,8 @@
 # 发送 CQ
 F1 CQ,CQ CQ CQ DE {MYCALL} {MYCALL} PSE K
 
-# 交换 RST
-F2 RST,{THEIRCALL} DE {MYCALL} R UR RST {RST} {RST} K
+# 交换 RST：对方刚报过呼号，这一句只回报告，BK 把话头交回去
+F2 RST,R UR RST {RST} {RST} BK
 
 # 结束通联
 F3 TU,R TU 73 SK

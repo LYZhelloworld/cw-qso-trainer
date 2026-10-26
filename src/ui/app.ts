@@ -143,9 +143,13 @@ export class App implements AppHost {
    * and swaps it in if there is one. The entry row is deliberately *not* per
    * band: it is one row on one piece of paper, and turning the dial must not
    * lose what has already been copied.
+   *
+   * It opens in S&P: a station that has just been switched on is listening its
+   * way along the band, not calling CQ. Run is something the operator declares —
+   * by choosing it, or by putting F1 on the air — and every retune takes it back.
    */
   modeMessages: ModeMessages = parseBundledMode().config;
-  readonly entry: EntryValues = emptyEntry();
+  readonly entry: EntryValues = emptyEntry("s&p");
   /** The operating screen. Scrolls on its own; the rig stays put. */
   private readonly pageRoot = el("div", { class: "page-area" });
   /**
@@ -360,6 +364,13 @@ export class App implements AppHost {
     this.settings = merged;
     saveSettings(merged);
     for (const s of this.sessions) s.updateSettings(merged);
+
+    if (bandChanged || freqChanged) {
+      // Tuning is searching: a new frequency is a new patch of the band, and the
+      // operator is listening their way across it again rather than sitting on
+      // it calling CQ. What has already been copied into the row stays.
+      this.entry.mode = "s&p";
+    }
 
     if (bandChanged) {
       // Tuning away abandons the QSO on the old band — its partner goes back to

@@ -92,7 +92,7 @@ describe("the bundled DX.msg", () => {
     const rows = config.messages.map((m) => [m.key, m.label, m.text]);
     expect(rows).toEqual([
       [1, "CQ", "CQ CQ CQ DE {MYCALL} {MYCALL} PSE K"],
-      [2, "RST", "{THEIRCALL} DE {MYCALL} R UR RST {RST} {RST} K"],
+      [2, "RST", "R UR RST {RST} {RST} BK"],
       [3, "TU", "R TU 73 SK"],
       [4, "{MYCALL}", "{THEIRCALL} DE {MYCALL}"],
       [5, "{THEIRCALL}", "{THEIRCALL}"],

@@ -9,9 +9,10 @@
  *
  * The flow, as documented in `doc/MESSAGES.md`:
  *
- *  - call box empty      → F1 (calling CQ) or F4 (answering somebody), by mode
- *  - call filled         → F2: send the report, and the report box fills itself
- *  - their report filled → F3: sign off, write the row, start a new one
+ *  - call box empty            → F1 (calling CQ) or F4 (answering somebody), by mode
+ *  - call filled, no report yet → F4, S&P only: our call in answer, before the report
+ *  - our report still to send  → F2: send it (the box fills itself with 599)
+ *  - their report in, ours out → F3: sign off, write the row, start a new one
  *
  * Enter does the step *and* sends; Space does the step without sending, for when
  * the operator wants to key the message by hand.
@@ -30,14 +31,32 @@ export interface EntryValues {
   rstTx: string;
   /** The report they gave us. */
   rstRx: string;
+  /**
+   * Our report has already gone out (or been keyed by hand) for this row.
+   *
+   * Which of the two reports arrives first depends on who called whom: the
+   * station we pounced on comes back with *his* report in the same breath as his
+   * call, and a station answering our CQ often does the same. So a filled report
+   * box means "copied", not "answered" — without this flag, typing his report
+   * would light the sign-off and the contact would end with our side of the
+   * exchange never sent.
+   */
+  reportSent: boolean;
 }
 
 /** Which prompt is current. Drives both the highlight and what Enter does. */
-export type EntryStep = "call" | "report" | "signoff";
+export type EntryStep = "call" | "answer" | "report" | "signoff";
 
-/** A row with nothing in it: the state after the app opens and after each QSO. */
-export function emptyEntry(mode: OperatingMode = "run"): EntryValues {
-  return { mode, call: "", rstTx: "", rstRx: "" };
+/**
+ * A row with nothing in it: the state the app opens on.
+ *
+ * The mode is a parameter rather than a default because the two callers disagree
+ * about it in a way that matters: the app opens in S&P (searching the band is
+ * what one does on a fresh frequency), while finishing a contact keeps whatever
+ * mode the operator was already in.
+ */
+export function emptyEntry(mode: OperatingMode): EntryValues {
+  return { mode, call: "", rstTx: "", rstRx: "", reportSent: false };
 }
 
 /**
@@ -60,20 +79,33 @@ export function normaliseCall(value: string): string {
 
 export function entryStep(v: EntryValues): EntryStep {
   if (normaliseCall(v.call) === "") return "call";
-  if (v.rstRx.trim() === "") return "report";
-  return "signoff";
+  // Pouncing, the first thing said after copying the call is *our* call (F4),
+  // not the report: "JA1ABC DE BG7XXX" answers, and only then comes the RST.
+  // The step is done with once the report box holds a number — filled by Enter
+  // on F4, by Space, or typed in by hand.
+  if (v.mode === "s&p" && v.rstTx.trim() === "") return "answer";
+  // Their report is the last thing heard — but only once ours is out. That is
+  // the same rule in both modes, and it has to be: pouncing, their report comes
+  // back with their call, and even in a run the station answering our CQ may
+  // send "JA1ABC 5NN" in one breath, which would otherwise take a row straight
+  // from an empty report box to the sign-off without our RST ever going out.
+  if (v.reportSent && v.rstRx.trim() !== "") return "signoff";
+  return "report";
 }
 
 /**
  * The key that should be lit: the one whose message is the next thing to say.
  *
- * In S&P the first thing to say is "here I am" (F4, our call in answer), not a
- * CQ — that is the only place the mode changes the sequence.
+ * Only the opening differs by mode: Run says CQ (F1) where S&P says its own call
+ * (F4), and S&P says that call twice — once with an empty call box, once with the
+ * call copied but the report not yet chosen.
  */
 export function highlightedKey(v: EntryValues): number {
   switch (entryStep(v)) {
     case "call":
       return v.mode === "run" ? 1 : 4;
+    case "answer":
+      return 4;
     case "report":
       return 2;
     case "signoff":
@@ -91,13 +123,22 @@ export interface EntryAction {
   fillRstTx: string | null;
   /** Where the caret goes afterwards; null = leave it where it is. */
   focus: EntryField | null;
+  /** Our report is out: the row is past the report step (see `reportSent`). */
+  markReported: boolean;
   /** This row is finished: append it to the log and start a new one. */
   log: boolean;
   /** Clear the boxes (always together with `log`). */
   clear: boolean;
 }
 
-const STAY: EntryAction = { send: null, fillRstTx: null, focus: null, log: false, clear: false };
+const STAY: EntryAction = {
+  send: null,
+  fillRstTx: null,
+  focus: null,
+  markReported: false,
+  log: false,
+  clear: false,
+};
 
 /** Enter: take the next step, and send the message that belongs to it. */
 export function onEnter(v: EntryValues): EntryAction {
@@ -106,16 +147,38 @@ export function onEnter(v: EntryValues): EntryAction {
       // Nothing to send but the invitation itself: CQ when we are the one
       // calling, our call when we are answering.
       return { ...STAY, send: highlightedKey(v) };
+    case "answer":
+      // Our call goes out, and the report box fills itself: the next thing to
+      // say is the RST, and 599 is what it will be unless the operator says
+      // otherwise. The caret crosses to *their* report because that is what the
+      // pounced station sends back — it arrives with his call, before ours has
+      // gone out, so it is what the operator has to be ready to copy.
+      return {
+        send: 4,
+        fillRstTx: DEFAULT_RST,
+        focus: "rstRx",
+        markReported: false,
+        log: false,
+        clear: false,
+      };
     case "report":
       return {
         send: 2,
         fillRstTx: v.rstTx.trim() === "" ? DEFAULT_RST : null,
         focus: "rstRx",
+        markReported: true,
         log: false,
         clear: false,
       };
     case "signoff":
-      return { send: 3, fillRstTx: null, focus: "call", log: true, clear: true };
+      return {
+        send: 3,
+        fillRstTx: null,
+        focus: "call",
+        markReported: false,
+        log: true,
+        clear: true,
+      };
   }
 }
 
@@ -127,11 +190,17 @@ export function onEnter(v: EntryValues): EntryAction {
  * step to take without sending, so it does nothing.
  */
 export function onSpace(v: EntryValues): EntryAction {
-  if (entryStep(v) !== "report") return STAY;
+  const step = entryStep(v);
+  if (step === "answer") {
+    return { ...STAY, fillRstTx: DEFAULT_RST, focus: "rstRx" };
+  }
+  if (step !== "report") return STAY;
   return {
     send: null,
     fillRstTx: v.rstTx.trim() === "" ? DEFAULT_RST : null,
     focus: "rstRx",
+    // Keyed by hand is still sent: the step it stands for has been taken.
+    markReported: true,
     log: false,
     clear: false,
   };

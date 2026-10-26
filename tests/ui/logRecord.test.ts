@@ -3,7 +3,7 @@ import { buildLogRecord, formatFreqMHz } from "../../src/ui/logRecord.js";
 import { emptyEntry, type EntryValues } from "../../src/ui/entryModel.js";
 
 function entry(patch: Partial<EntryValues> = {}): EntryValues {
-  return { ...emptyEntry(), ...patch };
+  return { ...emptyEntry("run"), ...patch };
 }
 
 describe("buildLogRecord", () => {

@@ -6,7 +6,9 @@ import { isReserved, type QuickMessage } from "../../message/modeFile.js";
 import {
   blockingField,
   canLog,
+  DEFAULT_RST,
   emptyEntry,
+  entryStep,
   highlightedKey,
   normaliseCall,
   onEnter,
@@ -35,11 +37,21 @@ import type { AppHost } from "../app.js";
  * `entryModel.ts` — this module only renders that decision and moves the caret:
  *
  *  - empty call      → F1 (Run: call CQ) or F4 (S&P: answer somebody)
- *  - call filled     → F2 (send the report; the report box fills itself with 599)
- *  - their report in → F3 (sign off, write the row, start a new one)
+ *  - call filled     → F4 in S&P (our call in answer), until the report is picked
+ *  - our report due  → F2 (send it; the report box fills itself with 599)
+ *  - our report due  → F2 (send it; the report box fills itself with 599)
+ *  - their report in and ours out → F3 (sign off, write the row, start a new one)
+ *
+ * The caret follows the ears: after F4 it waits in *their* report box, because a
+ * station that has just been pounced on comes back with his report before ours
+ * has gone out.
  *
  * Enter sends the message of the step; Space takes the same step without
- * sending, for an operator who wants to key it by hand.
+ * sending, for an operator who wants to key it by hand. Esc gives up on the
+ * station: three boxes back to blank, nothing keyed, nothing logged.
+ *
+ * Pressing F1 is also how the operator says "I am running": the mode box follows
+ * the key, and only tuning the dial puts it back to S&P.
  *
  * Only a key with **no message at all** is dead. A key whose message still wants
  * a value the operator has not typed still sends: the hole simply goes out as
@@ -113,7 +125,31 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     // Half-duplex: the rig is already keying something of ours.
     if (host.session.isSending) return;
     const text = sendable(m);
-    if (text !== null) send(text);
+    if (text === null) return;
+    send(text);
+    let stepped = false;
+    // Calling CQ *is* the declaration of intent: whoever puts F1 on the air is
+    // running, whether they clicked the key or pressed the F1 key. Nothing else
+    // flips the mode towards Run — and any tuning flips it back to S&P.
+    if (key === 1 && entry.mode !== "run") {
+      entry.mode = "run";
+      stepped = true;
+    }
+    // Pressing the lit key does what Enter on it would do. In S&P the opening F4
+    // is done with once the report box holds a number, and F2 puts our report on
+    // the air; without this the light would stay on a message already sent.
+    if (key === 4 && entryStep(entry) === "answer" && entry.rstTx.trim() === "") {
+      entry.rstTx = DEFAULT_RST;
+      rstTxInput.value = DEFAULT_RST;
+      stepped = true;
+    } else if (key === 2 && entryStep(entry) === "report") {
+      entry.reportSent = true;
+      stepped = true;
+    }
+    if (stepped) {
+      clearHint();
+      sync();
+    }
   };
 
   const grid = el("div", { class: "qm-grid" });
@@ -219,6 +255,9 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       entry.rstTx = action.fillRstTx;
       rstTxInput.value = action.fillRstTx;
     }
+    // Our side of the exchange has gone out: the row is past the report step,
+    // so a report box filled from here on means the sign-off is next.
+    if (action.markReported) entry.reportSent = true;
     // The message is expanded *before* the row is cleared: it is built from the
     // callsign and report that are about to be wiped.
     let outgoing: string | null = null;
@@ -270,10 +309,20 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   // --- F1–F8 --------------------------------------------------------------
 
   const onKeyDown = (e: KeyboardEvent): void => {
-    const m = /^F([1-8])$/.exec(e.key);
-    if (!m || e.repeat) return;
+    if (e.repeat) return;
     // A modal (settings, disclaimer) owns the keyboard while it is up.
     if (document.querySelector(".modal-overlay")) return;
+    // Esc gives up on this station — the same gesture N1MM uses to empty its
+    // entry window. Not a step, so it is not subject to half-duplex: what is
+    // already on the air stays on the air, but the row is blank when the
+    // operator looks back at it.
+    if (e.key === "Escape") {
+      e.preventDefault();
+      clearEntry();
+      return;
+    }
+    const m = /^F([1-8])$/.exec(e.key);
+    if (!m) return;
     e.preventDefault();
     pressKey(Number(m[1]));
   };
@@ -311,6 +360,25 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     if (hint.text === "" && hint.field === null) return;
     hint = { text: "", field: null };
     hintNode.textContent = "";
+    sync();
+  }
+
+  /**
+   * Give up on this station: wipe the row and say nothing (Esc).
+   *
+   * Deliberately not a step on the ladder: nothing is keyed, nothing is logged,
+   * and the operating mode is kept — giving up on one station says nothing
+   * about how the next one starts. Called from the document-level handler, so
+   * it also works while the rig is still keying: the carrier cannot be recalled,
+   * but the boxes can be emptied for whatever comes next.
+   */
+  function clearEntry(): void {
+    Object.assign(entry, emptyEntry(entry.mode));
+    callInput.value = "";
+    rstTxInput.value = "";
+    rstRxInput.value = "";
+    clearHint();
+    focusField("call");
     sync();
   }
 

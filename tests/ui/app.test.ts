@@ -495,6 +495,44 @@ describe("发送框（报文模式）", () => {
   });
 });
 
+describe("运行方式：默认 S&P，一调频率就回 S&P", () => {
+  function litKey(root: HTMLElement): string[] {
+    return Array.from(root.querySelectorAll(".qm-key.active .qm-fkey")).map(
+      (n) => n.textContent ?? "",
+    );
+  }
+
+  it("开台就停在 S&P，灯亮 F4", () => {
+    const { app, root } = mountApp();
+
+    app.setPower(true);
+
+    expect(app.entry.mode).toBe("s&p");
+    expect(litKey(root)).toEqual(["F4"]);
+  });
+
+  it("同波段调谐、换波段都把人送回 S&P", () => {
+    const { app } = mountApp();
+
+    app.entry.mode = "run";
+    app.updateSettings({ freqMHz: 14.026 });
+    expect(app.entry.mode).toBe("s&p");
+
+    app.entry.mode = "run";
+    app.updateSettings({ bandIndex: 0, freqMHz: 7.025 });
+    expect(app.entry.mode).toBe("s&p");
+  });
+
+  it("改别的设置不动运行方式", () => {
+    const { app } = mountApp();
+
+    app.entry.mode = "run";
+    app.updateSettings({ wpm: 30 });
+
+    expect(app.entry.mode).toBe("run");
+  });
+});
+
 describe("版面：瀑布图吃掉剩下的高度", () => {
   it("只有电台页让页面按内容高度排，其它页拿回整块区域", () => {
     const { app, root } = mountApp();

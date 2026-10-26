@@ -176,7 +176,7 @@ describe("日志页（IndexedDB 可用）", () => {
     // The row comes from what the operator wrote down, not from the machine —
     // and the dial is read at the moment they sign off.
     const record = buildLogRecord(
-      { ...emptyEntry(), call: peer, rstTx: "599", rstRx: "579" },
+      { ...emptyEntry("run"), call: peer, rstTx: "599", rstRx: "579" },
       session.freqMHz,
     );
     expect(record).not.toBeNull();
