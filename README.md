@@ -22,7 +22,8 @@
 - 用户通过键盘模拟直键或 iambic 发送 CW
 - 随时可发报，无需"开始通联"；发报时接收中断（半双工），频谱上只剩自己的信号
 - 只靠耳朵：不显示对方是谁，也不回放收发记录；调准频率就听到正在发的报文
-- 通联成功后自动记录日志
+- 八个功能键（F1–F8）发常用报文，报文写在可编辑的模式配置文件 `DX.msg` 里，支持 `{MYCALL}` / `{THEIRCALL}` / `{RST}` 等宏
+- 日志由自己在录入行手记（对方呼号 + 两个 RST），回车即发结束语并落账
 
 ## 开发与运行
 
@@ -42,7 +43,7 @@ npm run desktop        # 开发模式（Tauri 窗口 + Vite 热更新）
 npm run desktop:build  # 打出免安装 exe：src-tauri/target/release/cw-qso-trainer.exe
 ```
 
-首次运行会在 exe 旁生成 `app-data/`（WebView2 数据、设置、日志）——把 exe 和这个文件夹一起拷走，数据和练习记录就都在。exe 要放在**可写目录**（不要放 `Program Files`）；未签名，首次运行可能弹 SmartScreen 提示。
+首次运行会在 exe 旁生成 `app-data/`（WebView2 数据、设置、日志）和 `app-data/messages/DX.msg`（八个功能键的报文，可以直接改）——把 exe 和这个文件夹一起拷走，数据、练习记录和自定义报文就都在。exe 要放在**可写目录**（不要放 `Program Files`）；未签名，首次运行可能弹 SmartScreen 提示。
 
 ## 呼号数据
 

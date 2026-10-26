@@ -36,6 +36,7 @@
 - `data/cty.dat` 是 country-files.com 发布的原始国家文件，**逐字节保持上游格式**：不改编、不加注释、不手工修补个别记录。它是定长 ASCII 记录格式，任何非记录行都会被解析器当成数据。
 - 刷新用 `npm run update:cty`（`scripts/update-cty.mjs`），脚本先校验结构与记录数、通过后才覆盖。也可以从上游手动下载覆盖，但同样不要编辑内容。
 - 构建与运行都不联网：数据在构建时内联，`src/data/cty.ts` 负责解析。
+- `data/messages/*.msg` 是各模式快速报文（F1–F8）的**内置默认**：前端用 `?raw` 内联，桌面侧用 `include_str!` 引用**同一个文件**，首次运行时原样写一份到 exe 旁供用户编辑。改默认报文就改这里，不要在前端与 Rust 各写一份。格式见 [doc/MESSAGES.md](./doc/MESSAGES.md)。
 
 ## 语言约定
 

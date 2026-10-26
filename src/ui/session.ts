@@ -17,7 +17,6 @@ import type { SpectrumSnapshot } from "../ham/spectrum.js";
 import { normalisePassband, resolveSideband, type Sideband } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
 import { CALL_RE } from "../message/parse.js";
-import { canWriteLog, deriveLogRecord, type LogRecord } from "./logRecord.js";
 import { clearStaging } from "./storage/qsoStaging.js";
 import { SessionAudio } from "./sessionAudio.js";
 import { HamQsoDriver } from "./sessionHamQso.js";
@@ -175,8 +174,6 @@ export class QsoSession implements SessionContext {
    * throw away whatever the user was halfway through keying in.
    */
   draft = "";
-  /** Set once the finished QSO has been written to the log (prevents duplicates). */
-  logWritten = false;
 
   /**
    * This band's mode, once the operator has chosen one. `null` means "never
@@ -819,7 +816,6 @@ export class QsoSession implements SessionContext {
   /** Draw the stations that will answer this CQ and start their schedule. */
   private beginPileup(): void {
     this.pileup.clear(); // release anyone still calling from an earlier CQ
-    this.logWritten = false;
     this.pileup.begin(this.hamQso.isAudible());
     // VIRTUAL-HAM.md: a HAM answers the user's CQ after 1–5 s; the others
     // follow once the previous call has finished plus a short random gap.
@@ -927,35 +923,12 @@ export class QsoSession implements SessionContext {
     this.patience.armPartner();
   }
 
-  // --- log & lifecycle of a QSO --------------------------------------------
-
-  /** The log row to persist once a QSO completes, or null if the gate is unmet. */
-  pendingLog(): LogRecord | null {
-    if (this.logWritten) return null;
-    const machine = this.machine;
-    if (!machine) return null;
-    const ctx = machine.getContext();
-    if (
-      !canWriteLog({
-        state: machine.state,
-        callsignsConfirmed: ctx.callsignsConfirmed,
-        rstRx: ctx.rstRx,
-        rstTx: ctx.rstTx,
-        peerEndHeard: ctx.peerEndHeard,
-        userEndSent: ctx.userEndSent,
-      })
-    ) {
-      return null;
-    }
-    const qso = machine.getLog();
-    if (!qso) return null;
-    return deriveLogRecord(qso, this.freqMHz);
-  }
-
-  /** Mark the current QSO as logged so `pendingLog()` stops returning it. */
-  markLogged(): void {
-    this.logWritten = true;
-  }
+  // --- lifecycle of a QSO --------------------------------------------------
+  //
+  // The log is not written from here. A row is the operator's own record — the
+  // call and both reports they copied — so it is appended by the entry panel
+  // when they sign off (`buildLogRecord` in `logRecord.ts`). The session's job
+  // ends with the conversation on the air.
 
   /**
    * End the exchange without touching what the operator has typed. The partner
@@ -968,7 +941,6 @@ export class QsoSession implements SessionContext {
     this.machine?.reset();
     this.machine = null;
     this.ham = null;
-    this.logWritten = false;
     clearStaging();
   }
 
@@ -998,7 +970,6 @@ export class QsoSession implements SessionContext {
     this.machine = restored.machine;
     this.lines = restored.lines;
     this.draft = restored.draft;
-    this.logWritten = restored.logWritten;
   }
 
   private persistStaging(): void {
@@ -1006,7 +977,6 @@ export class QsoSession implements SessionContext {
       freqMHz: this.freqMHz,
       lines: this.lines,
       draft: this.draft,
-      logWritten: this.logWritten,
       machine: this.machine,
       ham: this.ham,
     });

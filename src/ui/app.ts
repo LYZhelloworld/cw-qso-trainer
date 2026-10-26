@@ -17,6 +17,10 @@ import { BANDS, clampToBand, roundFreq } from "./bands.js";
 import { otherSideband, type Sideband } from "../ham/tuning.js";
 import { Waterfall } from "./waterfall.js";
 import { RigFace, type ScopeView } from "./rigFace.js";
+import { emptyEntry, type EntryValues } from "./entryModel.js";
+import { loadModeMessages } from "./modeFileLoader.js";
+import { parseBundledMode } from "../data/modeMessages.js";
+import type { ModeMessages } from "../message/modeFile.js";
 
 export type PageId = "radio" | "log" | "about";
 
@@ -46,6 +50,13 @@ export interface AppHost {
    * Optional: pages render the bar inside themselves when there is no shell.
    */
   readonly sendBar?: HTMLElement;
+  /**
+   * The current mode's eight quick messages (`doc/MESSAGES.md`), and the log
+   * entry row the operator is filling in. Optional so lightweight test hosts do
+   * not have to carry them; the entry panel simply does not render without.
+   */
+  readonly modeMessages?: ModeMessages;
+  readonly entry?: EntryValues;
 }
 
 type PageRenderer = (host: AppHost, root: HTMLElement) => void;
@@ -116,6 +127,17 @@ export class App implements AppHost {
     isTransmitting: () => this.session.isTransmitting,
   });
   private readonly navRoot = el("nav", { class: "nav" });
+  /**
+   * The eight quick messages, and the row being filled in under them.
+   *
+   * The message set starts as the bundled default so the keys are there on the
+   * first frame; `start()` then looks for the operator's own copy of the file
+   * and swaps it in if there is one. The entry row is deliberately *not* per
+   * band: it is one row on one piece of paper, and turning the dial must not
+   * lose what has already been copied.
+   */
+  modeMessages: ModeMessages = parseBundledMode().config;
+  readonly entry: EntryValues = emptyEntry();
   /** The operating screen. Scrolls on its own; the rig stays put. */
   private readonly pageRoot = el("div", { class: "page-area" });
   /**
@@ -229,6 +251,26 @@ export class App implements AppHost {
     this.renderNav();
     this.renderPage();
     if (!hasAcknowledgedDisclaimer()) this.showDisclaimerModal();
+    void this.applyModeMessages();
+  }
+
+  /**
+   * Swap in the operator's own message file, if the desktop build can read one.
+   *
+   * Deliberately fire-and-forget and after the first paint: the bundled default
+   * is already on screen, so a slow or missing file never holds the app up. A
+   * file that cannot be used leaves the default in place and says why in the
+   * console — the alternative is an operating panel with dead keys and no
+   * explanation.
+   */
+  private async applyModeMessages(): Promise<void> {
+    const loaded = await loadModeMessages();
+    if (loaded.problems.length > 0) {
+      console.warn(`[模式配置] ${loaded.config.id}：`, ...loaded.problems);
+    }
+    if (loaded.source === "bundled") return;
+    this.modeMessages = loaded.config;
+    this.refresh();
   }
 
   /**
