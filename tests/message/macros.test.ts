@@ -58,6 +58,20 @@ describe("expandMacros", () => {
     expect(r.missing).toEqual(["RST"]);
   });
 
+  it("can leave the hole visible as {NAME} instead of dropping it", () => {
+    const values = macroValuesFrom("BG7XXX", "", "");
+    const r = expandMacros("{THEIRCALL} DE {MYCALL} RST {RST}", values, { keepUnfilled: true });
+    // What the key's tooltip shows: the line as it would read once the operator
+    // fills the boxes in, with the empty ones still named.
+    expect(r.text).toBe("{THEIRCALL} DE BG7XXX RST {RST}");
+    expect(r.missing).toEqual(["THEIRCALL", "RST"]);
+  });
+
+  it("keeps the macro name as the operator typed it", () => {
+    const r = expandMacros("de {mycall}", macroValuesFrom("", "", ""), { keepUnfilled: true });
+    expect(r.text).toBe("de {mycall}");
+  });
+
   it("collapses the spaces left by a missing macro", () => {
     expect(expandMacros("A  {EXCH}  B", values).text).toBe("A B");
   });

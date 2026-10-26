@@ -1,7 +1,6 @@
 import { button, el } from "../dom.js";
 import { BANDS } from "../bands.js";
 import { renderQsoPanel } from "./cw.js";
-import { renderEntryPanel } from "./entryPanel.js";
 import { renderSMeter } from "../smeter.js";
 import type { AppHost } from "../app.js";
 
@@ -56,10 +55,9 @@ export function renderRadio(host: AppHost, root: HTMLElement): void {
   if (!powered) return;
 
   page.append(controls(host));
-  // The key row and the log entry: the one part of this screen that is read off
-  // the air and typed in. It sits above the panadapter with the rest of the
-  // operating cluster, and stays put while the display scrolls.
-  renderEntryPanel(host, page);
+  // The quick keys and the log boxes are not here: they sit in the shell,
+  // under the panadapter (`App.entryRoot`), so the order on screen is the order
+  // of the contact. This page is only the receiver — meter, dial, band strip.
   // Always there, from the moment the rig is on: an operator transmits whenever
   // they want to, not after clicking "start a QSO". Whether anybody answers is
   // up to what the message says and who is listening (see `userSend`).

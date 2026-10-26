@@ -857,16 +857,22 @@ table.log input {
 
 /*
  * The one block on the operating screen that is *typed into* rather than
- * listened to. It sits between the band strip and the panadapter at a fixed,
- * readable width: the display below it wants every pixel it can get, so this
- * strip stays as short as it can be — two rows of keys, one row of boxes, and a
- * hint line whose height is always reserved (a line that appears and disappears
- * would resize the panadapter on every mistake).
+ * listened to. It sits under the panadapter and above the send bar — what is on
+ * the band, what you say next, what is going out — and takes the display's full
+ * width so its columns line up with it. It stays as short as it can be: two
+ * rows of keys, one row of boxes, and a hint line whose height is always
+ * reserved (a line that appears and disappears would resize the panadapter on
+ * every mistake).
  */
+.entry-bar {
+  flex: 0 0 auto;
+}
+
+.entry-bar[hidden] {
+  display: none;
+}
+
 .entry {
-  width: 100%;
-  max-width: 780px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -936,6 +942,9 @@ table.log input {
   border-color: var(--accent);
 }
 
+/* The only dead key is one with no message at all (F8 in the default file).
+   Every other key answers a press — if only by naming the box still missing —
+   so a grey key here always means "nothing to send", never "not yet". */
 .qm-key:disabled {
   opacity: 0.35;
   cursor: default;
@@ -952,35 +961,18 @@ table.log input {
   color: var(--accent);
 }
 
-/* The lit key may still be waiting for a value (S&P's opening call needs the
-   callsign): the light stays on, the key just cannot fire yet. */
-.qm-key.active:disabled {
-  opacity: 0.55;
-}
-
 .entry-row {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr;
   gap: 6px;
 }
 
+/* The box is its own label: three of them in one line, each saying what it is
+   in the placeholder. The class is on the input itself. */
 .entry-field {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.entry-label {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.entry-field input {
   flex: 1 1 auto;
   min-width: 0;
+  width: 100%;
   height: 28px;
   padding: 0 8px;
   background: var(--bg);
@@ -992,17 +984,17 @@ table.log input {
   letter-spacing: 0.06em;
 }
 
-.entry-field input::placeholder {
+.entry-field::placeholder {
   color: #55636f;
   letter-spacing: 0;
 }
 
-.entry-field input:focus {
+.entry-field:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.entry-field.bad input {
+.entry-field.bad {
   border-color: var(--danger);
 }
 

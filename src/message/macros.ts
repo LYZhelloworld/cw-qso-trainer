@@ -24,13 +24,25 @@ export interface MacroValues {
   exch?: string;
 }
 
+export interface ExpandOptions {
+  /**
+   * Leave a macro that has no value in the text, as `{NAME}`, instead of
+   * dropping it. That is how a key's tooltip shows the message it *would* key:
+   * a hole stays visible, so the operator can see which value is still missing.
+   * On the air the hole is simply nothing (see `missing`).
+   */
+  keepUnfilled?: boolean;
+}
+
 export interface ExpandResult {
   /** The message as it goes on the air: single spaces, no leading/trailing. */
   text: string;
   /**
-   * Macros that had no value. Names of macros, deduplicated. Non-empty means
-   * the message is not sendable yet — the caller disables the key rather than
-   * putting a half-filled line on the air.
+   * Macros that had no value yet. Names of macros, deduplicated.
+   *
+   * This is reporting, not a veto: a message with a hole still goes out — the
+   * hole is just empty, exactly as if the operator had left the box blank. The
+   * only thing that stops a message is having no text at all.
    */
   missing: string[];
 }
@@ -46,7 +58,11 @@ export function shortRst(full: string): string {
 }
 
 /** Expand one template. Unknown or empty macros are reported, not guessed. */
-export function expandMacros(template: string, values: MacroValues): ExpandResult {
+export function expandMacros(
+  template: string,
+  values: MacroValues,
+  options: ExpandOptions = {},
+): ExpandResult {
   const byName: Record<MacroName, string> = {
     MYCALL: values.myCall.trim(),
     THEIRCALL: values.theirCall.trim(),
@@ -58,16 +74,18 @@ export function expandMacros(template: string, values: MacroValues): ExpandResul
   };
 
   const missing: string[] = [];
-  const expanded = template.replace(MACRO_RE, (_whole, rawName: string) => {
+  const expanded = template.replace(MACRO_RE, (whole, rawName: string) => {
     const name = rawName.toUpperCase() as MacroName;
     if (!(name in byName)) {
       missing.push(rawName);
-      return `{${rawName}}`;
+      return whole;
     }
     const value = byName[name];
     if (value === "" && name !== "EXCH") {
       missing.push(rawName);
-      return "";
+      // Nothing has been typed for this one: it contributes nothing to the
+      // message — unless the caller wants to *see* the hole.
+      return options.keepUnfilled ? whole : "";
     }
     return value;
   });

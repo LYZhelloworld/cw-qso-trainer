@@ -1,6 +1,6 @@
 import { el } from "../dom.js";
 import { addLog } from "../storage/logStore.js";
-import { buildLogRecord } from "../logRecord.js";
+import { buildLogRecord, type LogRecord } from "../logRecord.js";
 import { expandMacros } from "../../message/macros.js";
 import { isReserved, type QuickMessage } from "../../message/modeFile.js";
 import {
@@ -21,11 +21,14 @@ import type { AppHost } from "../app.js";
  * The operating row: eight quick messages, and the three boxes the operator
  * fills in with what they heard.
  *
- * This is the one place in the app where something is *read* rather than
- * listened to — and it is read off the air first. The boxes are the operator's
- * own notes: the call they copied, the report they decided to send, the report
- * they received. Nothing fills them in automatically, because copying the
- * callsign is the skill being practised (see "没有记录，也没有台名" in `doc/UI.md`).
+ * It sits under the panadapter and above the send bar — the order of the
+ * contact, top to bottom: what is on the band, what you say next, what you are
+ * keying out. The row itself is the one place in the app where something is
+ * *read* rather than listened to — and it is read off the air first. The boxes
+ * are the operator's own notes: the call they copied, the report they decided
+ * to send, the report they received. Nothing fills them in automatically,
+ * because copying the callsign is the skill being practised (see "没有记录，也没有
+ * 台名" in `doc/UI.md`).
  *
  * The eight keys are the mode's messages (`doc/MESSAGES.md`), defined in a file
  * the operator can edit. Which of them is lit, and what Enter does, comes from
@@ -38,25 +41,12 @@ import type { AppHost } from "../app.js";
  * Enter sends the message of the step; Space takes the same step without
  * sending, for an operator who wants to key it by hand.
  *
- * A lit key is a *step*, not a promise: in S&P the first step is "call him",
- * and that message needs his callsign, which by definition has not been copied
- * yet. So the key is lit but not pressable, and Enter says which box is
- * missing — the alternative is a dead Enter with no explanation.
+ * Only a key with **no message at all** is dead. A key whose message still wants
+ * a value the operator has not typed still sends: the hole simply goes out as
+ * nothing, the way a blank box on a paper log would. The tooltip shows the
+ * template with `{THEIRCALL}`-style holes left in, so it is visible beforehand
+ * which value is still missing.
  */
-
-/** A key's rendering: what is on the button, and whether it can be pressed. */
-interface KeyView {
-  message: QuickMessage;
-  node: HTMLButtonElement;
-  labelNode: HTMLElement;
-}
-
-/** What the hint line is saying, and which box it is pointing at. */
-interface Hint {
-  text: string;
-  field: EntryField | null;
-}
-
 export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   const messages = host.modeMessages;
   // Lightweight hosts (tests, error pages) may not carry a message set.
@@ -67,7 +57,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   const keys: KeyView[] = [];
   let hint: Hint = { text: "", field: null };
 
-  const values = (): { myCall: string; theirCall: string; rstFull: string } => ({
+  const macroValues = (): { myCall: string; theirCall: string; rstFull: string } => ({
     myCall: host.settings.myCall,
     theirCall: entry.call,
     rstFull: entry.rstTx,
@@ -75,34 +65,55 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
 
   // --- the eight keys ----------------------------------------------------
 
-  const expanded = (m: QuickMessage): { text: string; missing: string[]; label: string } => {
-    const r = expandMacros(m.text, { ...values(), exch: "" });
-    // A label may carry macros too (F4 shows *your* call, F5 *theirs*). When one
-    // cannot be filled in, the raw name stays on the button — it says exactly
-    // which value is missing instead of leaving an anonymous key.
-    const l = expandMacros(m.label, { ...values(), exch: "" });
-    return { text: r.text, missing: r.missing, label: l.missing.length ? m.label : l.text };
+  /** The message as it would go out, and the button's own text. */
+  const expanded = (m: QuickMessage): { text: string; label: string } => {
+    const v = { ...macroValues(), exch: "" };
+    // A label may carry macros too (F4 shows *your* call, F5 *theirs*). A hole
+    // stays on the button as `{THEIRCALL}`: it says exactly which value is
+    // missing instead of leaving an anonymous key.
+    const l = expandMacros(m.label, v, { keepUnfilled: true });
+    return { text: expandMacros(m.text, v).text, label: l.text };
   };
 
+  /** The message with its holes left in — what the tooltip shows. */
+  const template = (m: QuickMessage): string =>
+    expandMacros(m.text, { ...macroValues(), exch: "" }, { keepUnfilled: true }).text;
+
+  /**
+   * The message as it would go out, or null when there is nothing to key.
+   *
+   * A message with an unfilled macro is sendable: the missing part is simply
+   * empty. Only a key with no text at all (a reserved slot) has nothing to say.
+   */
   const sendable = (m: QuickMessage): string | null => {
     if (isReserved(m)) return null;
-    const r = expanded(m);
-    return r.missing.length > 0 || r.text === "" ? null : r.text;
+    const text = expanded(m).text;
+    return text === "" ? null : text;
   };
 
   /**
-   * Put a key's message on the air. `blocked` means the message still needs a
-   * value the operator has not filled in — the caller explains which.
+   * What the key's tooltip says: the message it will key out, with any value
+   * still missing left visible as `{NAME}`.
    */
-  const transmit = async (key: number): Promise<"sent" | "busy" | "blocked"> => {
+  const tooltip = (m: QuickMessage): string => (isReserved(m) ? RESERVED_HINT : template(m));
+
+  /** Put a message on the air, and let the bar under the display show it. */
+  const send = (text: string): void => {
+    if (text === "") return;
+    // Started before the preview is asked for: `userSend` raises the carrier
+    // synchronously, so the bar is filled by the time it is on screen.
+    void host.session.userSend(text);
+    host.showOutgoing?.(text);
+  };
+
+  /** Press one key. A dead key has nothing to say and does nothing. */
+  const pressKey = (key: number): void => {
     const m = messages.messages.find((x) => x.key === key);
-    if (!m) return "blocked";
+    if (!m) return;
     // Half-duplex: the rig is already keying something of ours.
-    if (host.session.isSending) return "busy";
+    if (host.session.isSending) return;
     const text = sendable(m);
-    if (text === null) return "blocked";
-    await host.session.userSend(text);
-    return "sent";
+    if (text !== null) send(text);
   };
 
   const grid = el("div", { class: "qm-grid" });
@@ -113,47 +124,51 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     node.append(fkey, labelNode);
     node.addEventListener("click", () => {
       node.blur(); // the key is a trigger, not a place to type
-      void transmit(m.key);
+      pressKey(m.key);
     });
     keys.push({ message: m, node, labelNode });
     grid.append(node);
   }
 
   // --- the row ------------------------------------------------------------
+  //
+  // No labels: the three boxes sit in one line and say what they are inside
+  // themselves, so the row is one line tall instead of a label column plus a
+  // field column. The placeholders carry the wording the labels used to.
 
-  const callInput = field("呼号", "entry-call", "对方呼号", { autocapitalize: "characters" });
-  const rstTxInput = field("我发 RST", "entry-rst", "599", { inputmode: "numeric" });
-  const rstRxInput = field("对方 RST", "entry-rst", "579", { inputmode: "numeric" });
+  const callInput = field("entry-call", "对方呼号", { autocapitalize: "characters" });
+  const rstTxInput = field("entry-rst", "我方 RST", { inputmode: "numeric" });
+  const rstRxInput = field("entry-rst", "对方 RST", { inputmode: "numeric" });
 
   const row = el("div", { class: "entry-row" });
-  row.append(callInput.wrap, rstTxInput.wrap, rstRxInput.wrap);
+  row.append(callInput, rstTxInput, rstRxInput);
 
   const hintNode = el("div", { class: "entry-hint", attrs: { role: "status" } });
 
-  callInput.input.value = entry.call;
-  rstTxInput.input.value = entry.rstTx;
-  rstRxInput.input.value = entry.rstRx;
+  callInput.value = entry.call;
+  rstTxInput.value = entry.rstTx;
+  rstRxInput.value = entry.rstRx;
 
-  callInput.input.addEventListener("input", () => {
+  callInput.addEventListener("input", () => {
     clearHint();
     // A callsign never contains a space, and Morse has no lower case: keeping
     // the box upper case means the draft, the macros and the log agree.
-    const upper = normaliseCall(callInput.input.value.replace(/\s+/g, ""));
-    if (upper !== callInput.input.value) {
-      callInput.input.value = upper;
-      callInput.input.setSelectionRange(upper.length, upper.length);
+    const upper = normaliseCall(callInput.value.replace(/\s+/g, ""));
+    if (upper !== callInput.value) {
+      callInput.value = upper;
+      callInput.setSelectionRange(upper.length, upper.length);
     }
     entry.call = upper;
     sync();
   });
-  rstTxInput.input.addEventListener("input", () => {
+  rstTxInput.addEventListener("input", () => {
     clearHint();
-    entry.rstTx = digits(rstTxInput.input);
+    entry.rstTx = digits(rstTxInput);
     sync();
   });
-  rstRxInput.input.addEventListener("input", () => {
+  rstRxInput.addEventListener("input", () => {
     clearHint();
-    entry.rstRx = digits(rstRxInput.input);
+    entry.rstRx = digits(rstRxInput);
     sync();
   });
 
@@ -185,7 +200,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
 
   // --- Enter / Space ------------------------------------------------------
 
-  const runAction = async (action: EntryAction): Promise<void> => {
+  const runAction = (action: EntryAction): void => {
     // Half-duplex: while our own message — or the answer to it — is still on the
     // air there is nothing to take a step *to*. Returning before moving the
     // caret matters: a step that did not happen must not look like it did.
@@ -198,69 +213,56 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       }
       return;
     }
+    // The report box fills itself *before* the message is expanded: F2's text
+    // carries `{RST}`, and the 599 is exactly the value that has to go into it.
     if (action.fillRstTx !== null) {
       entry.rstTx = action.fillRstTx;
-      rstTxInput.input.value = action.fillRstTx;
+      rstTxInput.value = action.fillRstTx;
+    }
+    // The message is expanded *before* the row is cleared: it is built from the
+    // callsign and report that are about to be wiped.
+    let outgoing: string | null = null;
+    if (action.send !== null) {
+      const m = messages.messages.find((x) => x.key === action.send);
+      if (!m) return;
+      outgoing = sendable(m);
     }
     clearHint();
+    let completed: LogRecord | null = null;
+    if (action.log) {
+      completed = buildLogRecord(entry, host.session.freqMHz);
+      // A fresh row, same operating mode: the next station, or the next CQ.
+      Object.assign(entry, emptyEntry(entry.mode));
+      callInput.value = "";
+      rstTxInput.value = "";
+      rstRxInput.value = "";
+    }
     sync();
     // The caret moves *now*, not when the message has finished going out: the
     // step has been taken, and keying 599 takes several seconds during which the
     // operator may as well start copying the report coming back.
     if (action.focus) focusField(action.focus);
-    if (action.send !== null) {
-      // The row is written only after the operator has actually signed off on
-      // the air, so the log is not closed while the message is still going out.
-      const outcome = await transmit(action.send);
-      if (outcome === "blocked") {
-        explain(action.send);
-        return;
-      }
-      if (outcome === "busy") return;
-    }
-    if (action.log) {
-      const record = buildLogRecord(entry, host.session.freqMHz);
-      if (record) await addLog(record);
-      // A fresh row, same operating mode: the next station, or the next CQ.
-      Object.assign(entry, emptyEntry(entry.mode));
-      callInput.input.value = "";
-      rstTxInput.input.value = "";
-      rstRxInput.input.value = "";
-      sync();
-      if (action.focus) focusField(action.focus);
+    // Signing off is what ends the QSO, not the other station's 73 coming back:
+    // the row is committed the moment the operator presses Enter, and the
+    // message goes out behind it.
+    if (outgoing !== null) send(outgoing);
+    if (completed) {
+      void addLog(completed).catch((err: unknown) => {
+        console.error("[日志] 写入失败：", err);
+      });
     }
   };
 
-  /**
-   * Say why the step's message cannot go out, and put the caret where the value
-   * is missing. Called only when the step key was pressed and refused.
-   */
-  const explain = (key: number): void => {
-    const m = messages.messages.find((x) => x.key === key);
-    const missing = m ? expanded(m).missing : [];
-    if (missing.includes("MYCALL")) {
-      showHint({ text: "先在设置里填本方呼号", field: null });
-      return;
-    }
-    if (missing.includes("THEIRCALL")) {
-      showHint({ text: "先填对方呼号，再说这句", field: "call" });
-      focusField("call");
-      return;
-    }
-    showHint({ text: HINT_FOR.rstTx, field: "rstTx" });
-    focusField("rstTx");
-  };
-
-  for (const f of [callInput, rstTxInput, rstRxInput]) {
-    f.input.addEventListener("keydown", (e) => {
+  for (const input of [callInput, rstTxInput, rstRxInput]) {
+    input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        void runAction(onEnter(entry));
+        runAction(onEnter(entry));
       } else if (e.key === " ") {
         // Space is a step, not a character: the callsign box never needs one,
         // and in the key modes Space is the straight key anyway.
         e.preventDefault();
-        void runAction(onSpace(entry));
+        runAction(onSpace(entry));
       }
     });
   }
@@ -273,7 +275,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     // A modal (settings, disclaimer) owns the keyboard while it is up.
     if (document.querySelector(".modal-overlay")) return;
     e.preventDefault();
-    void transmit(Number(m[1]));
+    pressKey(Number(m[1]));
   };
   document.addEventListener("keydown", onKeyDown);
   host.onLeave(() => document.removeEventListener("keydown", onKeyDown));
@@ -284,19 +286,19 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     const lit = highlightedKey(entry);
     for (const k of keys) {
       const m = k.message;
-      const text = sendable(m);
-      const r = expanded(m);
-      k.node.disabled = text === null;
-      k.labelNode.textContent = r.label;
+      k.labelNode.textContent = expanded(m).label;
+      // Only a key with no message at all is dead; everything else answers a
+      // press, if only by saying what it is still waiting for.
+      k.node.disabled = isReserved(m);
       // The light marks the step, not availability: in S&P the opening key needs
       // the callsign, which is exactly what the operator is about to type.
       k.node.classList.toggle("active", m.key === lit);
-      k.node.title = text ?? "这个键没有报文（见配置文件的 F 行）";
+      k.node.title = tooltip(m);
     }
     for (const r of radios) r.node.checked = r.mode === entry.mode;
-    callInput.wrap.classList.toggle("bad", hint.field === "call");
-    rstTxInput.wrap.classList.toggle("bad", hint.field === "rstTx");
-    rstRxInput.wrap.classList.toggle("bad", hint.field === "rstRx");
+    callInput.classList.toggle("bad", hint.field === "call");
+    rstTxInput.classList.toggle("bad", hint.field === "rstTx");
+    rstRxInput.classList.toggle("bad", hint.field === "rstRx");
   }
 
   function showHint(next: Hint): void {
@@ -314,7 +316,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
 
   function focusField(which: EntryField): void {
     const target =
-      which === "call" ? callInput.input : which === "rstTx" ? rstTxInput.input : rstRxInput.input;
+      which === "call" ? callInput : which === "rstTx" ? rstTxInput : rstRxInput;
     target.focus();
     target.setSelectionRange(target.value.length, target.value.length);
   }
@@ -324,26 +326,42 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   sync();
 }
 
+/** A key's rendering: what is on the button, and whether it can be pressed. */
+interface KeyView {
+  message: QuickMessage;
+  node: HTMLButtonElement;
+  labelNode: HTMLElement;
+}
+
+/** What the hint line is saying, and which box it is pointing at. */
+interface Hint {
+  text: string;
+  field: EntryField | null;
+}
+
 /** What each incomplete box is called out as. */
 const HINT_FOR: Record<EntryField, string> = {
   call: "先填对方呼号",
-  rstTx: "我发 RST 要三位数字（如 599 或 579）",
+  rstTx: "我方 RST 要三位数字（如 599 或 579）",
   rstRx: "对方 RST 要三位数字（如 599）",
 };
 
-/** A labelled box in the entry row. */
-function field(
-  label: string,
-  cls: string,
-  placeholder: string,
-  attrs: Record<string, string>,
-): { wrap: HTMLLabelElement; input: HTMLInputElement } {
-  const input = el("input", {
-    attrs: { type: "text", placeholder, autocomplete: "off", spellcheck: "false", ...attrs },
+/** What a key with no message at all says when the pointer rests on it. */
+const RESERVED_HINT = "这个键没有报文（见配置文件的 F 行）";
+
+/** One box of the entry row: the placeholder is its label. */
+function field(cls: string, placeholder: string, attrs: Record<string, string>): HTMLInputElement {
+  return el("input", {
+    class: `entry-field ${cls}`,
+    attrs: {
+      type: "text",
+      placeholder,
+      "aria-label": placeholder,
+      autocomplete: "off",
+      spellcheck: "false",
+      ...attrs,
+    },
   });
-  const wrap = el("label", { class: `entry-field ${cls}` });
-  wrap.append(el("span", { class: "entry-label", text: label }), input);
-  return { wrap, input };
 }
 
 /** Keep only digits, at most three: a report is three digits, never letters. */

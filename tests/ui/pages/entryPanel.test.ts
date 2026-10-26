@@ -10,10 +10,13 @@ import type { QsoSession } from "../../../src/ui/session.js";
 import type { AppHost, PageId } from "../../../src/ui/app.js";
 
 /** The panel is wiring: what would go on the air is recorded, not keyed. */
-function makeHarness(entry: EntryValues = emptyEntry()) {
+function makeHarness(entry: EntryValues = emptyEntry(), opts: { holdSend?: boolean } = {}) {
   const root = document.createElement("div");
   document.body.append(root);
   const sent: string[] = [];
+  /** What the panel asked the send bar under the display to show. */
+  const shown: string[] = [];
+  const gates: Array<() => void> = [];
   let cleanups: Array<() => void> = [];
 
   const session = {
@@ -21,6 +24,8 @@ function makeHarness(entry: EntryValues = emptyEntry()) {
     freqMHz: 14.025,
     userSend: async (text: string): Promise<void> => {
       sent.push(text);
+      // A send that never finishes: proves nothing after it waits for it.
+      if (opts.holdSend) await new Promise<void>((r) => gates.push(r));
     },
   } as unknown as QsoSession;
 
@@ -29,6 +34,9 @@ function makeHarness(entry: EntryValues = emptyEntry()) {
     session,
     entry,
     modeMessages: parseBundledMode().config,
+    showOutgoing(text: string) {
+      shown.push(text);
+    },
     updateSettings(patch: Partial<AppSettings>) {
       host.settings = normalizeSettings({ ...host.settings, ...patch });
       render();
@@ -52,7 +60,17 @@ function makeHarness(entry: EntryValues = emptyEntry()) {
   }
 
   render();
-  return { host, entry, sent, root, render };
+  return {
+    host,
+    entry,
+    sent,
+    shown,
+    root,
+    render,
+    releaseSend: () => {
+      for (const open of gates) open();
+    },
+  };
 }
 
 function keys(root: HTMLElement): HTMLButtonElement[] {
@@ -65,12 +83,12 @@ function activeKeys(root: HTMLElement): string[] {
     .map((b) => b.querySelector(".qm-fkey")?.textContent ?? "");
 }
 
-function box(root: HTMLElement, label: string): HTMLInputElement {
-  const found = Array.from(root.querySelectorAll<HTMLLabelElement>(".entry-field")).find(
-    (l) => l.querySelector(".entry-label")?.textContent === label,
+/** The three boxes say what they are in their placeholder, not in a label. */
+function box(root: HTMLElement, placeholder: string): HTMLInputElement {
+  const input = root.querySelector<HTMLInputElement>(
+    `input.entry-field[placeholder="${placeholder}"]`,
   );
-  const input = found?.querySelector("input");
-  if (!input) throw new Error(`未找到输入框：${label}`);
+  if (!input) throw new Error(`未找到输入框：${placeholder}`);
   return input;
 }
 
@@ -126,20 +144,35 @@ describe("八个快速报文键", () => {
     ]);
   });
 
-  it("缺对方呼号的键按不动，保留键 F8 也是灰的", async () => {
-    const { root, sent } = makeHarness();
+  it("只有真的没有报文的键（默认是 F8）是灰的，其余都能按", () => {
+    const { root } = makeHarness();
     const all = keys(root);
-    expect(all[1].disabled).toBe(true); // F2 需要 {THEIRCALL}
+    expect(all.slice(0, 7).every((b) => !b.disabled)).toBe(true);
     expect(all[7].disabled).toBe(true); // F8 留空
-    all[1].click();
-    await Promise.resolve();
-    expect(sent).toEqual([]);
+  });
+
+  it("缺值的键照发：缺的那一段就是空的，不弹提示", async () => {
+    const { root, sent } = makeHarness();
+    keys(root)[1].click(); // F2 需要 {THEIRCALL} 和 {RST}
+    // 空着就空着发出去，和手写一条报文没有区别；程序不替操作者补内容。
+    await vi.waitFor(() => expect(sent).toEqual(["DE BG7XXX R UR RST K"]));
+    expect(hint(root)).toBe("");
+  });
+
+  it("tooltip 就是即将发出的报文；没值的地方留着宏名", () => {
+    const { root } = makeHarness();
+    const all = keys(root);
+    expect(all[0].title).toBe("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    expect(all[2].title).toBe("R TU 73 SK");
+    expect(all[1].title).toBe("{THEIRCALL} DE BG7XXX R UR RST {RST} {RST} K");
+    expect(all[1].title).not.toContain("还缺");
+    expect(all[7].title).toContain("没有报文");
   });
 
   it("点一下就把报文发出去，宏在按下的那一刻展开", async () => {
     const { root, sent, entry } = makeHarness({ ...emptyEntry(), call: "JA1ABC" });
     entry.rstTx = "599";
-    type(box(root, "呼号"), "JA1ABC");
+    type(box(root, "对方呼号"), "JA1ABC");
     keys(root)[1].click();
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toBe("JA1ABC DE BG7XXX R UR RST 5NN 5NN K");
@@ -176,10 +209,10 @@ describe("高亮跟着该说的下一句走", () => {
 
   it("填了呼号就亮 F2", () => {
     const { root } = makeHarness();
-    type(box(root, "呼号"), "ja1abc");
+    type(box(root, "对方呼号"), "ja1abc");
     expect(activeKeys(root)).toEqual(["F2"]);
     // 呼号进框后自动转大写
-    expect(box(root, "呼号").value).toBe("JA1ABC");
+    expect(box(root, "对方呼号").value).toBe("JA1ABC");
   });
 
   it("对方 RST 填好就亮 F3", () => {
@@ -202,35 +235,33 @@ describe("高亮跟着该说的下一句走", () => {
 describe("回车与空格的分别", () => {
   it("空呼号按回车：Run 发 CQ", async () => {
     const { root, sent } = makeHarness();
-    press(box(root, "呼号"), "Enter");
+    press(box(root, "对方呼号"), "Enter");
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toBe("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
   });
 
-  it("空呼号按回车：S&P 想发 F4，但还没抄到呼号，于是点名并给提示", async () => {
+  it("空呼号按回车：S&P 发 F4，缺对方呼号的那一段留空", async () => {
     const { root, sent } = makeHarness({ ...emptyEntry("s&p") });
-    press(box(root, "呼号"), "Enter");
-    await Promise.resolve();
-    expect(sent).toEqual([]);
-    expect(hint(root)).toContain("对方呼号");
-    expect(document.activeElement).toBe(box(root, "呼号"));
+    press(box(root, "对方呼号"), "Enter");
+    await vi.waitFor(() => expect(sent).toEqual(["DE BG7XXX"]));
+    expect(hint(root)).toBe("");
   });
 
   it("呼号填好按回车：自动填 599、发 F2、光标跳到对方 RST", async () => {
     const { root, sent, entry } = makeHarness();
-    type(box(root, "呼号"), "JA1ABC");
-    press(box(root, "呼号"), "Enter");
+    type(box(root, "对方呼号"), "JA1ABC");
+    press(box(root, "对方呼号"), "Enter");
     expect(entry.rstTx).toBe("599");
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toBe("JA1ABC DE BG7XXX R UR RST 5NN 5NN K");
-    expect(box(root, "我发 RST").value).toBe("599");
+    expect(box(root, "我方 RST").value).toBe("599");
     await vi.waitFor(() => expect(document.activeElement).toBe(box(root, "对方 RST")));
   });
 
   it("呼号填好按空格：同样跳过去填 599，但一个字符也不发", async () => {
     const { root, sent, entry } = makeHarness();
-    type(box(root, "呼号"), "JA1ABC");
-    press(box(root, "呼号"), " ");
+    type(box(root, "对方呼号"), "JA1ABC");
+    press(box(root, "对方呼号"), " ");
     expect(entry.rstTx).toBe("599");
     await vi.waitFor(() => expect(document.activeElement).toBe(box(root, "对方 RST")));
     expect(sent).toEqual([]);
@@ -238,17 +269,17 @@ describe("回车与空格的分别", () => {
 
   it("已有 RST 不被 599 覆盖", async () => {
     const { root, entry } = makeHarness({ ...emptyEntry(), call: "JA1ABC", rstTx: "579" });
-    press(box(root, "呼号"), "Enter");
+    press(box(root, "对方呼号"), "Enter");
     expect(entry.rstTx).toBe("579");
-    expect(box(root, "我发 RST").value).toBe("579");
+    expect(box(root, "我方 RST").value).toBe("579");
   });
 
   it("最后一步按回车：发 F3、写日志、清空、光标回呼号框、灯回 F1", async () => {
     const { root, sent, entry } = makeHarness();
     // The whole contact, as it is actually worked: call in, Enter (F2 + 599),
     // their report in, Enter (F3 + log).
-    type(box(root, "呼号"), "JA1ABC");
-    press(box(root, "呼号"), "Enter");
+    type(box(root, "对方呼号"), "JA1ABC");
+    press(box(root, "对方呼号"), "Enter");
     await vi.waitFor(() => expect(sent).toHaveLength(1));
 
     type(box(root, "对方 RST"), "579");
@@ -269,9 +300,9 @@ describe("回车与空格的分别", () => {
     });
 
     expect(entry).toMatchObject({ call: "", rstTx: "", rstRx: "", mode: "run" });
-    expect(box(root, "呼号").value).toBe("");
+    expect(box(root, "对方呼号").value).toBe("");
     expect(box(root, "对方 RST").value).toBe("");
-    await vi.waitFor(() => expect(document.activeElement).toBe(box(root, "呼号")));
+    await vi.waitFor(() => expect(document.activeElement).toBe(box(root, "对方呼号")));
     expect(activeKeys(root)).toEqual(["F1"]);
   });
 
@@ -281,8 +312,39 @@ describe("回车与空格的分别", () => {
     await Promise.resolve();
     expect(sent).toEqual([]);
     expect(await listLogs()).toHaveLength(0);
-    expect(hint(root)).toContain("我发 RST");
+    expect(hint(root)).toContain("我方 RST");
     expect(root.querySelector(".entry-field.bad")).not.toBeNull();
+  });
+});
+
+describe("发出去的报文", () => {
+  it("按下快速报文时，同一句话交给最下面的发送框显示", async () => {
+    const { root, shown } = makeHarness();
+    keys(root)[2].click(); // F3：不依赖任何宏
+    await vi.waitFor(() => expect(shown).toEqual(["R TU 73 SK"]));
+  });
+
+  it("回车发 F3 时当场落账，不等这句发完，也不等对方回 73", async () => {
+    const { root, sent, releaseSend } = makeHarness(emptyEntry(), { holdSend: true });
+    type(box(root, "对方呼号"), "JA1ABC");
+    press(box(root, "对方呼号"), "Enter"); // F2：卡在发报里没出来
+    type(box(root, "对方 RST"), "579");
+    press(box(root, "对方 RST"), "Enter"); // F3：发出去的同时落账
+
+    await vi.waitFor(async () => expect(await listLogs()).toHaveLength(1));
+    expect(sent).toEqual(["JA1ABC DE BG7XXX R UR RST 5NN 5NN K", "R TU 73 SK"]);
+    releaseSend();
+  });
+});
+
+describe("三个框自己说自己是什么", () => {
+  it("没有标签，只有 placeholder", () => {
+    const { root } = makeHarness();
+    expect(root.querySelector(".entry-label")).toBeNull();
+    const placeholders = Array.from(
+      root.querySelectorAll<HTMLInputElement>(".entry-field"),
+    ).map((i) => i.placeholder);
+    expect(placeholders).toEqual(["对方呼号", "我方 RST", "对方 RST"]);
   });
 });
 
@@ -296,7 +358,7 @@ describe("输入框的收束", () => {
 
   it("呼号里的空格被去掉", () => {
     const { root } = makeHarness();
-    type(box(root, "呼号"), "ja1 abc");
-    expect(box(root, "呼号").value).toBe("JA1ABC");
+    type(box(root, "对方呼号"), "ja1 abc");
+    expect(box(root, "对方呼号").value).toBe("JA1ABC");
   });
 });

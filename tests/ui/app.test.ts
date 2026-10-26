@@ -436,15 +436,37 @@ describe("发送框（报文模式）", () => {
     return { app, root };
   }
 
-  it("放在瀑布图下面：紧跟显示器，在页脚之前", () => {
+  it("放在瀑布图下面：显示器 → 录入行 → 发送框 → 页脚", () => {
     const { root } = textMode();
     const bar = root.querySelector<HTMLElement>(".send-bar")!;
     const scope = root.querySelector<HTMLElement>(".rig-scope")!;
+    const entry = root.querySelector<HTMLElement>(".entry-bar")!;
     const footer = root.querySelector<HTMLElement>(".footer")!;
 
     expect(bar.hidden).toBe(false);
-    expect(scope.nextElementSibling).toBe(bar);
+    expect(entry.hidden).toBe(false);
+    expect(scope.nextElementSibling).toBe(entry);
+    expect(entry.nextElementSibling).toBe(bar);
     expect(bar.nextElementSibling).toBe(footer);
+  });
+
+  it("录入行只在开台的电台页上出现", () => {
+    const { app, root } = mountApp();
+    expect(root.querySelector<HTMLElement>(".entry-bar")!.hidden).toBe(true); // 关台
+    app.setPower(true);
+    expect(root.querySelector<HTMLElement>(".entry-bar")!.hidden).toBe(false);
+    app.go("log");
+    expect(root.querySelector<HTMLElement>(".entry-bar")!.hidden).toBe(true);
+  });
+
+  it("快速报文发送期间把报文显示在发送框里，发完清空", async () => {
+    const { app, root } = textMode();
+    const input = root.querySelector<HTMLInputElement>(".send-bar .send-input")!;
+
+    app.showOutgoing("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    expect(input.value).toBe("CQ CQ CQ DE BG7XXX BG7XXX PSE K");
+    // 没有真的在发报（载波没起来），下一个节拍就清掉。
+    await vi.waitFor(() => expect(input.value).toBe(""));
   });
 
   it("是单行输入框，不是多行文本框", () => {
