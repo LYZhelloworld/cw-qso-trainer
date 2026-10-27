@@ -10,7 +10,7 @@ import type { DxccData, DxccEntity } from "./dxcc.js";
  *
  *   field  contents
  *   1      country name              (parsed past, never stored)
- *   2      CQ zone                   (unused)
+ *   2      CQ zone
  *   3      ITU zone                  (unused)
  *   4      continent, two letters
  *   5      latitude, positive north
@@ -18,10 +18,12 @@ import type { DxccData, DxccEntity } from "./dxcc.js";
  *   7      UTC offset                (unused)
  *   8      primary prefix; a leading `*` marks a WAE-only entity
  *
- * Three things are taken from each record: the centroid, the continent and the
- * prefix list. The country name is deliberately dropped — `doc/UI.md` says the
- * trainer never tells the operator who is on the other end, and a dataset that
- * carried names would put that one careless log line away from leaking.
+ * Four things are taken from each record: the centroid, the continent, the CQ
+ * zone and the prefix list. The country name is deliberately dropped —
+ * `doc/UI.md` says the trainer never tells the operator who is on the other
+ * end, and a dataset that carried names would put that one careless log line
+ * away from leaking. The CQ zone survives because a contest *sends* it: it is
+ * one of the two numbers a CQWW exchange consists of (`qso/contest`).
  *
  * Longitude is the one field whose sign convention differs from the rest of
  * this codebase: the file counts degrees WEST as positive, we count them EAST,
@@ -43,6 +45,7 @@ interface Pending {
   lat: number;
   lon: number;
   continent: string;
+  cqZone: number;
   /** Prefixes collected from the alias lines; `=` entries are not prefixes. */
   aliases: string[];
 }
@@ -60,11 +63,15 @@ function parseHeader(line: string, lineNo: number): Pending | null {
   // The name may itself contain colons, so anchor on the tail: the last field
   // is the empty string after the trailing delimiter.
   const tail = fields.slice(-8);
+  const cqZone = Number.parseInt(tail[0].trim(), 10);
   const continent = tail[2].trim().toUpperCase();
   const lat = Number.parseFloat(tail[3]);
   const lonWest = Number.parseFloat(tail[4]);
   const primary = tail[6].trim();
 
+  if (!Number.isInteger(cqZone) || cqZone < 1 || cqZone > 40) {
+    throw new Error(`cty.dat:${lineNo}: unreadable CQ zone "${tail[0]}"`);
+  }
   if (!Number.isFinite(lat) || !Number.isFinite(lonWest)) {
     throw new Error(`cty.dat:${lineNo}: unreadable coordinates "${tail[3]}:${tail[4]}"`);
   }
@@ -77,7 +84,7 @@ function parseHeader(line: string, lineNo: number): Pending | null {
   if (!marker) {
     throw new Error(`cty.dat:${lineNo}: missing primary prefix`);
   }
-  return { marker, lat, lon: -lonWest, continent, aliases: [] };
+  return { marker, lat, lon: -lonWest, continent, cqZone, aliases: [] };
 }
 
 /**
@@ -93,7 +100,7 @@ export function parseCty(raw: string): DxccData {
 
   const commit = (): void => {
     if (!pending) return;
-    const { marker, lat, lon, continent, aliases } = pending;
+    const { marker, lat, lon, continent, cqZone, aliases } = pending;
     pending = null;
     if (aliases.length === 0) return;
     if (entities[marker]) {
@@ -104,6 +111,7 @@ export function parseCty(raw: string): DxccData {
       lat,
       lon,
       continent,
+      cqZone,
       prefixes: [...new Set([marker, ...aliases])],
     };
   };

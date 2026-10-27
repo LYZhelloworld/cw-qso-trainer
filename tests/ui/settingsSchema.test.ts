@@ -105,3 +105,31 @@ describe("validateCallsign", () => {
     expect(validateCallsign("BG7XXX", (p) => p === "BG7").level).toBe("ok");
   });
 });
+
+describe("比赛相关的设置", () => {
+  it("默认是 DX，分区交给呼号去推断", () => {
+    const s = normalizeSettings({});
+    expect(s.contest).toBe("DX");
+    expect(s.cqZone).toBe(0);
+    expect(s.wpxSerial).toBe(1);
+  });
+
+  it("认三个模式，别的一律回到 DX", () => {
+    expect(normalizeSettings({ contest: "CQWW" }).contest).toBe("CQWW");
+    expect(normalizeSettings({ contest: "WPX" }).contest).toBe("WPX");
+    expect(normalizeSettings({ contest: "ARRL" }).contest).toBe("DX");
+  });
+
+  it("分区 0 表示自动，其余夹到 1–40", () => {
+    expect(normalizeSettings({ cqZone: 0 }).cqZone).toBe(0);
+    expect(normalizeSettings({ cqZone: 15 }).cqZone).toBe(15);
+    expect(normalizeSettings({ cqZone: 41 }).cqZone).toBe(40);
+    expect(normalizeSettings({ cqZone: -3 }).cqZone).toBe(0);
+  });
+
+  it("WPX 序号夹在 1–9999", () => {
+    expect(normalizeSettings({ wpxSerial: 0 }).wpxSerial).toBe(1);
+    expect(normalizeSettings({ wpxSerial: 4321 }).wpxSerial).toBe(4321);
+    expect(normalizeSettings({ wpxSerial: 20000 }).wpxSerial).toBe(9999);
+  });
+});

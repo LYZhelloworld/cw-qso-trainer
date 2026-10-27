@@ -544,3 +544,42 @@ describe("版面：瀑布图吃掉剩下的高度", () => {
     expect(root.classList.contains("radio-view")).toBe(true);
   });
 });
+
+describe("机头的通联模式选择器", () => {
+  it("切到比赛：八个键、录入行、日志本一起换过去，正在进行的那一行作废", () => {
+    const { app, root } = mountApp();
+    // 先开机，录入行才会渲染出来。
+    powerButton(root).click();
+
+    expect(root.querySelector<HTMLSelectElement>(".rig-contest")!.value).toBe("DX");
+    expect(root.querySelector(".entry-own")).toBeNull();
+
+    app.entry.call = "JA1ABC";
+    const select = root.querySelector<HTMLSelectElement>(".rig-contest")!;
+    select.value = "CQWW";
+    select.dispatchEvent(new Event("change"));
+
+    expect(app.settings.contest).toBe("CQWW");
+    // 三种模式各记一本：模式一换，日志页看的也是那一本。
+    expect(app.logContest).toBe("CQWW");
+    // 换模式等于换了一整套规矩，旧那一行不能带过来。
+    expect(app.entry.call).toBe("");
+    expect(app.modeMessages.messages[0].text).toBe("CQ TEST {MYCALL}");
+    // 机头读回来的是新值，录入行多了一个框、也显示出我方要发的数字。
+    expect(root.querySelector<HTMLSelectElement>(".rig-contest")!.value).toBe("CQWW");
+    expect(root.querySelectorAll(".entry-field")).toHaveLength(4);
+    expect(root.querySelector(".entry-own")?.textContent).toContain("我方");
+  });
+
+  it("关着台也能切模式：先设好再开机，是同一台机器的顺序", () => {
+    const { app, root } = mountApp();
+    const select = root.querySelector<HTMLSelectElement>(".rig-contest")!;
+    select.value = "WPX";
+    select.dispatchEvent(new Event("change"));
+
+    expect(app.settings.contest).toBe("WPX");
+    expect(app.powered).toBe(false);
+    // 关着台就没有录入行可看，但键已经换好了。
+    expect(app.modeMessages.messages[1].text).toBe("{RST} {EXCH}");
+  });
+});

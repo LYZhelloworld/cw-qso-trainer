@@ -55,6 +55,58 @@ export function extractLetterPrefix(callsign: string): string {
   return base.replace(/[0-9].*$/, "");
 }
 
+/**
+ * Does this token read as an exchanged number — `05`, `012`, or their cut forms
+ * `T5`, `TTA`?
+ *
+ * A contest exchange sits immediately after the report, and cut numbers are
+ * indistinguishable from callsigns by shape alone: `U4` is 24, but it also looks
+ * exactly like a two-letter, one-digit callsign. What separates them is position,
+ * which the caller tracks (see `parseMessage`), and this test, which only has to
+ * accept a short run of digits and cut letters.
+ */
+function readsAsNumber(token: string): boolean {
+  if (/^\d{1,4}$/.test(token)) return true;
+  if (!/^[A-Z0-9]{1,4}$/.test(token)) return false;
+  let digits = "";
+  for (const ch of token) {
+    if (/[0-9]/.test(ch)) digits += ch;
+    else if (UNCUT[ch]) digits += UNCUT[ch];
+    else return false;
+  }
+  return digits.length <= 4;
+}
+
+/**
+ * Callsigns a line names, with any exchanged number left out.
+ *
+ * This is the same positional rule as `parseMessage`, packaged for the session's
+ * "who was that addressed to?" question. Without it a contest exchange would
+ * read as a callsign: `U4` (24 zone) is indistinguishable from a two-letter,
+ * one-digit call by shape, so a station calling CQ would appear to have been
+ * named by a message that named nobody.
+ *
+ * The operator's own call is *not* filtered here — callers differ on that.
+ */
+export function namedCallsignsIn(line: string): string[] {
+  const out: string[] = [];
+  let exchangeSlots = 0;
+  for (const token of normalize(line).split(/[^A-Z0-9/]+/)) {
+    if (!token) continue;
+    if (RST_RE.test(token)) {
+      exchangeSlots = 2;
+      continue;
+    }
+    if (exchangeSlots > 0 && readsAsNumber(token)) {
+      exchangeSlots -= 1;
+      continue;
+    }
+    exchangeSlots = 0;
+    if (CALL_RE.test(token) && !out.includes(token)) out.push(token);
+  }
+  return out;
+}
+
 /** Validate a token as a callsign: ITU format + prefix-table hit. */
 export function validateCallsign(token: string, db: DxccDatabase): boolean {
   if (!CALL_RE.test(token)) return false;
@@ -116,15 +168,26 @@ export function parseMessage(
   text = text.replace(/\bDE\b/g, " ").replace(/\s+/g, " ").trim();
 
   // 3. Tokenize and separate callsigns from message words.
+  //
+  // A contest exchange follows the report and can look exactly like a callsign
+  // (`5NN U4` — 24 zone, cut form), so the two tokens after a report are read as
+  // numbers first and never mistaken for a station's name. Without this, sending
+  // our exchange looked like sending somebody else's callsign and the machine
+  // answered `QRZ?`.
   const tokens = text.length ? text.split(" ") : [];
   const callsigns: string[] = [];
   const msgTokens: string[] = [];
   let callsignValid = true;
   let cqPresent = false;
+  let exchangeSlots = 0;
 
   for (const t of tokens) {
     if (t === "CQ") {
       cqPresent = true;
+    } else if (exchangeSlots > 0 && readsAsNumber(t)) {
+      // The exchanged number, not a callsign: `{RST} {EXCH}` and its repeat.
+      msgTokens.push(t);
+      exchangeSlots -= 1;
     } else if (CALL_RE.test(t)) {
       // Skip a consecutive duplicate callsign (e.g. "DE BG7XXX BG7XXX").
       if (callsigns.length === 0 || callsigns[callsigns.length - 1] !== t) {
@@ -133,6 +196,7 @@ export function parseMessage(
       if (!validateCallsign(t, db)) callsignValid = false;
     } else {
       msgTokens.push(t);
+      if (RST_RE.test(t)) exchangeSlots = 2;
     }
   }
 

@@ -5,15 +5,28 @@
 
 use tauri::Manager;
 
-/// The bundled default (`data/messages/DX.msg`), written next to the executable
+/// The bundled defaults (`data/messages/*.msg`), written next to the executable
 /// on first run so there is a copy for the operator to edit. Compiled in, so the
-/// file on disk and the fallback in `src/data/modeMessages.ts` are one text.
+/// files on disk and the fallbacks in `src/data/modeMessages.ts` are one text.
 const DEFAULT_DX: &str = include_str!("../../data/messages/DX.msg");
+const DEFAULT_CQWW: &str = include_str!("../../data/messages/CQWW.msg");
+const DEFAULT_WPX: &str = include_str!("../../data/messages/WPX.msg");
+
+/// The bundled text for a mode file, or `None` for a name we do not ship. One
+/// file per mode: the keys of a contest are not the keys of an everyday contact.
+fn bundled_mode(name: &str) -> Option<&'static str> {
+    match name {
+        "DX.msg" => Some(DEFAULT_DX),
+        "CQWW.msg" => Some(DEFAULT_CQWW),
+        "WPX.msg" => Some(DEFAULT_WPX),
+        _ => None,
+    }
+}
 
 /// Read `messages/<name>` from the app's data directory.
 ///
 /// `None` means "no such file" (the web app then keeps its bundled default).
-/// The first run writes the bundled DX file out first, because an empty folder
+/// The first run writes the bundled file out first, because an empty folder
 /// with a documented-but-missing file is a worse introduction than a file with
 /// comments in it. An existing file is never touched or rewritten.
 #[tauri::command]
@@ -37,11 +50,12 @@ fn read_mode_file(app: tauri::AppHandle, name: String) -> Result<Option<String>,
     let path = dir.join(&name);
 
     if !path.exists() {
-        if name == "DX.msg" {
-            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            std::fs::write(&path, DEFAULT_DX).map_err(|e| e.to_string())?;
-        } else {
-            return Ok(None);
+        match bundled_mode(&name) {
+            Some(default) => {
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                std::fs::write(&path, default).map_err(|e| e.to_string())?;
+            }
+            None => return Ok(None),
         }
     }
 

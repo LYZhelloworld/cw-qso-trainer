@@ -21,6 +21,7 @@ import { RigFace, type ScopeView } from "./rigFace.js";
 import { emptyEntry, type EntryValues } from "./entryModel.js";
 import { loadModeMessages } from "./modeFileLoader.js";
 import { parseBundledMode } from "../data/modeMessages.js";
+import { ownExchangeText, type ContestKind } from "../qso/contest.js";
 import type { ModeMessages } from "../message/modeFile.js";
 
 export type PageId = "radio" | "log" | "about";
@@ -65,6 +66,21 @@ export interface AppHost {
    */
   readonly modeMessages?: ModeMessages;
   readonly entry?: EntryValues;
+  /**
+   * The number this contact sends: our CQ zone (CQWW) or our serial (WPX), as it
+   * goes into `{EXCH}`. Empty in DX mode. Optional so lightweight test hosts do
+   * not have to carry a mode at all.
+   */
+  ownExchange?(): string;
+  /** The row was written: bump the WPX serial the next contact will send. */
+  nextWpxSerial?(): void;
+  /**
+   * Which log the log page is showing. Kept on the App rather than in the page so
+   * that saving or deleting a row does not jump to another log — the page is
+   * rebuilt on every refresh.
+   */
+  readonly logContest?: ContestKind;
+  setLogContest?(kind: ContestKind): void;
 }
 
 type PageRenderer = (host: AppHost, root: HTMLElement) => void;
@@ -130,6 +146,7 @@ export class App implements AppHost {
     onPower: (on) => this.setPower(on),
     onOpenSettings: () => this.openSettings(),
     onToggleSideband: (sideband) => this.toggleSideband(sideband),
+    onContest: (kind) => this.setContest(kind),
     // Read by the badge on its own clock: a send starts and ends without a
     // re-render, so there is no render to hang "TX" on.
     isTransmitting: () => this.session.isTransmitting,
@@ -150,6 +167,8 @@ export class App implements AppHost {
    */
   modeMessages: ModeMessages = parseBundledMode().config;
   readonly entry: EntryValues = emptyEntry("s&p");
+  /** Which log the log page shows; follows the rig's mode when that changes. */
+  logContest: ContestKind = "DX";
   /** The operating screen. Scrolls on its own; the rig stays put. */
   private readonly pageRoot = el("div", { class: "page-area" });
   /**
@@ -173,6 +192,9 @@ export class App implements AppHost {
   constructor(private readonly root: HTMLElement) {
     this.settings = loadSettings();
     this.activeBand = clampBandIndex(this.settings.bandIndex);
+    // The key set belongs to the mode we are opening in, not to a fixed DX set.
+    this.modeMessages = parseBundledMode(this.settings.contest).config;
+    this.logContest = this.settings.contest;
     // The air is built up front but no timer runs until `start()`.
     this.sessions = BANDS.map((_, i) => this.createSession(i));
     this.sessions[this.activeBand].retune(this.settings.freqMHz);
@@ -286,11 +308,16 @@ export class App implements AppHost {
    * explanation.
    */
   private async applyModeMessages(): Promise<void> {
-    const loaded = await loadModeMessages();
+    const kind = this.settings.contest;
+    const loaded = await loadModeMessages(kind);
     if (loaded.problems.length > 0) {
       console.warn(`[模式配置] ${loaded.config.id}：`, ...loaded.problems);
     }
     if (loaded.source === "bundled") return;
+    // The operator changed modes while the file was being read: those are the
+    // wrong eight keys now, and the synchronous default already on screen is
+    // the right ones.
+    if (this.settings.contest !== kind) return;
     this.modeMessages = loaded.config;
     this.refresh();
   }
@@ -361,9 +388,23 @@ export class App implements AppHost {
     const merged = normalizeSettings({ ...this.settings, ...patch });
     const bandChanged = merged.bandIndex !== this.settings.bandIndex;
     const freqChanged = merged.freqMHz !== this.settings.freqMHz;
+    const contestChanged = merged.contest !== this.settings.contest;
     this.settings = merged;
     saveSettings(merged);
     for (const s of this.sessions) s.updateSettings(merged);
+
+    if (contestChanged) {
+      // A different mode is a different set of words and a different number in
+      // the exchange, so the contact in progress is abandoned rather than
+      // carried across the change mid-sentence. The band itself is untouched:
+      // the stations are still there, and the new mode's keys are on screen
+      // before the file for them has even been read.
+      for (const s of this.sessions) s.reset();
+      Object.assign(this.entry, emptyEntry(this.entry.mode));
+      this.modeMessages = parseBundledMode(merged.contest).config;
+      this.logContest = merged.contest;
+      void this.applyModeMessages();
+    }
 
     if (bandChanged || freqChanged) {
       // Tuning is searching: a new frequency is a new patch of the band, and the
@@ -396,6 +437,43 @@ export class App implements AppHost {
     this.session.reset();
     this.session.seedHams();
     this.refresh();
+  }
+
+  /** Switch the rig between DX and the two contests (the head's mode selector). */
+  setContest(kind: ContestKind): void {
+    if (kind === this.settings.contest) return;
+    this.updateSettings({ contest: kind });
+  }
+
+  /** Which log the log page shows; the operator can look at any of the three. */
+  setLogContest(kind: ContestKind): void {
+    if (kind === this.logContest) return;
+    this.logContest = kind;
+    this.refresh();
+  }
+
+  /** The number this contact sends: our zone (CQWW) or our serial (WPX). */
+  ownExchange(): string {
+    return ownExchangeText(this.settings.contest, this.settings);
+  }
+
+  /**
+   * The row was written: the next WPX contact gets the next serial.
+   *
+   * Deliberately not `updateSettings`: this runs at the moment the operator
+   * signs off, and a full re-render there would tear down the panel they are
+   * still keying from. Nothing but the serial changed, and nothing reads it
+   * except the `{EXCH}` expansion of the next message.
+   */
+  nextWpxSerial(): void {
+    if (this.settings.contest !== "WPX") return;
+    const next = normalizeSettings({
+      ...this.settings,
+      wpxSerial: this.settings.wpxSerial + 1,
+    });
+    this.settings = next;
+    saveSettings(next);
+    for (const s of this.sessions) s.updateSettings(next);
   }
 
   go(page: PageId): void {
@@ -465,6 +543,8 @@ export class App implements AppHost {
       // The mode belongs to the band, so the face reads it from the session
       // rather than from settings.
       sideband: this.session.sideband,
+      // The contest belongs to the *rig*, not to a band.
+      contest: this.settings.contest,
     });
     this.waterfall?.setSpeed(this.settings.wpm);
     this.rig.updateScope(this.scopeView());

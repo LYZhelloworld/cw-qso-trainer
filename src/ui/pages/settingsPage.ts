@@ -1,6 +1,7 @@
 import { button, el, panel } from "../dom.js";
 import { dxccDatabase } from "../../data/dxcc.js";
 import { PASSBAND_HZ, PASSBAND_OPTIONS } from "../../ham/tuning.js";
+import { CQ_ZONE_MAX, SERIAL_MAX, SERIAL_MIN, ownZone } from "../../qso/contest.js";
 import {
   DEFAULT_SETTINGS,
   SIDETONE_MAX,
@@ -162,6 +163,17 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
     (iambicMode) => host.updateSettings({ iambicMode }),
   );
 
+  // --- contest exchanges ----------------------------------------------------
+  // The two numbers a contest puts on the air. Neither is typed during a
+  // contact: the zone is where we are, the serial is how many contacts we have
+  // already logged, so both live here and both are shown on the entry row.
+  const zoneField = numberRow("CQ 分区（0 = 按呼号自动）", s.cqZone, 0, CQ_ZONE_MAX, (n) =>
+    host.updateSettings({ cqZone: n }),
+  );
+  const serialField = numberRow("WPX 下一条序号", s.wpxSerial, SERIAL_MIN, SERIAL_MAX, (n) =>
+    host.updateSettings({ wpxSerial: n }),
+  );
+
   // --- receiver filter width ----------------------------------------------
   // A narrower filter is harder to stay inside, so this is also a difficulty
   // dial: 500 Hz is forgiving, 100 Hz demands you park on the signal.
@@ -217,6 +229,27 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
       el("div", {
         class: "hint",
         text: "难度决定底噪、衰落与干扰，以及对方抄不清你报文的概率。",
+      }),
+    ),
+    panel(
+      "比赛",
+      zoneField,
+      el("div", {
+        class: "hint",
+        text: `CQWW 里发给对方的就是这个分区：现在会发 ${ownZone(
+          s.cqZone,
+          s.myCall,
+        )} 区（补成两位，5 区发 05）。填 0 表示按本方呼号自动推断。`,
+      }),
+      serialField,
+      el("div", {
+        class: "hint",
+        text: "WPX 的序号每记录一条日志加一，补成三位（第一条就是 001）。这里可以改，也可以退回去重来。",
+      }),
+      button("序号回到 1", () => host.updateSettings({ wpxSerial: SERIAL_MIN }), "btn small"),
+      el("div", {
+        class: "hint",
+        text: "通联模式（DX / CQWW / WPX）在电台机头切。三种模式各自一本日志，互不混淆。",
       }),
     ),
     panel(

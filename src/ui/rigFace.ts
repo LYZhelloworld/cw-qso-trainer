@@ -2,6 +2,7 @@ import { button, clear, el } from "./dom.js";
 import { BANDS } from "./bands.js";
 import { SPECTRUM_SPAN_HZ } from "../ham/spectrum.js";
 import { sidebandLabel, type Sideband } from "../ham/tuning.js";
+import { CONTEST_KINDS, CONTEST_LABEL, type ContestKind } from "../qso/contest.js";
 import type { AppSettings } from "./settingsSchema.js";
 
 /**
@@ -30,6 +31,8 @@ export interface RigFaceOptions {
   onOpenSettings(): void;
   /** The mode label was clicked: pin the other sideband. */
   onToggleSideband(current: Sideband): void;
+  /** The mode selector was changed: DX, CQWW or WPX. */
+  onContest(kind: ContestKind): void;
   /**
    * Whether our own key is down, for the RX/TX badge.
    *
@@ -52,6 +55,11 @@ export interface RigView {
    * from settings: a rig remembers the mode per band, so it is band state.
    */
   sideband: Sideband;
+  /**
+   * Which of the three operating modes the rig is in. Unlike the sideband this
+   * is not per band: a contest is one entry, worked on whatever band is open.
+   */
+  contest: ContestKind;
 }
 
 /** What the scope's shutter says. */
@@ -158,7 +166,12 @@ export class RigFace {
 
     clear(this.left);
     this.band.textContent = BANDS[Math.min(Math.max(settings.bandIndex, 0), BANDS.length - 1)].name;
-    this.left.append(this.txBadge, this.band, this.modeButton(view.sideband));
+    this.left.append(
+      this.txBadge,
+      this.band,
+      this.modeButton(view.sideband),
+      this.contestSelect(view.contest),
+    );
 
     clear(this.right);
     const power = button(
@@ -201,8 +214,35 @@ export class RigFace {
     return btn;
   }
 
-  /** The shutter over the waterfall: what a switched-off rig shows. */
-  private buildStandby(): void {
+  /**
+   * The mode selector: everyday DX, or one of the two contests.
+   *
+   * It sits in the head next to the band and the sideband because it is the same
+   * kind of choice — what the rig is being used *for* right now — and because it
+   * has to be reachable with the power off: an operator sets up the mode before
+   * switching on, not after. Switching it changes the eight quick messages, the
+   * entry row and which log the contact is written to, and abandons any contact
+   * in progress (see `App.updateSettings`).
+   */
+  private contestSelect(current: ContestKind): HTMLElement {
+    const select = el("select", {
+      class: "rig-contest",
+      attrs: { "aria-label": "通联模式" },
+    });
+    for (const kind of CONTEST_KINDS) {
+      const option = el("option", { attrs: { value: kind } });
+      option.textContent = CONTEST_LABEL[kind];
+      select.append(option);
+    }
+    select.value = current;
+    select.title = "DX：日常通联 · CQWW：交换 CQ 分区 · WPX：交换序号（三种模式各记一本日志）";
+    select.addEventListener("change", () => {
+      this.opts.onContest(select.value as ContestKind);
+    });
+    return select;
+  }
+
+  /** The shutter over the waterfall: what a switched-off rig shows. */  private buildStandby(): void {
     this.standby.append(el("div", { class: "standby-icon", text: "⏻" }));
     this.standby.append(el("div", { class: "standby-title", text: "设备已关机" }));
     this.standby.append(

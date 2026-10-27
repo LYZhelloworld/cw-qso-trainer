@@ -1,4 +1,5 @@
-import type { LogRecord } from "../logRecord.js";
+import { contestOf, type LogRecord } from "../logRecord.js";
+import type { ContestKind } from "../../qso/contest.js";
 
 /**
  * Log persistence (IndexedDB), per LOG.md. Deliberately write-only outwards:
@@ -78,10 +79,40 @@ export async function updateLog(record: LogRecord): Promise<void> {
   }
 }
 
-export async function clearLogs(): Promise<void> {
+/** Delete one row — the operator deciding this contact never happened. */
+export async function deleteLog(id: number): Promise<void> {
   if (!logsAvailable()) return;
   try {
-    await run("readwrite", (s) => s.clear());
+    await run("readwrite", (s) => s.delete(id));
+  } catch {
+    // Ignore.
+  }
+}
+
+/**
+ * Empty a log. With a contest it empties **only that log**: the three books are
+ * separate records of three separate modes, and clearing a botched WPX run must
+ * not take the operator's DX log with it. Without an argument it empties all of
+ * them, which is what the log page's "clear everything" path asks for.
+ */
+export async function clearLogs(contest?: ContestKind): Promise<void> {
+  if (!logsAvailable()) return;
+  try {
+    if (contest === undefined) {
+      await run("readwrite", (s) => s.clear());
+      return;
+    }
+    const rows = await run<LogRecord[]>("readonly", (s) => s.getAll());
+    const ids = rows
+      .filter((row) => contestOf(row) === contest)
+      .map((row) => row.id)
+      .filter((id): id is number => typeof id === "number");
+    if (ids.length === 0) return;
+    await run("readwrite", (s) => {
+      for (const id of ids) s.delete(id);
+      // The returned request is what the transaction's completion rides on.
+      return s.count();
+    });
   } catch {
     // Ignore.
   }

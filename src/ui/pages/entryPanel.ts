@@ -3,6 +3,7 @@ import { addLog } from "../storage/logStore.js";
 import { buildLogRecord, type LogRecord } from "../logRecord.js";
 import { expandMacros } from "../../message/macros.js";
 import { isReserved, type QuickMessage } from "../../message/modeFile.js";
+import { exchangeName, requiresExchange, type ContestKind } from "../../qso/contest.js";
 import {
   blockingField,
   canLog,
@@ -20,8 +21,8 @@ import {
 import type { AppHost } from "../app.js";
 
 /**
- * The operating row: eight quick messages, and the three boxes the operator
- * fills in with what they heard.
+ * The operating row: eight quick messages, and the boxes the operator fills in
+ * with what they heard.
  *
  * It sits under the panadapter and above the send bar — the order of the
  * contact, top to bottom: what is on the band, what you say next, what you are
@@ -32,13 +33,16 @@ import type { AppHost } from "../app.js";
  * because copying the callsign is the skill being practised (see "没有记录，也没有
  * 台名" in `doc/UI.md`).
  *
+ * A contest adds a fourth box — the number the other station sent — and shows
+ * ours next to the mode switch, because `{EXCH}` is the one value the operator
+ * cannot see going out otherwise: it comes from the settings, not from a box.
+ *
  * The eight keys are the mode's messages (`doc/MESSAGES.md`), defined in a file
  * the operator can edit. Which of them is lit, and what Enter does, comes from
  * `entryModel.ts` — this module only renders that decision and moves the caret:
  *
  *  - empty call      → F1 (Run: call CQ) or F4 (S&P: answer somebody)
  *  - call filled     → F4 in S&P (our call in answer), until the report is picked
- *  - our report due  → F2 (send it; the report box fills itself with 599)
  *  - our report due  → F2 (send it; the report box fills itself with 599)
  *  - their report in and ours out → F3 (sign off, write the row, start a new one)
  *
@@ -48,7 +52,7 @@ import type { AppHost } from "../app.js";
  *
  * Enter sends the message of the step; Space takes the same step without
  * sending, for an operator who wants to key it by hand. Esc gives up on the
- * station: three boxes back to blank, nothing keyed, nothing logged.
+ * station: the boxes go back to blank, nothing keyed, nothing logged.
  *
  * Pressing F1 is also how the operator says "I am running": the mode box follows
  * the key, and only tuning the dial puts it back to S&P.
@@ -64,22 +68,31 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   // Lightweight hosts (tests, error pages) may not carry a message set.
   if (!messages || !host.entry) return;
   const entry: EntryValues = host.entry;
+  /** Which mode's keys, exchange and log this row belongs to. */
+  const contest: ContestKind = host.settings.contest;
+  const hasExchange = requiresExchange(contest);
 
   const section = el("div", { class: "entry" });
   const keys: KeyView[] = [];
   let hint: Hint = { text: "", field: null };
 
-  const macroValues = (): { myCall: string; theirCall: string; rstFull: string } => ({
+  const macroValues = (): {
+    myCall: string;
+    theirCall: string;
+    rstFull: string;
+    exch: string;
+  } => ({
     myCall: host.settings.myCall,
     theirCall: entry.call,
     rstFull: entry.rstTx,
+    exch: host.ownExchange?.() ?? "",
   });
 
   // --- the eight keys ----------------------------------------------------
 
   /** The message as it would go out, and the button's own text. */
   const expanded = (m: QuickMessage): { text: string; label: string } => {
-    const v = { ...macroValues(), exch: "" };
+    const v = macroValues();
     // A label may carry macros too (F4 shows *your* call, F5 *theirs*). A hole
     // stays on the button as `{THEIRCALL}`: it says exactly which value is
     // missing instead of leaving an anonymous key.
@@ -89,7 +102,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
 
   /** The message with its holes left in — what the tooltip shows. */
   const template = (m: QuickMessage): string =>
-    expandMacros(m.text, { ...macroValues(), exch: "" }, { keepUnfilled: true }).text;
+    expandMacros(m.text, macroValues(), { keepUnfilled: true }).text;
 
   /**
    * The message as it would go out, or null when there is nothing to key.
@@ -168,22 +181,31 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
 
   // --- the row ------------------------------------------------------------
   //
-  // No labels: the three boxes sit in one line and say what they are inside
+  // No labels: the boxes sit in one line and say what they are inside
   // themselves, so the row is one line tall instead of a label column plus a
   // field column. The placeholders carry the wording the labels used to.
+  //
+  // A contest gets a fourth box, because it exchanges a fourth thing. It is not
+  // a step of its own — it arrives with their report — but it is a box on the
+  // paper all the same.
 
   const callInput = field("entry-call", "对方呼号", { autocapitalize: "characters" });
   const rstTxInput = field("entry-rst", "我方 RST", { inputmode: "numeric" });
   const rstRxInput = field("entry-rst", "对方 RST", { inputmode: "numeric" });
+  const exchInput = hasExchange
+    ? field("entry-exch", `对方${exchangeName(contest)}`, { inputmode: "numeric" })
+    : null;
 
-  const row = el("div", { class: "entry-row" });
+  const row = el("div", { class: hasExchange ? "entry-row with-exch" : "entry-row" });
   row.append(callInput, rstTxInput, rstRxInput);
+  if (exchInput) row.append(exchInput);
 
   const hintNode = el("div", { class: "entry-hint", attrs: { role: "status" } });
 
   callInput.value = entry.call;
   rstTxInput.value = entry.rstTx;
   rstRxInput.value = entry.rstRx;
+  if (exchInput) exchInput.value = entry.exchRx;
 
   callInput.addEventListener("input", () => {
     clearHint();
@@ -199,12 +221,20 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   });
   rstTxInput.addEventListener("input", () => {
     clearHint();
-    entry.rstTx = digits(rstTxInput);
+    entry.rstTx = digits(rstTxInput, 3);
     sync();
   });
   rstRxInput.addEventListener("input", () => {
     clearHint();
-    entry.rstRx = digits(rstRxInput);
+    entry.rstRx = digits(rstRxInput, 3);
+    sync();
+  });
+  exchInput?.addEventListener("input", () => {
+    clearHint();
+    // A zone is two digits, a serial four: the box stops at what the mode can
+    // legally hold instead of letting the operator type a number that is never
+    // going to be loggable.
+    entry.exchRx = digits(exchInput, contest === "CQWW" ? 2 : 4);
     sync();
   });
 
@@ -234,6 +264,15 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     modeRow.append(wrap);
   }
 
+  /**
+   * The number *we* are sending. It is the one value on this row the operator
+   * does not type — it comes from the settings — so without it the exchange
+   * would go out invisible. The serializer is what it is on the air, minus the
+   * cut numbers: the operator reads digits in a log, not `TTA`.
+   */
+  const ownNode = hasExchange ? el("span", { class: "entry-own" }) : null;
+  if (ownNode) modeRow.append(ownNode);
+
   // --- Enter / Space ------------------------------------------------------
 
   const runAction = (action: EntryAction): void => {
@@ -241,10 +280,10 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     // air there is nothing to take a step *to*. Returning before moving the
     // caret matters: a step that did not happen must not look like it did.
     if (host.session.isSending) return;
-    if (action.log && !canLog(entry)) {
-      const bad = blockingField(entry);
+    if (action.log && !canLog(entry, contest)) {
+      const bad = blockingField(entry, contest);
       if (bad) {
-        showHint({ text: HINT_FOR[bad], field: bad });
+        showHint({ text: hintFor(bad, contest), field: bad });
         focusField(bad);
       }
       return;
@@ -269,12 +308,22 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     clearHint();
     let completed: LogRecord | null = null;
     if (action.log) {
-      completed = buildLogRecord(entry, host.session.freqMHz);
+      completed = buildLogRecord(entry, host.session.freqMHz, {
+        contest,
+        exchTx: host.ownExchange?.() ?? "",
+        // The truth has to be read *now*: once TU has gone out the station is
+        // released back to the band, and there is nothing left to check against.
+        truth: host.session.partnerTruth?.() ?? null,
+      });
+      // The serial this row used is spent. Bumped before the row is re-synced so
+      // the readout matches what the next message will send.
+      if (completed) host.nextWpxSerial?.();
       // A fresh row, same operating mode: the next station, or the next CQ.
       Object.assign(entry, emptyEntry(entry.mode));
       callInput.value = "";
       rstTxInput.value = "";
       rstRxInput.value = "";
+      if (exchInput) exchInput.value = "";
     }
     sync();
     // The caret moves *now*, not when the message has finished going out: the
@@ -292,7 +341,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     }
   };
 
-  for (const input of [callInput, rstTxInput, rstRxInput]) {
+  for (const input of [callInput, rstTxInput, rstRxInput, ...(exchInput ? [exchInput] : [])]) {
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -345,9 +394,15 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       k.node.title = tooltip(m);
     }
     for (const r of radios) r.node.checked = r.mode === entry.mode;
+    if (ownNode) {
+      const own = host.ownExchange?.() ?? "";
+      ownNode.textContent = own === "" ? `我方${exchangeName(contest)} —` : `我方 ${own}`;
+      ownNode.title = `本次通联发出去的${exchangeName(contest)}：${own || "未定"}`;
+    }
     callInput.classList.toggle("bad", hint.field === "call");
     rstTxInput.classList.toggle("bad", hint.field === "rstTx");
     rstRxInput.classList.toggle("bad", hint.field === "rstRx");
+    exchInput?.classList.toggle("bad", hint.field === "exchRx");
   }
 
   function showHint(next: Hint): void {
@@ -377,6 +432,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     callInput.value = "";
     rstTxInput.value = "";
     rstRxInput.value = "";
+    if (exchInput) exchInput.value = "";
     clearHint();
     focusField("call");
     sync();
@@ -384,7 +440,13 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
 
   function focusField(which: EntryField): void {
     const target =
-      which === "call" ? callInput : which === "rstTx" ? rstTxInput : rstRxInput;
+      which === "call"
+        ? callInput
+        : which === "rstTx"
+          ? rstTxInput
+          : which === "exchRx" && exchInput
+            ? exchInput
+            : rstRxInput;
     target.focus();
     target.setSelectionRange(target.value.length, target.value.length);
   }
@@ -408,11 +470,20 @@ interface Hint {
 }
 
 /** What each incomplete box is called out as. */
-const HINT_FOR: Record<EntryField, string> = {
-  call: "先填对方呼号",
-  rstTx: "我方 RST 要三位数字（如 599 或 579）",
-  rstRx: "对方 RST 要三位数字（如 599）",
-};
+function hintFor(field: EntryField, contest: ContestKind): string {
+  switch (field) {
+    case "call":
+      return "先填对方呼号";
+    case "rstTx":
+      return "我方 RST 要三位数字（如 599 或 579）";
+    case "rstRx":
+      return "对方 RST 要三位数字（如 599）";
+    case "exchRx":
+      return contest === "CQWW"
+        ? "对方 CQ 分区要 1–40 的数字"
+        : "对方序号要 1–9999 的数字";
+  }
+}
 
 /** What a key with no message at all says when the pointer rests on it. */
 const RESERVED_HINT = "这个键没有报文（见配置文件的 F 行）";
@@ -432,9 +503,12 @@ function field(cls: string, placeholder: string, attrs: Record<string, string>):
   });
 }
 
-/** Keep only digits, at most three: a report is three digits, never letters. */
-function digits(input: HTMLInputElement): string {
-  const clean = input.value.replace(/\D/g, "").slice(0, 3);
+/**
+ * Keep only digits, at most `max`: a report is three digits and an exchange is a
+ * number, never letters.
+ */
+function digits(input: HTMLInputElement, max: number): string {
+  const clean = input.value.replace(/\D/g, "").slice(0, max);
   if (clean !== input.value) input.value = clean;
   return clean;
 }

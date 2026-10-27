@@ -1,5 +1,5 @@
 /**
- * The log-entry row: three boxes the operator fills in by ear, plus which of the
+ * The log-entry row: the boxes the operator fills in by ear, plus which of the
  * eight quick messages is the one to send next.
  *
  * Everything here is pure — values in, decision out — so the whole flow (what is
@@ -16,12 +16,19 @@
  *
  * Enter does the step *and* sends; Space does the step without sending, for when
  * the operator wants to key the message by hand.
+ *
+ * A contest adds one more thing to copy — the exchanged number — so the row has
+ * a fourth box there. It is not a step of its own: it arrives with their report
+ * (they send `5NN 05` in one over), so the ladder is the same in all three
+ * modes, and only what a *complete* row needs changes (see `canLog`).
  */
+
+import { isValidExchange, requiresExchange, type ContestKind } from "../qso/contest.js";
 
 /** Run = we are calling CQ; S&P = we are answering somebody else's CQ. */
 export type OperatingMode = "run" | "s&p";
 
-export type EntryField = "call" | "rstTx" | "rstRx";
+export type EntryField = "call" | "rstTx" | "rstRx" | "exchRx";
 
 export interface EntryValues {
   mode: OperatingMode;
@@ -31,6 +38,12 @@ export interface EntryValues {
   rstTx: string;
   /** The report they gave us. */
   rstRx: string;
+  /**
+   * The number they sent: their CQ zone (CQWW) or their serial (WPX). Copied by
+   * ear, like everything else here; empty in DX mode, where nothing is exchanged
+   * beyond the report.
+   */
+  exchRx: string;
   /**
    * Our report has already gone out (or been keyed by hand) for this row.
    *
@@ -56,7 +69,7 @@ export type EntryStep = "call" | "answer" | "report" | "signoff";
  * mode the operator was already in.
  */
 export function emptyEntry(mode: OperatingMode): EntryValues {
-  return { mode, call: "", rstTx: "", rstRx: "", reportSent: false };
+  return { mode, call: "", rstTx: "", rstRx: "", exchRx: "", reportSent: false };
 }
 
 /**
@@ -207,22 +220,29 @@ export function onSpace(v: EntryValues): EntryAction {
 }
 
 /**
- * Whether this row can be written to the log: a callsign and two reports.
+ * Whether this row can be written to the log: a callsign, both reports, and —
+ * in a contest — the number they sent.
  *
  * The callsign is only required to be non-empty — a practice log may hold a call
- * that does not exist, but it may not hold a blank one.
+ * that does not exist, but it may not hold a blank one. The exchange is checked
+ * against its mode's range instead: a CQWW zone outside 1–40 is not a zone, and
+ * a row with a hole in it is not a contact.
  */
-export function canLog(v: EntryValues): boolean {
-  return normaliseCall(v.call) !== "" && isValidRst(v.rstTx) && isValidRst(v.rstRx);
+export function canLog(v: EntryValues, contest: ContestKind = "DX"): boolean {
+  if (normaliseCall(v.call) === "") return false;
+  if (!isValidRst(v.rstTx) || !isValidRst(v.rstRx)) return false;
+  if (requiresExchange(contest) && !isValidExchange(contest, v.exchRx)) return false;
+  return true;
 }
 
 /**
  * Which box to blame when Enter does nothing at the last step. Null when the row
  * is complete — the panel shows a hint next to that box.
  */
-export function blockingField(v: EntryValues): EntryField | null {
+export function blockingField(v: EntryValues, contest: ContestKind = "DX"): EntryField | null {
   if (normaliseCall(v.call) === "") return "call";
   if (!isValidRst(v.rstTx)) return "rstTx";
   if (!isValidRst(v.rstRx)) return "rstRx";
+  if (requiresExchange(contest) && !isValidExchange(contest, v.exchRx)) return "exchRx";
   return null;
 }

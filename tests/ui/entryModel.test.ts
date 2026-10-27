@@ -188,3 +188,48 @@ describe("isValidRst", () => {
     expect(isValidRst("5a9")).toBe(false);
   });
 });
+
+describe("比赛模式下的那一行", () => {
+  const done: EntryValues = entry({
+    call: "JA1ABC",
+    rstTx: "599",
+    rstRx: "599",
+    exchRx: "05",
+    reportSent: true,
+  });
+
+  it("DX 不看交换信息：三个框齐了就能记", () => {
+    const dx = entry({ call: "JA1ABC", rstTx: "599", rstRx: "599" });
+    expect(canLog(dx, "DX")).toBe(true);
+    expect(blockingField(dx, "DX")).toBeNull();
+  });
+
+  it("CQWW 少了对方分区就记不了，并指出是哪一格", () => {
+    const noExch = entry({ call: "JA1ABC", rstTx: "599", rstRx: "599" });
+    expect(canLog(noExch, "CQWW")).toBe(false);
+    expect(blockingField(noExch, "CQWW")).toBe("exchRx");
+  });
+
+  it("分区超出 1–40、序号为 0 都不算数", () => {
+    expect(canLog({ ...done, exchRx: "41" }, "CQWW")).toBe(false);
+    expect(canLog({ ...done, exchRx: "0" }, "WPX")).toBe(false);
+    expect(canLog({ ...done, exchRx: "001" }, "WPX")).toBe(true);
+  });
+
+  it("步进还是三步：交换信息随对方的报告一起来，不是单独一格", () => {
+    // 报告到了、我方也发过了、交换信息还没抄下来 —— 仍然是收尾那一步，
+    // 只是按回车会提示先填分区/序号。
+    const awaitingExch = entry({
+      call: "JA1ABC",
+      rstTx: "599",
+      rstRx: "599",
+      reportSent: true,
+    });
+    expect(entryStep(awaitingExch)).toBe("signoff");
+    expect(highlightedKey(awaitingExch)).toBe(3);
+  });
+
+  it("清空一行时交换信息一起清掉", () => {
+    expect(emptyEntry("run")).toMatchObject({ exchRx: "" });
+  });
+});

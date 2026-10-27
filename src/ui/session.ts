@@ -16,9 +16,16 @@ import type { SMeterReading } from "../ham/smeter.js";
 import type { SpectrumSnapshot } from "../ham/spectrum.js";
 import { normalisePassband, resolveSideband, type Sideband } from "../ham/tuning.js";
 import type { AppSettings } from "./settingsSchema.js";
-import { CALL_RE } from "../message/parse.js";
+import { namedCallsignsIn } from "../message/parse.js";
 import { clearStaging } from "./storage/qsoStaging.js";
 import { SessionAudio } from "./sessionAudio.js";
+import {
+  contestReport,
+  cqText,
+  stationExchange,
+  type ContestKind,
+  type PartnerTruth,
+} from "../qso/contest.js";
 import { HamQsoDriver } from "./sessionHamQso.js";
 import { BandMonitor, type AiredMessage } from "./sessionMonitor.js";
 import { OperatorTx } from "./sessionKeying.js";
@@ -87,9 +94,12 @@ const TICK_MS = 1_000;
  * does. It separates the two things an operator can mean while a pile-up is
  * running: answering without picking a caller (keep the pile-up going), and
  * calling somebody else entirely (leave it).
+ *
+ * A contest exchange has to be excluded explicitly: `5NN U4` names nobody, but
+ * `U4` looks exactly like a callsign (see `namedCallsignsIn`).
  */
 function namesACall(line: string): boolean {
-  return line.split(/[^A-Z0-9/]+/).some((token) => CALL_RE.test(token));
+  return namedCallsignsIn(line).length > 0;
 }
 
 export interface QsoSessionOptions {
@@ -168,6 +178,13 @@ export class QsoSession implements SessionContext {
   machine: QsoMachine | null = null;
   ham: VirtualHam | null = null;
   lines: TranscriptLine[] = [];
+  /**
+   * The exchange the station being worked is sending (its CQ zone in CQWW, its
+   * serial in WPX). Held on the session rather than recomputed on demand so that
+   * the number the operator copies and the number the log is checked against are
+   * the same one, even if the mode changes underneath.
+   */
+  private hamExchange = "";
   /**
    * Unsent text sitting in the send box. It lives here rather than in the DOM
    * because any settings change re-renders the page, which would otherwise
@@ -430,6 +447,34 @@ export class QsoSession implements SessionContext {
     return this.audio.live;
   }
 
+  /**
+   * Which mode this rig is working: everyday DX, or one of the two contests.
+   * It changes what the quick keys say, what an exchange consists of, and which
+   * log the row is written to — never how the receiver behaves.
+   */
+  get contest(): ContestKind {
+    return this.settings.contest;
+  }
+
+  /**
+   * What the station being worked actually is and actually sent — the truth the
+   * operator's row is checked against (`qso/contest` `verifyEntry`).
+   *
+   * Null when nobody is being worked, which is what makes "I typed a callsign I
+   * never heard" a row that is logged without a verdict rather than a row
+   * declared wrong. The trainer still never *shows* this: a verdict says only
+   * whether the operator copied it, never what they should have written, so
+   * copying remains the skill being practised.
+   */
+  partnerTruth(): PartnerTruth | null {
+    if (!this.ham) return null;
+    return {
+      call: this.ham.call,
+      report: contestReport(this.contest, this.ham.report),
+      exch: this.hamExchange,
+    };
+  }
+
   // --- tuning --------------------------------------------------------------
 
   /**
@@ -689,7 +734,9 @@ export class QsoSession implements SessionContext {
    */
   async userCallsCq(): Promise<void> {
     const call = this.myCall();
-    await this.userSend(`CQ CQ CQ DE ${call} ${call} PSE K`);
+    // The same wording the F1 key sends in this mode, so a programmatic CQ and a
+    // keyed one are the same message (`qso/contest` `cqText`).
+    await this.userSend(cqText(call, this.contest));
   }
 
   /**
@@ -884,11 +931,7 @@ export class QsoSession implements SessionContext {
   /** Callsigns named in a line (excluding our own) — used to pick the addressee. */
   private namedCallsigns(line: string): string[] {
     const mine = this.myCall();
-    const out: string[] = [];
-    for (const tok of line.split(/\s+/)) {
-      if (CALL_RE.test(tok) && tok !== mine && !out.includes(tok)) out.push(tok);
-    }
-    return out;
+    return namedCallsignsIn(line).filter((call) => call !== mine);
   }
 
   /**
@@ -964,10 +1007,11 @@ export class QsoSession implements SessionContext {
    * refresh resumes rather than discarding the conversation.
    */
   restoreStaging(): void {
-    const restored = loadRestorable(this.freqMHz, this.myCall());
+    const restored = loadRestorable(this.freqMHz, this.myCall(), this.contest);
     if (!restored) return;
     this.ham = restored.ham;
     this.machine = restored.machine;
+    this.hamExchange = stationExchange(restored.ham, this.contest);
     this.lines = restored.lines;
     this.draft = restored.draft;
   }
@@ -1057,7 +1101,7 @@ export class QsoSession implements SessionContext {
    * stands the station by instead of calling this.
    */
   private noteCq(ham: VirtualHam): Tx {
-    const text = `CQ CQ CQ DE ${ham.call} ${ham.call} PSE K`;
+    const text = cqText(ham.call, this.contest);
     const tx = this.monitor.record(ham, text);
     this.band.scheduleNextCq(ham.call, tx.durationMs + nextCqGapMs(this.rng));
     return tx;
@@ -1127,11 +1171,16 @@ export class QsoSession implements SessionContext {
 
   private startMachine(ham: VirtualHam): QsoMachine {
     this.ham = ham;
+    // Both sides of a contest contact need the same exchange: this is what the
+    // station will key, and what the log will be checked against.
+    this.hamExchange = stationExchange(ham, this.contest);
     this.machine = new QsoMachine({
       myCall: this.myCall(),
       ham,
       db: dxccDatabase,
       frequency: this.freqMHz,
+      contest: this.contest,
+      hamExchange: this.hamExchange,
     });
     return this.machine;
   }

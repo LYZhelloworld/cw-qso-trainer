@@ -143,8 +143,11 @@ function pickReport(rng: () => number): string {
   return "549";
 }
 
-/** Stable 32-bit hash of a callsign (used for per-station visual variation). */
-function hashString(s: string): number {
+/**
+ * Stable 32-bit hash of a callsign, used for per-station variation (signal
+ * jitter, and the WPX serial a station sends — see `qso/contest`).
+ */
+export function hashString(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i += 1) {
     h ^= s.charCodeAt(i);

@@ -22,8 +22,9 @@
 - 用户通过键盘模拟直键或 iambic 发送 CW
 - 随时可发报，无需"开始通联"；发报时接收中断（半双工），频谱上只剩自己的信号
 - 只靠耳朵：不显示对方是谁，也不回放收发记录；调准频率就听到正在发的报文
-- 八个功能键（F1–F8）发常用报文，报文写在可编辑的模式配置文件 `DX.msg` 里，支持 `{MYCALL}` / `{THEIRCALL}` / `{RST}` 等宏；报告按 CW 习惯发短码（`599` → `5NN`、`579` → `5BN`），日志里记原始数字
-- 日志由自己在录入行手记（对方呼号 + 两个 RST），回车即发结束语并落账
+- 八个功能键（F1–F8）发常用报文，报文写在可编辑的模式配置文件里（`DX.msg` / `CQWW.msg` / `WPX.msg`），支持 `{MYCALL}` / `{THEIRCALL}` / `{RST}` / `{EXCH}` 等宏；报告按 CW 习惯发短码（`599` → `5NN`、`579` → `5BN`），日志里记原始数字
+- 三种通联模式，机头上一键切换：**DX**（日常通联）、**CQWW**（交换 CQ 分区）、**WPX**（交换自增序号）。比赛里报告恒为 `5NN`、收尾只有 `TU`
+- 日志由自己在录入行手记（对方呼号 + 两个 RST，比赛再加对方的分区 / 序号），回车即发结束语并落账；三本账各自独立，带一行**核对**——只说错在哪一项（呼号 / 交换信息 / RST），不给正确答案
 
 ## 开发与运行
 
@@ -43,7 +44,7 @@ npm run desktop        # 开发模式（Tauri 窗口 + Vite 热更新）
 npm run desktop:build  # 打出免安装 exe：src-tauri/target/release/cw-qso-trainer.exe
 ```
 
-首次运行会在 exe 旁生成 `app-data/`（WebView2 数据、设置、日志）和 `app-data/messages/DX.msg`（八个功能键的报文，可以直接改）——把 exe 和这个文件夹一起拷走，数据、练习记录和自定义报文就都在。exe 要放在**可写目录**（不要放 `Program Files`）；未签名，首次运行可能弹 SmartScreen 提示。
+首次运行会在 exe 旁生成 `app-data/`（WebView2 数据、设置、日志）和 `app-data/messages/` 下的三份报文（`DX.msg` / `CQWW.msg` / `WPX.msg`，可以直接改）——把 exe 和这个文件夹一起拷走，数据、练习记录和自定义报文就都在。exe 要放在**可写目录**（不要放 `Program Files`）；未签名，首次运行可能弹 SmartScreen 提示。
 
 ## 呼号数据
 
@@ -84,6 +85,10 @@ npm run update:cty
 | QSB | 信号衰落 |
 | QRM | 人为干扰 |
 | QRN | 大气噪声 |
+| CQ 分区 | CQ 杂志划分的 40 个通联区，CQWW 比赛里作为交换信息（见 [比赛模式](./doc/CONTEST.md)） |
+| 序号 | WPX 比赛里每通联一次加一的流水号，从 `001` 起 |
+| 短码 | cut numbers：数字在 CW 里用更短的字母代替（`0` → `T`、`9` → `N`），见 [快速报文与日志录入](./doc/MESSAGES.md) |
+| TEST | 比赛呼叫，`CQ TEST` 即"我在参加比赛" |
 | WPM | 每分钟单词数 |
 | iambic | 双桨键 |
 | Farnsworth | 字符速度不变，间隔拉长 |
