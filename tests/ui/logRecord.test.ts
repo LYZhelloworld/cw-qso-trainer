@@ -58,7 +58,7 @@ describe("buildLogRecord", () => {
     expect(rec).not.toBeNull();
     expect(rec?.contest).toBe("CQWW");
     expect(rec?.exchTx).toBe("24");
-    expect(rec?.exchRx).toBe("05");
+    expect(rec?.exchRx).toBe("5");
   });
 
   it("场次只跟着比赛走：DX 的行不带场次，比赛的带", () => {

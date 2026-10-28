@@ -84,18 +84,19 @@ R RST 599 BK
 比赛（`CQWW` / `WPX`）沿用同一套报文规范，只是**多一个数字**、**少几句话**：
 
 ```text
-CQ TEST BG7XXX
-JA1ABC
-JA1ABC 5NN 05
-R 5NN 05
+CQ TEST BG7XXX          ← 我，24 区
+JA1ABC                  ← 对方，25 区
+JA1ABC 5NN 24           ← 点名 + 报告 + 我方分区（F2）
+R 5NN 25                ← 对方报告 + 它的分区
 TU
 ```
 
 - **CQ 只说 `CQ TEST <呼号>`**：没有 `DE`、没有 `PSE K`、不连呼三遍。
 - **报告恒为 `5NN`**：比赛里不判可读性，所有人报 599。
-- **交换的数字紧跟在报告后面**（`5NN 05`），是一个整体的两部分，不是一个独立步骤。
-- **收尾只有 `TU`**：没有 `73`、没有 `SK`。状态机在比赛模式下收到 `TU` 即判通联完成——不再要求双方各发一句结束语（见下方「成功条件」）。
-- 应答别人时只报自己的呼号，不重复对方呼号。
+- **报告那一句带对方的呼号**：`JA1ABC 5NN 24` 一句话完成点名与交换，所以抄清呼号之后下一句就是它，没有"先单独报一次自己呼号"这一步。应答别人的 CQ 时这句话同时就是应答，F4（只报自己呼号）可用可不用。
+- **交换的数字紧跟在报告后面**（`5NN 24`），是一个整体的两部分，不是一个独立步骤。
+- **数字的写法由发报人定**：`24` 可以发 `24`、`U4`、也可以对 5 区发 `05` 或 `T5`；补不补前导零、用不用短码都算对，收报一侧三种都认。
+- **收尾只有 `TU`**：没有 `73`、没有 `SK`。状态机在比赛模式下收到 `TU` 即判通联完成——不再要求对方各发一句结束语（见下方「成功条件」）。
 
 分区的来历、号码如何补位与写成短码、核对规则，见 [比赛模式](./CONTEST.md)。
 
@@ -158,8 +159,8 @@ interface QsoContext {
 | `EXCHANGE` | 用户发送报文 | 含合法 RST，且 `rstRx` 已有 | `SIGNOFF` | 记录 `rstTx`，双方报告齐 → 虚拟 HAM 发 `R TU 73 SK` |
 | `EXCHANGE` | 双方呼号 + RST 齐全 | — | `SIGNOFF` | — |
 | `EXCHANGE` | 呼号抄错 | — | `EXCHANGE` | 虚拟 HAM 发 `QRZ? DE <本台呼号>`，`CALL` 重试 +1 |
-| `EXCHANGE` | RST 不合法 | — | `EXCHANGE` | 虚拟 HAM 发 `UR RST?`，`RST` 重试 +1 |
-| `EXCHANGE` | 接收不全 | — | `EXCHANGE` | 虚拟 HAM 发 `AGN?`，要求全文重发，`COPY` 重试 +1 |
+| `EXCHANGE` | RST 不合法 | — | `EXCHANGE` | 虚拟 HAM 发 `UR RST?`（比赛里是 `NR?`），`RST` 重试 +1 |
+| `EXCHANGE` | 接收不全 | — | `EXCHANGE` | 虚拟 HAM 发 `AGN?`（比赛里是 `NR?`），要求重发，`COPY` 重试 +1 |
 | `EXCHANGE` | （超时）发出报文后 5 秒内无有效回应 | — | `EXCHANGE` | 虚拟 HAM 重发，对应子条件重试 +1 |
 | `EXCHANGE` | 任一子条件重试达到 3 | — | `FAILED` | — |
 | `SIGNOFF` | 收到对方结束语 | 含 TU / 73 / SK | `SIGNOFF` | `peerEndHeard = true` |
@@ -209,7 +210,7 @@ interface QsoContext {
 
 ### 比赛模式下放宽的一处
 
-比赛（`CQWW` / `WPX`）里 `TU` 就是全部收尾：用户发出 `TU` 时状态机**直接判 `LOGGED`**，不等对方那句结束语回来——真实比赛也不会因为对方少发一句 `TU` 就作废这次通联。除此之外上面五条一个字都不改：呼号仍要确认、两个报告仍要交换。
+比赛（`CQWW` / `WPX`）里 `TU` 就是全部收尾：用户发出 `TU` 时状态机**直接判 `LOGGED`**，不等对方那句结束语回来——真实比赛也不会因为对方少发一句 `TU` 就作废这次通联。但**必须是 `TU`**：收尾状态里发一句 `?` 或对方的呼号，通联还在进行，不判完成（日常模式也是这个尺度）。除此之外上面五条一个字都不改：呼号仍要确认、两个报告仍要交换。
 
 对方那一侧同样只有一句话：`TU`（见 [比赛模式](./CONTEST.md) 的「一次比赛通联」）。
 
@@ -222,8 +223,8 @@ interface QsoContext {
 
 - 每个子条件（`CALL` / `RST` / `COPY` / `SIGNOFF`）独立计数，最多 3 次
 - 呼号错误：虚拟 HAM 发 `QRZ? DE <本台呼号>`
-- RST 不合法：虚拟 HAM 发 `UR RST?`
-- 接收不全：**仅发生在虚拟 HAM 接收用户报文时**——模拟信道波动导致 HAM 未抄清。一律视为整句未收到，虚拟 HAM 发 `AGN?`，要求用户全文重发；概率按难度档（新手 0% / 进阶 1% / 硬核 5%）
+- RST 不合法：虚拟 HAM 发 `UR RST?`（比赛里问 `NR?`——丢的总是那个数字）
+- 接收不全：**仅发生在虚拟 HAM 接收用户报文时**——模拟信道波动导致 HAM 未抄清。一律视为整句未收到，虚拟 HAM 发 `AGN?`（比赛里发 `NR?`），要求用户全文重发；概率按难度档（新手 0% / 进阶 1% / 硬核 5%）
 
 ### 超时的实现状态
 
@@ -233,7 +234,7 @@ interface QsoContext {
 |---|---|
 | 虚拟 HAM 发 CQ 后无人应答 | **已实现**：台上台持续呼叫——一条 CQ 发完、守听 3–8 秒、再发下一条；台不离开频段，也没有"3 分钟下线"（`ham/activity`，下一次开口的时刻由 `QsoSession` 按报文长度重新排定） |
 | 用户发 CQ 后的等待 | **已实现**：2–3 台应答者按 1–5 秒的延迟开口，各自最多重呼 4 次；都不被点名就各自离场。堆叠散尽、频段重新安静后，若仍无人被点名，则见下一行的 15 秒收尾 |
-| 对方发完报文后等用户回应 | **已实现**：等 10 秒（`PARTNER_WAIT_MS`）没等到用户开口，就把上一条报文原样重发；重发 2 次（`PARTNER_REPEAT_LIMIT`）仍无人应，则结束本次通联、该台回到自己的 CQ 周期（由 `src/ui/sessionPatience.ts` 的 `Patience.servicePartnerWait` 调用状态机的 `timeoutResend`） |
+| 对方发完报文后等用户回应 | **已实现**：等 10 秒（比赛模式 4 秒，`PARTNER_WAIT_MS` / `CONTEST_PARTNER_WAIT_MS`）没等到用户开口，就把上一条报文原样重发；重发 2 次（`PARTNER_REPEAT_LIMIT`）仍无人应，则结束本次通联、该台回到自己的 CQ 周期（由 `src/ui/sessionPatience.ts` 的 `Patience.servicePartnerWait` 调用状态机的 `timeoutResend`） |
 | 首次呼叫 15 秒无应答 | **已实现**：用户自己的 CQ 由 `Patience.expireOwnCq` 在频段安静 15 秒后收回（`CALL_ANSWER_WAIT_MS`）。状态机里的 `timeoutFirstCall()` 保留为确定性接口（有测试覆盖其语义），应用侧走的是前者 |
 
 上表三个常量（`CALL_ANSWER_WAIT_MS` / `PARTNER_WAIT_MS` / `PARTNER_REPEAT_LIMIT`）都是 `src/ui/sessionPatience.ts` 的模块私有常量，只用于说明取值，不供外部导入。

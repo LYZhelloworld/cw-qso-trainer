@@ -21,7 +21,7 @@ import { RigFace, type ScopeView } from "./rigFace.js";
 import { emptyEntry, type EntryValues } from "./entryModel.js";
 import { loadModeMessages } from "./modeFileLoader.js";
 import { parseBundledMode } from "../data/modeMessages.js";
-import { SERIAL_MIN, ownExchangeText, type ContestKind } from "../qso/contest.js";
+import { SERIAL_MIN, formatSerial, ownExchangeText, type ContestKind } from "../qso/contest.js";
 import type { ModeMessages } from "../message/modeFile.js";
 
 export type PageId = "radio" | "log" | "about";
@@ -519,8 +519,21 @@ export class App implements AppHost {
   }
 
   /** The number this contact sends: our zone (CQWW) or our serial (WPX). */
+  /**
+   * The number we send as `{EXCH}`.
+   *
+   * CQWW's zone is where the station is — the settings, or the callsign's DXCC
+   * entity. WPX's serial is the counter in the settings, unless the operator has
+   * typed another one into its own box, which is how `12` goes out instead of
+   * `012`.
+   */
   ownExchange(): string {
-    return ownExchangeText(this.settings.contest, this.settings);
+    const kind = this.settings.contest;
+    if (kind === "WPX") {
+      const typed = this.entry?.ownNr.trim() ?? "";
+      return typed !== "" ? typed : formatSerial(this.settings.wpxSerial);
+    }
+    return ownExchangeText(kind, this.settings);
   }
 
   /**

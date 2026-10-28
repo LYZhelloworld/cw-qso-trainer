@@ -214,15 +214,20 @@ describe("日志页（IndexedDB 可用）", () => {
     });
   });
 
-  it("逐条删除：删掉这一行，别的行还在", async () => {
+  it("逐条删除也要点两次：删掉这一行，别的行还在", async () => {
     await addLog(SAMPLE);
     await addLog({ ...SAMPLE, call: "JA2XYZ" });
     const root = freshRoot();
     mountLog(root);
     await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(2));
 
-    buttonByText(root, "删除").click();
+    const del = buttonByText(root, "删除");
+    del.click();
+    // 第一下只把按钮换一句话，账上一条没少。
+    await vi.waitFor(async () => expect(await listLogs()).toHaveLength(2));
+    expect(del.textContent).toContain("再点一次");
 
+    del.click();
     await vi.waitFor(async () => {
       const rows = await listLogs();
       expect(rows.length).toBe(1);
@@ -406,6 +411,52 @@ describe("三种模式各一本日志", () => {
       const rows = await listLogs();
       expect(rows.map((r) => r.contest)).toEqual(["DX"]);
     });
+  });
+
+  it("标签上的条数各按各的场次算：CQWW 开到第二场，DX 不会被数成 0", async () => {
+    await addLog(SAMPLE); // DX，没有场次
+    await addLog(CQWW_ROW); // CQWW 第 1 场
+    await addLog({ ...CQWW_ROW, round: 2, call: "DL2XYZ" });
+
+    const root = freshRoot();
+    mountLog(root, "CQWW", { rounds: { CQWW: 2 } });
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+
+    expect(
+      Array.from(root.querySelectorAll(".log-tabs button")).map((b) => b.textContent),
+    ).toEqual(["DX 1", "CQWW 1", "WPX 0"]);
+  });
+
+  it("有记录的时候也能「清空全部」——不用先把这一本删空", async () => {
+    await addLog(SAMPLE);
+    await addLog(CQWW_ROW);
+
+    const root = freshRoot();
+    mountLog(root, "DX");
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+
+    const btn = buttonByText(root, "清空全部日志（2 条）");
+    btn.click();
+    btn.click();
+
+    await vi.waitFor(async () => expect(await listLogs()).toHaveLength(0));
+  });
+
+  it("交换信息那一格只收数字，存下去不带前导零", async () => {
+    await addLog(CQWW_ROW);
+    const root = freshRoot();
+    mountLog(root, "CQWW");
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+
+    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>("tbody tr input"));
+    // date / time / call / freq / rstRx / rstTx / exchRx / exchTx
+    const exchRx = inputs[6];
+    exchRx.value = "ab015";
+    exchRx.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(exchRx.value).toBe("015");
+
+    buttonByText(root, "保存").click();
+    await vi.waitFor(async () => expect((await listLogs())[0].exchRx).toBe("15"));
   });
 });
 

@@ -60,7 +60,7 @@ afterEach(() => {
 });
 
 describe("App 外壳", () => {
-  it("机头有 RX 徽标、波段、模式、三个导航按钮与免责页脚", () => {
+  it("顶栏有 RX 徽标、波段、模式、三个导航按钮与免责页脚", () => {
     const { root } = mountApp();
 
     expect(root.querySelector(".rig .txrx")?.textContent).toBe("RX");
@@ -68,7 +68,7 @@ describe("App 外壳", () => {
     expect(root.querySelector(".rig .rig-mode")?.textContent).toBe("CW-U");
     const labels = Array.from(root.querySelectorAll("nav button")).map((b) => b.textContent);
     expect(labels).toEqual(NAV_LABELS);
-    // 导航在机头中间那一格，整块屏幕就是一台电台。
+    // 导航在顶栏中间那一格，整块屏幕就是一台电台。
     expect(root.querySelector(".rig .rig-center nav")).not.toBeNull();
     expect(root.querySelector(".footer")?.textContent).toBe(DISCLAIMER_TEXT);
   });
@@ -140,7 +140,7 @@ describe("App 外壳", () => {
     const { root } = mountApp();
 
     navButton(root, "关于").click();
-    expect(root.textContent).toContain("CW QSO 练习器 v1.2.0");
+    expect(root.textContent).toContain("CW QSO 练习器 v1.1.0");
     expect(root.textContent).toContain(DISCLAIMER_TEXT);
     expect(root.textContent).toContain("日志不可导出为 ADIF / CSV / JSON");
   });
@@ -545,14 +545,14 @@ describe("版面：瀑布图吃掉剩下的高度", () => {
   });
 });
 
-describe("机头的通联模式选择器", () => {
+describe("顶栏的通联模式选择器", () => {
   it("切到比赛：八个键、录入行、日志本一起换过去，正在进行的那一行作废", () => {
     const { app, root } = mountApp();
     // 先开机，录入行才会渲染出来。
     powerButton(root).click();
 
     expect(root.querySelector<HTMLSelectElement>(".rig-contest")!.value).toBe("DX");
-    expect(root.querySelector(".entry-own")).toBeNull();
+    expect(root.querySelectorAll(".entry-field")).toHaveLength(3);
 
     app.entry.call = "JA1ABC";
     const select = root.querySelector<HTMLSelectElement>(".rig-contest")!;
@@ -565,10 +565,10 @@ describe("机头的通联模式选择器", () => {
     // 换模式等于换了一整套规矩，旧那一行不能带过来。
     expect(app.entry.call).toBe("");
     expect(app.modeMessages.messages[0].text).toBe("CQ TEST {MYCALL}");
-    // 机头读回来的是新值，录入行多了一个框、也显示出我方要发的数字。
+    // 顶栏读回来的是新值，录入行多出对方分区那一格。
     expect(root.querySelector<HTMLSelectElement>(".rig-contest")!.value).toBe("CQWW");
     expect(root.querySelectorAll(".entry-field")).toHaveLength(4);
-    expect(root.querySelector(".entry-own")?.textContent).toContain("我方");
+    expect(root.querySelector<HTMLInputElement>(".entry-exch")!.placeholder).toBe("对方 CQ 分区");
   });
 
   it("关着台也能切模式：先设好再开机，是同一台机器的顺序", () => {
@@ -580,7 +580,7 @@ describe("机头的通联模式选择器", () => {
     expect(app.settings.contest).toBe("WPX");
     expect(app.powered).toBe(false);
     // 关着台就没有录入行可看，但键已经换好了。
-    expect(app.modeMessages.messages[1].text).toBe("{RST} {EXCH}");
+    expect(app.modeMessages.messages[1].text).toBe("{THEIRCALL} {RST} {EXCH}");
   });
 });
 

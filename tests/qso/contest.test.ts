@@ -32,7 +32,7 @@ describe("交换信息的格式", () => {
     expect(formatSerial(1234)).toBe("1234");
   });
 
-  it("分区只认 1–40，序号只认 1–9999", () => {
+  it("分区只认 1–40；序号只要是正整数就行，位数不限", () => {
     expect(isValidZone("05")).toBe(true);
     expect(isValidZone("40")).toBe(true);
     expect(isValidZone("0")).toBe(false);
@@ -40,9 +40,12 @@ describe("交换信息的格式", () => {
     expect(isValidZone("")).toBe(false);
 
     expect(isValidSerial("001")).toBe(true);
-    expect(isValidSerial("9999")).toBe(true);
+    expect(isValidSerial("1234")).toBe(true);
+    // 抄到五位、六位也照样记：虚拟台发不出这么大的号，不代表你抄错了。
+    expect(isValidSerial("12345")).toBe(true);
     expect(isValidSerial("0")).toBe(false);
-    expect(isValidSerial("10000")).toBe(false);
+    expect(isValidSerial("")).toBe(false);
+    expect(isValidSerial("5A")).toBe(false);
   });
 
   it("DX 没有交换信息，什么值都算数", () => {
@@ -85,14 +88,27 @@ describe("我方发出去的数字", () => {
 
 describe("对方发来的数字", () => {
   it("CQWW 用对方呼号所属实体的分区", () => {
-    expect(stationExchange(ham("JA1ABC"), "CQWW")).toBe("25");
-    expect(stationExchange(ham("DL1ABC"), "CQWW")).toBe("14");
-    expect(stationExchange(ham("K1ABC"), "CQWW")).toBe("05");
+    expect(Number(stationExchange(ham("JA1ABC"), "CQWW"))).toBe(25);
+    expect(Number(stationExchange(ham("DL1ABC"), "CQWW"))).toBe(14);
+    expect(Number(stationExchange(ham("K1ABC"), "CQWW"))).toBe(5);
+  });
+
+  it("补不补前导零是各台的自由：两种写法都只是同一个数", () => {
+    const calls = ["JA1ABC", "DL1ABC", "K1ABC", "VK2ABC", "LU1ABC", "UA9ABC", "PY2ABC"];
+    const spellings = calls.map((c) => stationExchange(ham(c), "CQWW"));
+    // 至少有一个不补位，也至少有一个补位——两种都得练。
+    expect(spellings.some((s) => s !== String(Number(s)))).toBe(true);
+    expect(spellings.some((s) => s === String(Number(s)))).toBe(true);
+    for (const s of spellings) {
+      expect(s).toMatch(/^\d{1,2}$/);
+      expect(Number(s)).toBeGreaterThanOrEqual(1);
+      expect(Number(s)).toBeLessThanOrEqual(40);
+    }
   });
 
   it("WPX 的序号跟着呼号走：同一台永远是同一个号", () => {
     const first = stationExchange(ham("JA1ABC"), "WPX");
-    expect(first).toMatch(/^\d{3}$/);
+    expect(first).toMatch(/^\d{1,3}$/);
     expect(Number(first)).toBeGreaterThanOrEqual(1);
     expect(Number(first)).toBeLessThanOrEqual(999);
     expect(stationExchange(ham("JA1ABC"), "WPX")).toBe(first);

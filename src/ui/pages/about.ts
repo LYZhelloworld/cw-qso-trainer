@@ -2,7 +2,7 @@ import { el, panel } from "../dom.js";
 import { DISCLAIMER_TEXT } from "../disclaimer.js";
 import type { AppHost } from "../app.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.1.0";
 
 export function renderAbout(_host: AppHost, root: HTMLElement): void {
   const disclaimer = el("div", { text: DISCLAIMER_TEXT });

@@ -14,8 +14,9 @@ import {
   CONTEST_KINDS,
   CONTEST_LABEL,
   VERDICT_LABEL,
-  exchangeName,
+  normaliseExchange,
   requiresExchange,
+  theirExchangeLabel,
   type ContestKind,
   type LogVerdict,
 } from "../../qso/contest.js";
@@ -65,7 +66,7 @@ export function renderLog(host: AppHost, root: HTMLElement): void {
     const isContest = requiresExchange(tab);
     const rows = all.filter((row) => contestOf(row) === tab && (!isContest || session(row)));
 
-    renderTabs(tabs, host, tab, all, isContest ? round : undefined);
+    renderTabs(tabs, host, tab, all);
     clear(strip);
     if (isContest) strip.append(sessionStrip(host, all, tab, round, past));
     clear(body);
@@ -93,6 +94,9 @@ export function renderLog(host: AppHost, root: HTMLElement): void {
     table.append(thead, tbody);
     body.append(table);
     body.append(actionsRow(host, tab, round, rows.length, past));
+    // Always reachable, not only on an empty page: wanting to start over is the
+    // very reason the log has rows in it.
+    if (!past) body.append(clearAll(host, all.length));
     body.append(
       el("div", {
         class: "hint",
@@ -108,12 +112,16 @@ function renderTabs(
   host: AppHost,
   current: ContestKind,
   all: LogRecord[],
-  round: number | undefined,
 ): void {
   clear(tabs);
   for (const kind of CONTEST_KINDS) {
+    // Each tab counts its own book — including its own session. DX has no
+    // sessions, so taking the *current tab's* session number here would show an
+    // empty DX book the moment somebody starts a second CQWW session.
+    const round = host.sessionRound?.(kind) ?? 1;
     const count = all.filter(
-      (row) => contestOf(row) === kind && (round === undefined || roundOf(row) === round),
+      (row) =>
+        contestOf(row) === kind && (!requiresExchange(kind) || roundOf(row) === round),
     ).length;
     const btn = button(
       `${CONTEST_LABEL[kind]} ${count}`,
@@ -122,7 +130,7 @@ function renderTabs(
     );
     btn.setAttribute("role", "tab");
     btn.setAttribute("aria-selected", String(kind === current));
-    btn.title = tabHint(kind, round);
+    btn.title = tabHint(kind);
     tabs.append(btn);
   }
 }
@@ -133,10 +141,9 @@ function selectTab(host: AppHost, kind: ContestKind): void {
   if (!host.setLogContest) host.refresh();
 }
 
-function tabHint(kind: ContestKind, round: number | undefined): string {
+function tabHint(kind: ContestKind): string {
   if (kind === "CQWW") return "CQWW：交换 CQ 分区，与 DX / WPX 各记一本";
   if (kind === "WPX") return "WPX：交换自增序号，与 DX / CQWW 各记一本";
-  if (round === undefined) return "DX：日常通联，只交换呼号与 RST";
   return "DX：日常通联，只交换呼号与 RST（不分场次）";
 }
 
@@ -195,7 +202,7 @@ function emptyHint(kind: ContestKind, past: boolean): string {
   if (kind === "DX") {
     return "暂无日志记录。在电台页填好对方呼号与两个 RST、按回车发出结束语，就会记到这里的。";
   }
-  return `暂无 ${kind} 日志记录。在电台页把通联模式切到 ${kind}，填好呼号、两个 RST 与对方${exchangeName(
+  return `暂无 ${kind} 日志记录。在电台页把通联模式切到 ${kind}，填好呼号、两个 RST 与${theirExchangeLabel(
     kind,
   )}，按回车发出 TU 就会记到这里的。`;
 }
@@ -224,6 +231,15 @@ function buildRow(
     const input = el("input", { attrs: { type: "text" } });
     input.value = String(record[key] ?? "");
     input.style.width = width;
+    // The exchange columns are numbers, so they only take digits: a typo here
+    // used to be savable as `abc`, which left a row that could never match
+    // anything and a verdict column that simply said nothing.
+    if (key === "exchRx" || key === "exchTx") {
+      input.addEventListener("input", () => {
+        const clean = input.value.replace(/\D/g, "");
+        if (clean !== input.value) input.value = clean;
+      });
+    }
     inputs[key] = input;
     td.append(input);
     tr.append(td);
@@ -258,8 +274,10 @@ function buildRow(
           rstRx: inputs.rstRx.value,
           rstTx: inputs.rstTx.value,
         };
-        if (inputs.exchRx) updated.exchRx = inputs.exchRx.value;
-        if (inputs.exchTx) updated.exchTx = inputs.exchTx.value;
+        // Stored the way the row is written during a contact: a plain number,
+        // whatever spelling was typed over it.
+        if (inputs.exchRx) updated.exchRx = normaliseExchange(kind, inputs.exchRx.value);
+        if (inputs.exchTx) updated.exchTx = normaliseExchange(kind, inputs.exchTx.value);
         // An edited row is no longer the copy that was checked: the verdict goes
         // with the copy it judged, rather than sitting next to a changed call.
         delete updated.verdict;
@@ -268,16 +286,24 @@ function buildRow(
       "btn small",
     ),
   );
-  actions.append(
-    button(
-      "删除",
-      () => {
-        if (typeof record.id !== "number") return;
-        void deleteLog(record.id).then(() => host.refresh());
-      },
-      "btn small danger",
-    ),
+  // Deleting one row asks the same way clearing the book does: it cannot be
+  // undone, and a single stray click on a table of contacts should not lose one.
+  let armed = false;
+  const remove = button(
+    "删除",
+    () => {
+      if (typeof record.id !== "number") return;
+      if (!armed) {
+        armed = true;
+        remove.textContent = "再点一次删除";
+        remove.classList.add("armed");
+        return;
+      }
+      void deleteLog(record.id).then(() => host.refresh());
+    },
+    "btn small danger",
   );
+  actions.append(remove);
   tr.append(actions);
   return tr;
 }

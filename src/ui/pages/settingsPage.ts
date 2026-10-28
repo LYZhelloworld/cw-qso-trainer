@@ -1,7 +1,7 @@
 import { button, el, panel } from "../dom.js";
 import { dxccDatabase } from "../../data/dxcc.js";
 import { PASSBAND_HZ, PASSBAND_OPTIONS } from "../../ham/tuning.js";
-import { CQ_ZONE_MAX, SERIAL_MAX, SERIAL_MIN, ownZone } from "../../qso/contest.js";
+import { SERIAL_MAX, SERIAL_MIN, ownZone } from "../../qso/contest.js";
 import {
   DEFAULT_SETTINGS,
   SIDETONE_MAX,
@@ -35,6 +35,28 @@ function numberRow(
   input.addEventListener("change", () => onCommit(Number(input.value)));
   const wrap = el("label", { class: "field" });
   wrap.append(document.createTextNode(label), input);
+  return wrap;
+}
+
+/**
+ * The CQ zone override: empty is a value here.
+ *
+ * A number field cannot say "not set", and `0` as a sentinel is a thing to
+ * remember rather than a thing to see — so the box is left blank when the zone
+ * comes from the callsign, and typing a zone overrides it.
+ */
+function zoneRow(value: number, onCommit: (n: number) => void): HTMLLabelElement {
+  const input = el("input", {
+    attrs: { type: "text", inputmode: "numeric", placeholder: "留空 = 按呼号" },
+  });
+  input.value = value > 0 ? String(value) : "";
+  input.addEventListener("input", () => {
+    const clean = input.value.replace(/\D/g, "").slice(0, 2);
+    if (clean !== input.value) input.value = clean;
+  });
+  input.addEventListener("change", () => onCommit(input.value === "" ? 0 : Number(input.value)));
+  const wrap = el("label", { class: "field" });
+  wrap.append(document.createTextNode("覆盖 CQ 分区"), input);
   return wrap;
 }
 
@@ -164,13 +186,11 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
   );
 
   // --- contest exchanges ----------------------------------------------------
-  // The two numbers a contest puts on the air. Neither is typed during a
-  // contact: the zone is where we are, the serial is how many contacts we have
-  // already logged, so both live here and both are shown on the entry row.
-  const zoneField = numberRow("CQ 分区（0 = 按呼号自动）", s.cqZone, 0, CQ_ZONE_MAX, (n) =>
-    host.updateSettings({ cqZone: n }),
-  );
-  const serialField = numberRow("WPX 下一条序号", s.wpxSerial, SERIAL_MIN, SERIAL_MAX, (n) =>
+  // Two numbers, and only one of them is a number to keep. The CQ zone is where
+  // the station is, so the field is an *override*: empty means "read it off my
+  // callsign". The serial is a counter, so it is the counter that gets edited.
+  const zoneField = zoneRow(s.cqZone, (cqZone) => host.updateSettings({ cqZone }));
+  const serialField = numberRow("WPX 下一个序号", s.wpxSerial, SERIAL_MIN, SERIAL_MAX, (n) =>
     host.updateSettings({ wpxSerial: n }),
   );
 
@@ -236,20 +256,20 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
       zoneField,
       el("div", {
         class: "hint",
-        text: `CQWW 里发给对方的就是这个分区：现在会发 ${ownZone(
+        text: `覆盖 CQ 分区：留空就按本方呼号从 cty.dat 里读，现在是 ${ownZone(
           s.cqZone,
           s.myCall,
-        )} 区（补成两位，5 区发 05）。填 0 表示按本方呼号自动推断。`,
+        )} 区。CQWW 里发出去的就是它（补不补前导零、用不用简码随你）。`,
       }),
       serialField,
       el("div", {
         class: "hint",
-        text: "WPX 的序号每记录一条日志加一，补成三位（第一条就是 001）。这里可以改，也可以退回去重来。",
+        text: "WPX 的序号每记录一条日志加一。录入行里那一格显示的就是这里的下一个号，想发别的数字就在那一格里改。",
       }),
       button("序号回到 1", () => host.updateSettings({ wpxSerial: SERIAL_MIN }), "btn small"),
       el("div", {
         class: "hint",
-        text: "通联模式（DX / CQWW / WPX）在电台机头切。三种模式各自一本日志，互不混淆。",
+        text: "通联模式（DX / CQWW / WPX）在电台顶栏切。三种模式各自一本日志，互不混淆。",
       }),
       el("div", {
         class: "hint",

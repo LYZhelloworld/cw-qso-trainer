@@ -22,7 +22,7 @@ afterEach(() => {
 describe("关于页", () => {
   it("显示版本号与定位说明", () => {
     const root = mount();
-    expect(root.textContent).toContain("CW QSO 练习器 v1.2.0");
+    expect(root.textContent).toContain("CW QSO 练习器 v1.1.0");
     expect(root.textContent).toContain("离线摩尔斯电码通联练习器");
   });
 

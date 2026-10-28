@@ -125,7 +125,7 @@ describe("电台页 — 电源", () => {
     expect(root.querySelector(".dial-digits")?.textContent).toBe("14.025.00");
     expect(root.querySelector(".band-tabs")).toBeNull();
     expect(root.querySelector(".send-input")).toBeNull();
-    // 开台按钮与待机窗都在机头/瀑布图那边，不在这一页里重复。
+    // 开台按钮与待机窗都在顶栏/瀑布图那边，不在这一页里重复。
     expect(root.textContent).not.toContain("设备已关机");
   });
 

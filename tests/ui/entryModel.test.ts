@@ -216,29 +216,63 @@ describe("比赛模式下的那一行", () => {
     expect(canLog({ ...done, exchRx: "001" }, "WPX")).toBe(true);
   });
 
-  it("四位序号是合法输入：波段上真有人发 1234", () => {
+  it("序号多少位都算数：抄到几位就记几位", () => {
     // 虚拟台这一版只发 001–999，但「抄不到四位」不等于「四位算错」——
     // 拦下它会变成在教一件错事。
     expect(canLog({ ...done, exchRx: "1234" }, "WPX")).toBe(true);
     expect(blockingField({ ...done, exchRx: "1234" }, "WPX")).toBeNull();
-    expect(canLog({ ...done, exchRx: "9999" }, "WPX")).toBe(true);
-    expect(canLog({ ...done, exchRx: "10000" }, "WPX")).toBe(false);
+    expect(canLog({ ...done, exchRx: "10000" }, "WPX")).toBe(true);
+    expect(canLog({ ...done, exchRx: "0" }, "WPX")).toBe(false);
   });
 
-  it("步进还是三步：交换信息随对方的报告一起来，不是单独一格", () => {
-    // 报告到了、我方也发过了、交换信息还没抄下来 —— 仍然是收尾那一步，
-    // 只是按回车会提示先填分区/序号。
+  it("比赛没有「应答」那一级：抄清呼号直接指到 F2", () => {
+    // 比赛报告那一句自带呼号（JA1ABC 5NN 24），所以不用先单独报一次自己。
+    const copied = entry({ call: "JA1ABC" });
+    expect(entryStep(copied, "CQWW")).toBe("report");
+    expect(highlightedKey(copied, "CQWW")).toBe(2);
+  });
+
+  it("分区没抄到时不发第二轮：收尾那一步按下去会被拦下来", () => {
     const awaitingExch = entry({
       call: "JA1ABC",
       rstTx: "599",
       rstRx: "599",
       reportSent: true,
     });
-    expect(entryStep(awaitingExch)).toBe("signoff");
-    expect(highlightedKey(awaitingExch)).toBe(3);
+    // 步进不受交换信息影响——它和对方的报告是一起抄下来的。
+    expect(entryStep(awaitingExch, "CQWW")).toBe("signoff");
+    expect(highlightedKey(awaitingExch, "CQWW")).toBe(3);
+    // 但记不了账，指到空着的那一格。
+    expect(canLog(awaitingExch, "CQWW")).toBe(false);
+    expect(blockingField(awaitingExch, "CQWW")).toBe("exchRx");
   });
 
-  it("清空一行时交换信息一起清掉", () => {
-    expect(emptyEntry("run")).toMatchObject({ exchRx: "" });
+  it("取一步就把已知的填上：两个 RST 与我方序号，光标去抄对方的号", () => {
+    const copied = entry({ call: "JA1ABC" });
+    const taken = onSpace(copied, "WPX");
+    expect(taken.fillRstTx).toBe("599");
+    expect(taken.fillRstRx).toBe("599");
+    expect(taken.fillOwnNr).toBe(true);
+    expect(taken.focus).toBe("exchRx");
+    // 空格是「我自己发」，所以不发报文。
+    expect(taken.send).toBeNull();
+  });
+
+  it("手填过的框不覆盖", () => {
+    const copied = entry({ call: "JA1ABC", rstTx: "579", rstRx: "559", ownNr: "42" });
+    const taken = onEnter(copied, "WPX");
+    expect(taken.fillRstTx).toBeNull();
+    expect(taken.fillRstRx).toBeNull();
+    expect(taken.fillOwnNr).toBe(false);
+  });
+
+  it("DX 还是先报自己再报报告", () => {
+    const copied = entry({ call: "JA1ABC", mode: "s&p" });
+    expect(entryStep(copied, "DX")).toBe("answer");
+    expect(highlightedKey(copied, "DX")).toBe(4);
+  });
+
+  it("清空一行时交换信息与我方序号一起清掉", () => {
+    expect(emptyEntry("run")).toMatchObject({ exchRx: "", ownNr: "" });
   });
 });

@@ -10,9 +10,19 @@ import type { VirtualHam } from "../ham/virtualHam.js";
  * that goes in the exchange:
  *
  *  - **DX** — nothing is exchanged but the report. Everyday contacts.
- *  - **CQWW** — the operator's CQ zone (1–40), sent as two digits.
- *  - **WPX** — a serial the operator increments per logged contact, sent as
- *    three digits.
+ *  - **CQWW** — the operator's CQ zone (1–40).
+ *  - **WPX** — a serial the operator increments per logged contact.
+ *
+ * ## How many digits?
+ *
+ * Neither contest fixes a width. A zone is at most two digits and a serial is at
+ * most four (that is where the *practice* stations stop, not where the rules
+ * do), but whether a station pads with leading zeros, and whether it sends cut
+ * numbers, is the operator's own habit: zone 5 may go out as `05`, `T5` or plain
+ * `5`. So nothing here treats a shorter copy as wrong — `normaliseExchange`
+ * compares values, not spellings — and a serial typed with five digits is not
+ * rejected either: the operator may copy what they hear, even if no virtual
+ * station here would ever send it.
  *
  * Everything here is pure: no DOM, no storage, no clock. The session asks it what
  * a station's exchange is; the entry panel asks it what the box expects; the log
@@ -37,10 +47,10 @@ export const CONTEST_LABEL: Record<ContestKind, string> = {
   WPX: "WPX",
 };
 
-/** CQ zone range, per the CQWW rules. */
+/** CQ zone range, per the CQWW rules. Two digits is the most it can take. */
 export const CQ_ZONE_MIN = 1;
 export const CQ_ZONE_MAX = 40;
-/** Serial range. Four digits is the most a CW serial is ever sent as. */
+/** Where the *virtual* stations' serials stop. Not a limit on what is loggable. */
 export const SERIAL_MIN = 1;
 export const SERIAL_MAX = 9999;
 /** Every contest station reports 599; the air shortens it to 5NN. */
@@ -62,11 +72,15 @@ export function requiresExchange(kind: ContestKind): boolean {
   return isContest(kind);
 }
 
-/** What the exchanged number is called, for the box's placeholder and hints. */
-export function exchangeName(kind: ContestKind): string {
-  if (kind === "CQWW") return "CQ 分区";
-  if (kind === "WPX") return "序号";
-  return "";
+/**
+ * The label of the box holding *their* number.
+ *
+ * Spelled out rather than composed from a name plus "对方": a space belongs in
+ * "对方 CQ 分区" and not in "对方序号", and concatenation got that wrong once —
+ * the placeholder read `对方CQ 分区`.
+ */
+export function theirExchangeLabel(kind: ContestKind): string {
+  return kind === "CQWW" ? "对方 CQ 分区" : "对方序号";
 }
 
 /** Two digits, zero padded: zone 5 goes out as `05` (and on the air as `T5`). */
@@ -90,13 +104,16 @@ export function isValidZone(value: string): boolean {
 }
 
 export function isValidSerial(value: string): boolean {
-  const n = Number(value.trim());
-  return (
-    /^\d{1,4}$/.test(value.trim()) &&
-    Number.isInteger(n) &&
-    n >= SERIAL_MIN &&
-    n <= SERIAL_MAX
-  );
+  // Any length: a copy of `12345` is a copy, not a typo the program gets to
+  // refuse. It simply will not match the number the station sent, which is the
+  // verdict's business, not the entry box's.
+  const t = value.trim();
+  return /^\d{1,6}$/.test(t) && Number(t) >= SERIAL_MIN;
+}
+
+/** How many digits the entry box lets through before it stops taking them. */
+export function exchangeMaxDigits(kind: ContestKind): number {
+  return kind === "CQWW" ? 2 : 6;
 }
 
 /** Is this what the operator typed into the exchange box a legal value? */
@@ -164,14 +181,26 @@ export function ownExchangeText(
  *    sends the same number for as long as it is on the band (stations in a real
  *    contest do too: their number is their contact count, not a random draw),
  *    and the generator's RNG sequence is left exactly as it was.
+ *
+ * One station in four leaves the leading zeros off (`5` rather than `05`, `12`
+ * rather than `012`). Operators do both, and a copy has to be right either way —
+ * which is why `verifyEntry` compares values instead of spellings.
  */
 export function stationExchange(
   ham: VirtualHam,
   kind: ContestKind,
   db: DxccDatabase = dxccDatabase,
 ): string {
-  if (kind === "CQWW") return formatZone(zoneOfCall(ham.call, db) ?? DEFAULT_ZONE);
-  if (kind === "WPX") return formatSerial(1 + (hashString(ham.call) % 999));
+  const hash = hashString(ham.call);
+  const padded = hash % 4 !== 0;
+  if (kind === "CQWW") {
+    const zone = zoneOfCall(ham.call, db) ?? DEFAULT_ZONE;
+    return padded ? formatZone(zone) : String(zone);
+  }
+  if (kind === "WPX") {
+    const serial = 1 + (hash % 999);
+    return padded ? formatSerial(serial) : String(serial);
+  }
   return "";
 }
 

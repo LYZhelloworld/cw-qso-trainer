@@ -3,7 +3,13 @@ import { addLog } from "../storage/logStore.js";
 import { buildLogRecord, type LogRecord } from "../logRecord.js";
 import { expandMacros } from "../../message/macros.js";
 import { isReserved, type QuickMessage } from "../../message/modeFile.js";
-import { exchangeName, requiresExchange, type ContestKind } from "../../qso/contest.js";
+import {
+  exchangeMaxDigits,
+  formatSerial,
+  requiresExchange,
+  theirExchangeLabel,
+  type ContestKind,
+} from "../../qso/contest.js";
 import {
   blockingField,
   canLog,
@@ -33,9 +39,11 @@ import type { AppHost } from "../app.js";
  * because copying the callsign is the skill being practised (see "没有记录，也没有
  * 台名" in `doc/UI.md`).
  *
- * A contest adds a fourth box — the number the other station sent — and shows
- * ours next to the mode switch, because `{EXCH}` is the one value the operator
- * cannot see going out otherwise: it comes from the settings, not from a box.
+ * A contest changes two things about this row. It copies one more number — the
+ * one the other station sends — and it knows two of the numbers before the
+ * contact starts: everybody reports 599, and our own serial is a counter the
+ * program keeps. So the row grows a box, taking the step fills the boxes that
+ * are already known, and the caret lands on the one thing left to copy.
  *
  * The eight keys are the mode's messages (`doc/MESSAGES.md`), defined in a file
  * the operator can edit. Which of them is lit, and what Enter does, comes from
@@ -44,7 +52,7 @@ import type { AppHost } from "../app.js";
  *  - empty call      → F1 (Run: call CQ) or F4 (S&P: answer somebody)
  *  - call filled     → F4 in S&P (our call in answer), until the report is picked
  *  - our report due  → F2 (send it; the report box fills itself with 599)
- *  - their report in and ours out → F3 (sign off, write the row, start a new one)
+ *  - everything in   → F3 (sign off, write the row, start a new one)
  *
  * The caret follows the ears: after F4 it waits in *their* report box, because a
  * station that has just been pounced on comes back with his report before ours
@@ -131,12 +139,40 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     host.showOutgoing?.(text);
   };
 
+  /**
+   * Write the values the row already knows into their boxes.
+   *
+   * A contest knows both reports (everybody sends 599) and, in WPX, our own
+   * serial. They go into the boxes rather than being substituted on the fly,
+   * because the boxes are the paper: what the operator sees is what will be
+   * logged and what `{RST}` / `{EXCH}` are expanded from.
+   */
+  const applyPrefill = (p: Pick<EntryAction, "fillRstTx" | "fillRstRx" | "fillOwnNr">): void => {
+    if (p.fillRstTx !== null && entry.rstTx !== p.fillRstTx) {
+      entry.rstTx = p.fillRstTx;
+      rstTxInput.value = p.fillRstTx;
+    }
+    if (p.fillRstRx !== null && entry.rstRx !== p.fillRstRx) {
+      entry.rstRx = p.fillRstRx;
+      rstRxInput.value = p.fillRstRx;
+    }
+    if (p.fillOwnNr && ownInput && entry.ownNr.trim() === "") {
+      entry.ownNr = formatSerial(host.settings.wpxSerial);
+      ownInput.value = entry.ownNr;
+    }
+  };
+
   /** Press one key. A dead key has nothing to say and does nothing. */
   const pressKey = (key: number): void => {
     const m = messages.messages.find((x) => x.key === key);
     if (!m) return;
     // Half-duplex: the rig is already keying something of ours.
     if (host.session.isSending) return;
+    const step = entryStep(entry, contest);
+    // The known values go into the boxes *before* the message is expanded: F2's
+    // text is built out of them. Pressing the lit key is the step Enter would
+    // take, so it fills the same boxes.
+    if (key === 2 && step === "report") applyPrefill(onEnter(entry, contest));
     const text = sendable(m);
     if (text === null) return;
     send(text);
@@ -151,13 +187,14 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     // Pressing the lit key does what Enter on it would do. In S&P the opening F4
     // is done with once the report box holds a number, and F2 puts our report on
     // the air; without this the light would stay on a message already sent.
-    if (key === 4 && entryStep(entry) === "answer" && entry.rstTx.trim() === "") {
+    if (key === 4 && step === "answer" && entry.rstTx.trim() === "") {
       entry.rstTx = DEFAULT_RST;
       rstTxInput.value = DEFAULT_RST;
       stepped = true;
-    } else if (key === 2 && entryStep(entry) === "report") {
+    } else if (key === 2 && step === "report") {
       entry.reportSent = true;
       stepped = true;
+      focusField(requiresExchange(contest) ? "exchRx" : "rstRx");
     }
     if (stepped) {
       clearHint();
@@ -185,19 +222,31 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   // themselves, so the row is one line tall instead of a label column plus a
   // field column. The placeholders carry the wording the labels used to.
   //
-  // A contest gets a fourth box, because it exchanges a fourth thing. It is not
-  // a step of its own — it arrives with their report — but it is a box on the
-  // paper all the same.
+  // The order is the order they are copied in: the call, our report, their
+  // report, then the exchange. WPX puts *our* serial before theirs because ours
+  // is the one the program already knows — it is a box only so the operator can
+  // send something other than the padded counter.
+  //
+  // Our CQ zone is not on this row: it is where we are, set once in the settings
+  // (or read off the callsign), not something that changes per contact.
 
   const callInput = field("entry-call", "对方呼号", { autocapitalize: "characters" });
   const rstTxInput = field("entry-rst", "我方 RST", { inputmode: "numeric" });
   const rstRxInput = field("entry-rst", "对方 RST", { inputmode: "numeric" });
+  const ownInput =
+    contest === "WPX" ? field("entry-own-nr", "我方序号", { inputmode: "numeric" }) : null;
   const exchInput = hasExchange
-    ? field("entry-exch", `对方${exchangeName(contest)}`, { inputmode: "numeric" })
+    ? field("entry-exch", theirExchangeLabel(contest), { inputmode: "numeric" })
     : null;
 
-  const row = el("div", { class: hasExchange ? "entry-row with-exch" : "entry-row" });
+  const rowClass = ownInput
+    ? "entry-row with-own"
+    : hasExchange
+      ? "entry-row with-exch"
+      : "entry-row";
+  const row = el("div", { class: rowClass });
   row.append(callInput, rstTxInput, rstRxInput);
+  if (ownInput) row.append(ownInput);
   if (exchInput) row.append(exchInput);
 
   const hintNode = el("div", { class: "entry-hint", attrs: { role: "status" } });
@@ -205,6 +254,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   callInput.value = entry.call;
   rstTxInput.value = entry.rstTx;
   rstRxInput.value = entry.rstRx;
+  if (ownInput) ownInput.value = entry.ownNr;
   if (exchInput) exchInput.value = entry.exchRx;
 
   callInput.addEventListener("input", () => {
@@ -229,12 +279,18 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     entry.rstRx = digits(rstRxInput, 3);
     sync();
   });
+  ownInput?.addEventListener("input", () => {
+    clearHint();
+    // Our serial is ours to spell: four digits is as far as the box lets
+    // anyone go, and whatever is typed here is what goes on the air.
+    entry.ownNr = digits(ownInput, 4);
+    sync();
+  });
   exchInput?.addEventListener("input", () => {
     clearHint();
-    // A zone is two digits, a serial four: the box stops at what the mode can
-    // legally hold instead of letting the operator type a number that is never
-    // going to be loggable.
-    entry.exchRx = digits(exchInput, contest === "CQWW" ? 2 : 4);
+    // Digits only: cut numbers are a way of *sending* a number, never a way of
+    // writing one down. What is typed here is what the log will hold.
+    entry.exchRx = digits(exchInput, exchangeMaxDigits(contest));
     sync();
   });
 
@@ -265,13 +321,13 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   }
 
   /**
-   * The number *we* are sending. It is the one value on this row the operator
-   * does not type — it comes from the settings — so without it the exchange
-   * would go out invisible. The serializer is what it is on the air, minus the
-   * cut numbers: the operator reads digits in a log, not `TTA`.
+   * The number *we* are sending, when it is not in a box of its own.
+   *
+   * WPX has one now, so nothing is left to show here — and CQWW deliberately
+   * shows nothing: the zone is where the station is, not a number that changes
+   * per contact, and a read-out on the entry row would just be a second place
+   * to look. It lives in the settings, which also says what it will send.
    */
-  const ownNode = hasExchange ? el("span", { class: "entry-own" }) : null;
-  if (ownNode) modeRow.append(ownNode);
 
   // --- Enter / Space ------------------------------------------------------
 
@@ -288,12 +344,10 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       }
       return;
     }
-    // The report box fills itself *before* the message is expanded: F2's text
-    // carries `{RST}`, and the 599 is exactly the value that has to go into it.
-    if (action.fillRstTx !== null) {
-      entry.rstTx = action.fillRstTx;
-      rstTxInput.value = action.fillRstTx;
-    }
+    // The report boxes fill themselves *before* the message is expanded: F2's
+    // text carries `{RST}`, and the 599 is exactly the value that has to go into
+    // it. In a contest both sides are 599, so both boxes fill.
+    applyPrefill(action);
     // Our side of the exchange has gone out: the row is past the report step,
     // so a report box filled from here on means the sign-off is next.
     if (action.markReported) entry.reportSent = true;
@@ -319,13 +373,14 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
         truth: host.session.partnerTruth?.() ?? null,
       });
       // The serial this row used is spent. Bumped before the row is re-synced so
-      // the readout matches what the next message will send.
+      // the placeholder shows the number the next contact will send.
       if (completed) host.nextWpxSerial?.();
       // A fresh row, same operating mode: the next station, or the next CQ.
       Object.assign(entry, emptyEntry(entry.mode));
       callInput.value = "";
       rstTxInput.value = "";
       rstRxInput.value = "";
+      if (ownInput) ownInput.value = "";
       if (exchInput) exchInput.value = "";
     }
     sync();
@@ -344,16 +399,23 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     }
   };
 
-  for (const input of [callInput, rstTxInput, rstRxInput, ...(exchInput ? [exchInput] : [])]) {
+  const boxes = [
+    callInput,
+    rstTxInput,
+    rstRxInput,
+    ...(ownInput ? [ownInput] : []),
+    ...(exchInput ? [exchInput] : []),
+  ];
+  for (const input of boxes) {
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        runAction(onEnter(entry));
+        runAction(onEnter(entry, contest));
       } else if (e.key === " ") {
         // Space is a step, not a character: the callsign box never needs one,
         // and in the key modes Space is the straight key anyway.
         e.preventDefault();
-        runAction(onSpace(entry));
+        runAction(onSpace(entry, contest));
       }
     });
   }
@@ -384,7 +446,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   // --- keeping the screen in step ----------------------------------------
 
   function sync(): void {
-    const lit = highlightedKey(entry);
+    const lit = highlightedKey(entry, contest);
     for (const k of keys) {
       const m = k.message;
       k.labelNode.textContent = expanded(m).label;
@@ -397,14 +459,17 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       k.node.title = tooltip(m);
     }
     for (const r of radios) r.node.checked = r.mode === entry.mode;
-    if (ownNode) {
-      const own = host.ownExchange?.() ?? "";
-      ownNode.textContent = own === "" ? `我方${exchangeName(contest)} —` : `我方 ${own}`;
-      ownNode.title = `本次通联发出去的${exchangeName(contest)}：${own || "未定"}`;
+    if (ownInput) {
+      // The counter, not a copy: this is the number the next contact will send
+      // unless the operator types another one over it.
+      const next = formatSerial(host.settings.wpxSerial);
+      ownInput.placeholder = next;
+      ownInput.title = `我方序号：留空就发 ${next}（设置里可以改下一个号）`;
     }
     callInput.classList.toggle("bad", hint.field === "call");
     rstTxInput.classList.toggle("bad", hint.field === "rstTx");
     rstRxInput.classList.toggle("bad", hint.field === "rstRx");
+    ownInput?.classList.toggle("bad", hint.field === "ownNr");
     exchInput?.classList.toggle("bad", hint.field === "exchRx");
   }
 
@@ -435,6 +500,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     callInput.value = "";
     rstTxInput.value = "";
     rstRxInput.value = "";
+    if (ownInput) ownInput.value = "";
     if (exchInput) exchInput.value = "";
     clearHint();
     focusField("call");
@@ -447,9 +513,11 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
         ? callInput
         : which === "rstTx"
           ? rstTxInput
-          : which === "exchRx" && exchInput
-            ? exchInput
-            : rstRxInput;
+          : which === "ownNr" && ownInput
+            ? ownInput
+            : which === "exchRx" && exchInput
+              ? exchInput
+              : rstRxInput;
     target.focus();
     target.setSelectionRange(target.value.length, target.value.length);
   }
@@ -481,10 +549,12 @@ function hintFor(field: EntryField, contest: ContestKind): string {
       return "我方 RST 要三位数字（如 599 或 579）";
     case "rstRx":
       return "对方 RST 要三位数字（如 599）";
+    case "ownNr":
+      return "我方序号要填数字（留空就发设置里的下一个号）";
     case "exchRx":
       return contest === "CQWW"
-        ? "对方 CQ 分区要 1–40 的数字"
-        : "对方序号要 1–9999 的数字";
+        ? "对方 CQ 分区要填 1–40 的数字"
+        : "对方序号要填数字";
   }
 }
 

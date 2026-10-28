@@ -309,7 +309,7 @@ describe("QsoMachine — 比赛流程（CQWW / WPX）", () => {
     expect(m.ctx.rstRx).toBeNull();
 
     // 我方发 5NN + 分区（24 区，简码写成 U4）。
-    expect(m.userSend("5NN U4")).toEqual(["R 5NN U5"]);
+    expect(m.userSend("JA1ABC 5NN U4")).toEqual(["R 5NN U5"]);
     expect(m.ctx.rstTx).toBe("599");
     expect(m.ctx.rstRx).toBe("599");
     expect(m.state).toBe("SIGNOFF");
@@ -340,7 +340,7 @@ describe("QsoMachine — 比赛流程（CQWW / WPX）", () => {
   it("从堆叠里点名：被点到的台一个回合就把报告和分区给全", () => {
     const m = contestMachine();
     m.userSend("CQ TEST BG7XXX");
-    expect(m.hamAcceptedSelection()).toBe("BG7XXX 5NN U5");
+    expect(m.hamAcceptedSelection()).toBe("5NN U5");
     expect(m.ctx.rstRx).toBe("599");
     expect(m.state).toBe("EXCHANGE");
   });
@@ -356,7 +356,7 @@ describe("QsoMachine — 比赛流程（CQWW / WPX）", () => {
     expect(m.state).toBe("LOGGED");
   });
 
-  it("WPX 的序号按简码发：001 在空气里是 TTA", () => {
+  it("WPX 的序号按简码发：001 在通联时是 TTA", () => {
     const m = new QsoMachine({
       myCall: "BG7XXX",
       ham: new VirtualHam({ call: "DL1ABC", difficulty: "novice" }),
@@ -366,6 +366,26 @@ describe("QsoMachine — 比赛流程（CQWW / WPX）", () => {
     });
     m.userSend("CQ TEST BG7XXX");
     m.hamAnswerCq();
-    expect(m.userSend("5NN TTA")).toEqual(["R 5NN TTA"]);
+    expect(m.userSend("DL1ABC 5NN TTA")).toEqual(["R 5NN TTA"]);
+  });
+
+  it("收尾状态里发一句 ? 不算收尾——只有 TU 才算", () => {
+    const m = contestMachine();
+    m.userSend("CQ TEST BG7XXX");
+    m.hamAnswerCq();
+    m.userSend("JA1ABC 5NN U4");
+    expect(m.state).toBe("SIGNOFF");
+    // 追问一句不会把这次通联关掉：机器还在等 TU。
+    expect(m.userSend("?")).toEqual([]);
+    expect(m.state).toBe("SIGNOFF");
+    m.userSend("TU");
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("抄不清时问 NR?，不是 AGN?", () => {
+    const m = contestMachine();
+    m.userSend("CQ TEST BG7XXX");
+    m.hamAnswerCq();
+    expect(m.hamMissed()).toBe("NR?");
   });
 });

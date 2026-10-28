@@ -1,5 +1,6 @@
 import { canLog, normaliseCall, type EntryValues } from "./entryModel.js";
 import {
+  normaliseExchange,
   requiresExchange,
   verifyEntry,
   type ContestKind,
@@ -44,9 +45,9 @@ export interface LogRecord {
    * DX, which is what they are.
    */
   contest?: ContestKind;
-  /** The number we sent (our zone / our serial). Empty in DX mode. */
+  /** The number we sent (our zone / our serial), as a plain number: `5`, `1`. */
   exchTx?: string;
-  /** The number they sent, as copied. Empty in DX mode. */
+  /** The number they sent, as copied, as a plain number. Empty in DX mode. */
   exchRx?: string;
   /**
    * Which contest session the row belongs to (see `contestRound` in the
@@ -116,8 +117,10 @@ export function buildLogRecord(
     rstRx: entry.rstRx.trim(),
     rstTx: entry.rstTx.trim(),
     contest,
-    exchRx: requiresExchange(contest) ? entry.exchRx.trim() : "",
-    exchTx: requiresExchange(contest) ? (opts.exchTx ?? "").trim() : "",
+    // The log holds numbers, not air: no leading zeros, no cut letters. `05` and
+    // `T5` are two ways of sending 5, and the book records one of it.
+    exchRx: requiresExchange(contest) ? normaliseExchange(contest, entry.exchRx) : "",
+    exchTx: requiresExchange(contest) ? normaliseExchange(contest, opts.exchTx ?? "") : "",
   };
   const verdict = verifyEntry(entry, opts.truth ?? null, contest);
   if (verdict) record.verdict = verdict;

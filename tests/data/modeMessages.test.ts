@@ -29,13 +29,13 @@ describe("内置模式报文", () => {
       const texts = parseBundledMode(kind).config.messages.map((m) => m.text);
       expect(texts).toEqual([
         "CQ TEST {MYCALL}",
-        "{RST} {EXCH}",
+        "{THEIRCALL} {RST} {EXCH}",
         "TU",
         "{MYCALL}",
         "{THEIRCALL}",
         "{RST} {EXCH} {EXCH}",
         "?",
-        "",
+        "NR?",
       ]);
     }
   });

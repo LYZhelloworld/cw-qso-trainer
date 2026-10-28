@@ -180,7 +180,6 @@ textarea:focus {
   font-size: 12px;
 }
 
-
 .err {
   color: var(--danger);
   font-size: 12px;
@@ -464,6 +463,11 @@ table.log input {
  * contacts the way the dial and the filter are.
  */
 .rig-contest {
+  /* A selector is not a text field: without this the global
+     `select { width: 100% }` stretches it across the whole left cell and it
+     reads as an input with the value stranded at one end. */
+  width: auto;
+  flex: 0 0 auto;
   height: 24px;
   padding: 0 4px;
   background: transparent;
@@ -1070,23 +1074,14 @@ table.log input {
   gap: 6px;
 }
 
-/* A contest row: the same line, with the exchanged number on the end. */
+/* A contest row: the same line, with the exchanged numbers on the end. WPX has
+   one more box than CQWW because it sends a serial of its own as well. */
 .entry-row.with-exch {
-  grid-template-columns: 2fr 1fr 1fr 1fr;
+  grid-template-columns: 2fr 1fr 1fr 1.1fr;
 }
 
-/*
- * The number *we* are sending. It is the one value on this row the operator does
- * not type — it comes from the settings — so it has to be shown somewhere or the
- * exchange goes out invisible.
- */
-.entry-own {
-  font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-  white-space: nowrap;
-  cursor: help;
+.entry-row.with-own {
+  grid-template-columns: 2fr 1fr 1fr 1fr 1.1fr;
 }
 
 /* The box is its own label: three of them in one line, each saying what it is

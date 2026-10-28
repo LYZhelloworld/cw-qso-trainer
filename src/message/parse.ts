@@ -64,6 +64,12 @@ export function extractLetterPrefix(callsign: string): string {
  * exactly like a two-letter, one-digit callsign. What separates them is position,
  * which the caller tracks (see `parseMessage`), and this test, which only has to
  * accept a short run of digits and cut letters.
+ *
+ * Position wins over "is it a real callsign": `RST 599 N9N` reads `N9N` as 999,
+ * not as a station. The other way round would break `A45` (serial 145) and
+ * `T4A` (040), which are ordinary contest copy — and a call appearing *after* the
+ * report is a shape that barely occurs in practice. The trade-off is written up
+ * in `doc/MESSAGE-PARSING.md` under 「比赛交换数字」.
  */
 function readsAsNumber(token: string): boolean {
   if (/^\d{1,4}$/.test(token)) return true;

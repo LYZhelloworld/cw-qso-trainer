@@ -187,9 +187,10 @@ export class QsoMachine {
     this.ctx.rstRx = this.peerReport();
     this.state = "EXCHANGE";
     // A contest station named out of a pile-up gives its report *and* its
-    // exchange in one over — it has been waiting to say them.
+    // exchange in one over — it has been waiting to say them. No callsign: it
+    // has just been named, and repeating it would cost the runner a second.
     const reply = this.contested
-      ? `${this.ctx.myCall} ${this.peerReportAir()} ${this.exchangeAir()}`
+      ? `${this.peerReportAir()} ${this.exchangeAir()}`
       : `R UR RST ${this.ham.report} BK`;
     this.lastReply = reply;
     this.lastRetryKey = null;
@@ -214,7 +215,10 @@ export class QsoMachine {
   hamMissed(): string {
     if (this.state !== "EXCHANGE" && this.state !== "SIGNOFF") return "";
     const failed = this.bumpRetry("COPY");
-    const reply = "AGN?";
+    // In a contest the thing that goes missing is the number, and the question is
+    // one word: `NR?`. Our own report is the last thing asked about, so counting
+    // the two separately is pointless — whatever was lost, this asks for it back.
+    const reply = this.contested ? "NR?" : "AGN?";
     this.lastReply = reply;
     this.lastRetryKey = "COPY";
     if (failed) this.fail();
@@ -362,10 +366,13 @@ export class QsoMachine {
   private onSignoffUser(p: ParsedMessage): string[] {
     if (this.copyError(p)) return [this.handleCopyError()];
 
-    // A contest contact ends on `TU`, full stop: no 73, no SK, and nothing comes
-    // back — the next station is already calling. The row is the operator's to
-    // write, and the contact is over the moment they say TU.
+    // A contest contact ends on `TU` and nothing comes back — the next station is
+    // already calling. But it ends on `TU`: an `F5` (the other station's call) or
+    // an `F7` (`?`) in this state is still part of the contact, and treating it as
+    // a sign-off would close a QSO the operator was in the middle of fixing.
     if (this.contested) {
+      const signedOff = p.type === "END" || p.end === "SK" || /\b(TU|73|SK)\b/.test(p.raw.toUpperCase());
+      if (!signedOff) return [];
       this.ctx.userEndSent = true;
       this.ctx.peerEndHeard = true;
       this.state = "LOGGED";

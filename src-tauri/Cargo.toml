@@ -1,6 +1,6 @@
 [package]
 name = "cw-qso-trainer"
-version = "1.2.0"
+version = "1.1.0"
 description = "Offline CW QSO trainer for amateur radio"
 authors = ["LYZ"]
 license = ""

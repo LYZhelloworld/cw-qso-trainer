@@ -242,7 +242,8 @@ export class RigFace {
     return select;
   }
 
-  /** The shutter over the waterfall: what a switched-off rig shows. */  private buildStandby(): void {
+  /** The shutter over the waterfall: what a switched-off rig shows. */
+  private buildStandby(): void {
     this.standby.append(el("div", { class: "standby-icon", text: "⏻" }));
     this.standby.append(el("div", { class: "standby-title", text: "设备已关机" }));
     this.standby.append(

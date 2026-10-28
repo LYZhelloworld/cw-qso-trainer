@@ -1,5 +1,6 @@
 import type { QsoMachine } from "../qso/stateMachine.js";
 import type { VirtualHam } from "../ham/virtualHam.js";
+import { isContest, type ContestKind } from "../qso/contest.js";
 
 /**
  * How long the operator waits for an answer to their own CQ once the band has
@@ -15,8 +16,13 @@ const CALL_ANSWER_WAIT_MS = 15_000;
  * sit in silence — it repeats itself, and after `PARTNER_REPEAT_LIMIT` tries it
  * gives up and goes back to calling CQ. Long enough to decode and key a reply at
  * a learner's speed, short enough that the operator can tell nobody is there.
+ *
+ * A contest runs on a shorter clock: a runner with a pile-up cannot sit five
+ * seconds on every contact, so three to five seconds is all the patience there
+ * is. That is part of what makes contest copy different from a rag-chew.
  */
 const PARTNER_WAIT_MS = 10_000;
+const CONTEST_PARTNER_WAIT_MS = 4_000;
 
 /** How many times the partner repeats before it gives up on the operator. */
 const PARTNER_REPEAT_LIMIT = 2;
@@ -39,6 +45,8 @@ export interface PatienceHost {
   readonly isTransmitting: boolean;
   /** We are actually exchanging with a station (not just listening to a CQ). */
   readonly exchangeInProgress: boolean;
+  /** Which mode this session is running; a contest waits less. */
+  readonly contest: ContestKind;
   /** Give up on the current exchange and go back to listening. */
   endExchange(): void;
   /**
@@ -97,7 +105,8 @@ export class Patience {
    */
   armPartner(afterMs = 0): void {
     if (!this.host.partner() || !this.host.exchangeInProgress) return;
-    this.partnerWaitAt = this.host.now() + afterMs + PARTNER_WAIT_MS;
+    const wait = isContest(this.host.contest) ? CONTEST_PARTNER_WAIT_MS : PARTNER_WAIT_MS;
+    this.partnerWaitAt = this.host.now() + afterMs + wait;
   }
 
   /** The operator is answering: the partner starts waiting from scratch. */

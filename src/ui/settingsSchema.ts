@@ -199,10 +199,12 @@ export function normalizeSettings(raw: unknown): AppSettings {
     passbandHz: normalisePassband(r.passbandHz),
     contest: isContestKind(r.contest) ? r.contest : DEFAULT_SETTINGS.contest,
     // Anything that is not a real zone means "derive it from the callsign":
-    // 0 is the sentinel, and so is a missing or negative value.
+    // 0 is the sentinel, and so is a missing or negative value. The fallback is
+    // 0 as well — "no zone" — rather than 1, which would quietly put the station
+    // in the first zone of the world.
     cqZone:
       typeof r.cqZone === "number" && r.cqZone > 0
-        ? clampNum(r.cqZone, CQ_ZONE_MIN, CQ_ZONE_MIN, CQ_ZONE_MAX)
+        ? clampNum(r.cqZone, 0, CQ_ZONE_MIN, CQ_ZONE_MAX)
         : 0,
     wpxSerial: clampNum(r.wpxSerial, DEFAULT_SETTINGS.wpxSerial, SERIAL_MIN, SERIAL_MAX),
     contestRounds: {
