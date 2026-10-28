@@ -195,6 +195,11 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       entry.reportSent = true;
       stepped = true;
       focusField(requiresExchange(contest) ? "exchRx" : "rstRx");
+    } else if (key === 3 && step === "signoff") {
+      // Said before it is written down: the Enter that follows only files the
+      // row, because `TU` is already on the air (`signoffSent`).
+      entry.signoffSent = true;
+      stepped = true;
     }
     if (stepped) {
       clearHint();
@@ -281,9 +286,9 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   });
   ownInput?.addEventListener("input", () => {
     clearHint();
-    // Our serial is ours to spell: four digits is as far as the box lets
-    // anyone go, and whatever is typed here is what goes on the air.
-    entry.ownNr = digits(ownInput, 4);
+    // Our serial is ours to spell: as many digits as an exchange can hold (the
+    // same six as their box), and whatever is typed here is what goes on the air.
+    entry.ownNr = digits(ownInput, exchangeMaxDigits(contest));
     sync();
   });
   exchInput?.addEventListener("input", () => {
@@ -320,22 +325,23 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     modeRow.append(wrap);
   }
 
-  /**
-   * The number *we* are sending, when it is not in a box of its own.
-   *
-   * WPX has one now, so nothing is left to show here — and CQWW deliberately
-   * shows nothing: the zone is where the station is, not a number that changes
-   * per contact, and a read-out on the entry row would just be a second place
-   * to look. It lives in the settings, which also says what it will send.
-   */
-
   // --- Enter / Space ------------------------------------------------------
 
   const runAction = (action: EntryAction): void => {
+    // The message this step would key, if any. Resolved first because it decides
+    // whether half-duplex has anything to say about the step.
+    const target =
+      action.send === null ? undefined : messages.messages.find((x) => x.key === action.send);
+    // A key the mode file does not define: nothing to key, and no step to take.
+    if (action.send !== null && !target) return;
     // Half-duplex: while our own message — or the answer to it — is still on the
     // air there is nothing to take a step *to*. Returning before moving the
     // caret matters: a step that did not happen must not look like it did.
-    if (host.session.isSending) return;
+    //
+    // It only holds back the steps that key something. Writing a row down after
+    // the `TU` has already gone out keys nothing, so making the operator wait out
+    // that over before they can file it would be a delay with no purpose.
+    if (host.session.isSending && target !== undefined && !isReserved(target)) return;
     if (action.log && !canLog(entry, contest)) {
       const bad = blockingField(entry, contest);
       if (bad) {
@@ -353,12 +359,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     if (action.markReported) entry.reportSent = true;
     // The message is expanded *before* the row is cleared: it is built from the
     // callsign and report that are about to be wiped.
-    let outgoing: string | null = null;
-    if (action.send !== null) {
-      const m = messages.messages.find((x) => x.key === action.send);
-      if (!m) return;
-      outgoing = sendable(m);
-    }
+    const outgoing: string | null = target ? sendable(target) : null;
     clearHint();
     let completed: LogRecord | null = null;
     if (action.log) {
@@ -368,8 +369,9 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
         // Which contest session the row belongs to; DX has none, and the log page
         // reads a missing session as the first one.
         round: requiresExchange(contest) ? host.sessionRound?.(contest) : undefined,
-        // The truth has to be read *now*: once TU has gone out the station is
-        // released back to the band, and there is nothing left to check against.
+        // Read at the moment the row is filed. Sending `TU` first does not take
+        // it away: releasing the station hands it back to the band's own CQ
+        // rhythm, it does not forget what it sent.
         truth: host.session.partnerTruth?.() ?? null,
       });
       // The serial this row used is spent. Bumped before the row is re-synced so
@@ -469,7 +471,6 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     callInput.classList.toggle("bad", hint.field === "call");
     rstTxInput.classList.toggle("bad", hint.field === "rstTx");
     rstRxInput.classList.toggle("bad", hint.field === "rstRx");
-    ownInput?.classList.toggle("bad", hint.field === "ownNr");
     exchInput?.classList.toggle("bad", hint.field === "exchRx");
   }
 
@@ -513,11 +514,9 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
         ? callInput
         : which === "rstTx"
           ? rstTxInput
-          : which === "ownNr" && ownInput
-            ? ownInput
-            : which === "exchRx" && exchInput
-              ? exchInput
-              : rstRxInput;
+          : which === "exchRx" && exchInput
+            ? exchInput
+            : rstRxInput;
     target.focus();
     target.setSelectionRange(target.value.length, target.value.length);
   }
@@ -549,8 +548,6 @@ function hintFor(field: EntryField, contest: ContestKind): string {
       return "我方 RST 要三位数字（如 599 或 579）";
     case "rstRx":
       return "对方 RST 要三位数字（如 599）";
-    case "ownNr":
-      return "我方序号要填数字（留空就发设置里的下一个号）";
     case "exchRx":
       return contest === "CQWW"
         ? "对方 CQ 分区要填 1–40 的数字"

@@ -420,6 +420,9 @@ export class App implements AppHost {
       Object.assign(this.entry, emptyEntry(this.entry.mode));
       this.modeMessages = parseBundledMode(merged.contest).config;
       this.logContest = merged.contest;
+      // Same rule as switching tabs or starting a new session: a different book
+      // is shown from its "now", not from wherever the last one was left.
+      this.logPast = false;
       void this.applyModeMessages();
     }
 
@@ -518,7 +521,6 @@ export class App implements AppHost {
     this.refresh();
   }
 
-  /** The number this contact sends: our zone (CQWW) or our serial (WPX). */
   /**
    * The number we send as `{EXCH}`.
    *

@@ -122,6 +122,15 @@ describe("onEnter", () => {
     expect(a.clear).toBe(true);
     expect(a.focus).toBe("call");
   });
+
+  it("TU 已经发过时，回车只落账，不再把 TU 发一遍", () => {
+    const a = onEnter(
+      entry({ call: "JA1ABC", rstTx: "599", rstRx: "579", reportSent: true, signoffSent: true }),
+    );
+    expect(a.send).toBeNull();
+    expect(a.log).toBe(true);
+    expect(a.clear).toBe(true);
+  });
 });
 
 describe("onSpace", () => {

@@ -66,7 +66,7 @@ export function renderLog(host: AppHost, root: HTMLElement): void {
     const isContest = requiresExchange(tab);
     const rows = all.filter((row) => contestOf(row) === tab && (!isContest || session(row)));
 
-    renderTabs(tabs, host, tab, all);
+    renderTabs(tabs, host, tab, all, past);
     clear(strip);
     if (isContest) strip.append(sessionStrip(host, all, tab, round, past));
     clear(body);
@@ -112,16 +112,23 @@ function renderTabs(
   host: AppHost,
   current: ContestKind,
   all: LogRecord[],
+  past: boolean,
 ): void {
   clear(tabs);
   for (const kind of CONTEST_KINDS) {
     // Each tab counts its own book — including its own session. DX has no
     // sessions, so taking the *current tab's* session number here would show an
     // empty DX book the moment somebody starts a second CQWW session.
+    //
+    // A contest tab counts the view it would open in: the current session
+    // normally, the ones before it while the page is showing history. A number
+    // that did not move with the table under it was the one thing on this page
+    // that disagreed with itself.
     const round = host.sessionRound?.(kind) ?? 1;
     const count = all.filter(
       (row) =>
-        contestOf(row) === kind && (!requiresExchange(kind) || roundOf(row) === round),
+        contestOf(row) === kind &&
+        (!requiresExchange(kind) || (past ? roundOf(row) < round : roundOf(row) === round)),
     ).length;
     const btn = button(
       `${CONTEST_LABEL[kind]} ${count}`,

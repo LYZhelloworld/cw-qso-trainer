@@ -16,10 +16,9 @@ import type { VirtualHam } from "../ham/virtualHam.js";
  * ## How many digits?
  *
  * Neither contest fixes a width. A zone is at most two digits and a serial is at
- * most four (that is where the *practice* stations stop, not where the rules
- * do), but whether a station pads with leading zeros, and whether it sends cut
- * numbers, is the operator's own habit: zone 5 may go out as `05`, `T5` or plain
- * `5`. So nothing here treats a shorter copy as wrong — `normaliseExchange`
+ * most six, but whether a station pads with leading zeros, and whether it sends
+ * cut numbers, is the operator's own habit: zone 5 may go out as `05`, `T5` or
+ * plain `5`. So nothing here treats a shorter copy as wrong — `normaliseExchange`
  * compares values, not spellings — and a serial typed with five digits is not
  * rejected either: the operator may copy what they hear, even if no virtual
  * station here would ever send it.
@@ -50,9 +49,9 @@ export const CONTEST_LABEL: Record<ContestKind, string> = {
 /** CQ zone range, per the CQWW rules. Two digits is the most it can take. */
 export const CQ_ZONE_MIN = 1;
 export const CQ_ZONE_MAX = 40;
-/** Where the *virtual* stations' serials stop. Not a limit on what is loggable. */
+/** Where a serial stops being a serial: six digits, the most an entry box takes. */
 export const SERIAL_MIN = 1;
-export const SERIAL_MAX = 9999;
+export const SERIAL_MAX = 999_999;
 /** Every contest station reports 599; the air shortens it to 5NN. */
 export const CONTEST_RST = "599";
 

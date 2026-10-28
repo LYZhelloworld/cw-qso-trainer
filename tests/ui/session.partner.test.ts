@@ -85,14 +85,16 @@ describe("对方台等不到回应", () => {
     const base = h.hamLines().length;
     const over = h.session.callDurationMs(first);
 
-    // Two repeats, each armed after its own over ends.
+    // Three repeats, each armed after its own over ends.
     await h.tickTo(12_000);
     await h.tickTo(12_000 + over + 10_000);
-    expect(h.hamLines().slice(base)).toEqual([first, first]);
-
-    // The third expiry is the give-up: the QSO is dropped and the station is
-    // back on the band, where its own CQ rhythm picks it up again.
     await h.tickTo(12_000 + (over + 10_000) * 2);
+    expect(h.hamLines().slice(base)).toEqual([first, first, first]);
+    expect(h.session.state).toBe("EXCHANGE");
+
+    // The fourth expiry is the give-up: the QSO is dropped and the station is
+    // back on the band, where its own CQ rhythm picks it up again.
+    await h.tickTo(12_000 + (over + 10_000) * 3);
     expect(h.session.state).toBe("IDLE");
     expect(h.notices().some((t) => t.includes("回到 CQ"))).toBe(true);
     expect(h.session.listHams().map((x) => x.call)).toContain(ham.call);

@@ -234,7 +234,7 @@ interface QsoContext {
 |---|---|
 | 虚拟 HAM 发 CQ 后无人应答 | **已实现**：台上台持续呼叫——一条 CQ 发完、守听 3–8 秒、再发下一条；台不离开频段，也没有"3 分钟下线"（`ham/activity`，下一次开口的时刻由 `QsoSession` 按报文长度重新排定） |
 | 用户发 CQ 后的等待 | **已实现**：2–3 台应答者按 1–5 秒的延迟开口，各自最多重呼 4 次；都不被点名就各自离场。堆叠散尽、频段重新安静后，若仍无人被点名，则见下一行的 15 秒收尾 |
-| 对方发完报文后等用户回应 | **已实现**：等 10 秒（比赛模式 4 秒，`PARTNER_WAIT_MS` / `CONTEST_PARTNER_WAIT_MS`）没等到用户开口，就把上一条报文原样重发；重发 2 次（`PARTNER_REPEAT_LIMIT`）仍无人应，则结束本次通联、该台回到自己的 CQ 周期（由 `src/ui/sessionPatience.ts` 的 `Patience.servicePartnerWait` 调用状态机的 `timeoutResend`） |
+| 对方发完报文后等用户回应 | **已实现**：等 10 秒（比赛模式 4 秒，`PARTNER_WAIT_MS` / `CONTEST_PARTNER_WAIT_MS`）没等到用户开口，就把上一条报文原样重发；重发 3 次（`PARTNER_REPEAT_LIMIT`）仍无人应，则结束本次通联、该台回到自己的 CQ 周期（由 `src/ui/sessionPatience.ts` 的 `Patience.servicePartnerWait` 调用状态机的 `timeoutResend`） |
 | 首次呼叫 15 秒无应答 | **已实现**：用户自己的 CQ 由 `Patience.expireOwnCq` 在频段安静 15 秒后收回（`CALL_ANSWER_WAIT_MS`）。状态机里的 `timeoutFirstCall()` 保留为确定性接口（有测试覆盖其语义），应用侧走的是前者 |
 
 上表三个常量（`CALL_ANSWER_WAIT_MS` / `PARTNER_WAIT_MS` / `PARTNER_REPEAT_LIMIT`）都是 `src/ui/sessionPatience.ts` 的模块私有常量，只用于说明取值，不供外部导入。

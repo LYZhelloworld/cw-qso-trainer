@@ -610,4 +610,16 @@ describe("比赛的场次边界", () => {
     expect(app.sessionRound("DX")).toBe(1);
     expect(app.settings.contestRounds).toEqual({ CQWW: 1, WPX: 1 });
   });
+
+  it("切换通联模式也把日志页拉回「本次」，不停在历史里", () => {
+    const { app } = mountApp();
+    app.setContest("CQWW");
+    app.setLogPast(true);
+    expect(app.logPast).toBe(true);
+
+    app.setContest("WPX");
+
+    expect(app.logPast).toBe(false);
+    expect(app.logContest).toBe("WPX");
+  });
 });

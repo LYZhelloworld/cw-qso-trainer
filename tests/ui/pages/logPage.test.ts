@@ -482,6 +482,23 @@ describe("比赛场次（本次 / 历史）", () => {
     expect(root.querySelectorAll<HTMLInputElement>("tbody tr input")[2].value).toBe("DL1ABC");
   });
 
+  it("标签上的条数跟着视图走：看历史时数的是历史", async () => {
+    await addLog(OLD);
+    await addLog({ ...OLD, call: "DL3QQ", timeUtc: "12:00:00" });
+    await addLog(NOW);
+
+    const root = freshRoot();
+    mountLog(root, "CQWW", { rounds: { CQWW: 2 } });
+
+    const tab = (): string => root.querySelector(".log-tabs .btn.active")?.textContent ?? "";
+    await vi.waitFor(() => expect(tab()).toBe("CQWW 1"));
+
+    buttonByText(root, "历史 2").click();
+    // 表格换成历史那两条，标签上的数也跟着换——否则页面自己在跟自己吵架。
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(2));
+    expect(tab()).toBe("CQWW 2");
+  });
+
   it("「开始新的一场」把这一本整体转入历史，本次从头开始", async () => {
     await addLog(CQWW_ROW);
     const root = freshRoot();

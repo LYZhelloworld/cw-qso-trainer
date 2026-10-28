@@ -17,6 +17,12 @@
  * Enter does the step *and* sends; Space does the step without sending, for when
  * the operator wants to key the message by hand.
  *
+ * The last step has one exception: signing off can be *said* before it is
+ * written down — F3 puts `TU` on the air, and Enter a moment later only writes
+ * the row. Enter does not repeat a message that has already gone out for this
+ * row (`signoffSent`), and because such an Enter keys nothing, half-duplex does
+ * not apply to it either.
+ *
  * ## What a contest changes
  *
  * A contest exchanges a number as well, so the row grows a box (their number, and
@@ -36,7 +42,7 @@ import { isValidExchange, requiresExchange, type ContestKind } from "../qso/cont
 /** Run = we are calling CQ; S&P = we are answering somebody else's CQ. */
 export type OperatingMode = "run" | "s&p";
 
-export type EntryField = "call" | "rstTx" | "rstRx" | "ownNr" | "exchRx";
+export type EntryField = "call" | "rstTx" | "rstRx" | "exchRx";
 
 export interface EntryValues {
   mode: OperatingMode;
@@ -69,6 +75,15 @@ export interface EntryValues {
    * exchange never sent.
    */
   reportSent: boolean;
+  /**
+   * The sign-off has already gone out for this row (F3 pressed by hand).
+   *
+   * Operators send `TU` and only then write the row down, so the last step is
+   * taken twice: once on the air, once on paper. Without this the second press
+   * puts a second `TU` on the air — the same message, to a station that has
+   * already stopped listening.
+   */
+  signoffSent: boolean;
 }
 
 /** Which prompt is current. Drives both the highlight and what Enter does. */
@@ -83,7 +98,16 @@ export type EntryStep = "call" | "answer" | "report" | "signoff";
  * mode the operator was already in.
  */
 export function emptyEntry(mode: OperatingMode): EntryValues {
-  return { mode, call: "", rstTx: "", rstRx: "", ownNr: "", exchRx: "", reportSent: false };
+  return {
+    mode,
+    call: "",
+    rstTx: "",
+    rstRx: "",
+    ownNr: "",
+    exchRx: "",
+    reportSent: false,
+    signoffSent: false,
+  };
 }
 
 /**
@@ -213,9 +237,12 @@ export function onEnter(v: EntryValues, contest: ContestKind = "DX"): EntryActio
         markReported: true,
       };
     case "signoff":
+      // `TU` has already gone out for this row: this Enter is the writing-down,
+      // not the saying-goodbye. Sending it again would key a second `TU` at the
+      // station that has just been released.
       return {
         ...STAY,
-        send: 3,
+        send: v.signoffSent ? null : 3,
         focus: "call",
         log: true,
         clear: true,

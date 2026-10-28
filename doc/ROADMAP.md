@@ -37,7 +37,7 @@
 - QSO 状态机：7 状态 + 转移，消费 `ParsedMessage`（见 [通联过程](./QSO-PROTOCOL.md)）
 
 必须实现并测试的逻辑：
-- 状态机本身对「超时」的确定性转移。当前实现分三层：**HAM 持续呼叫的节奏由波段层调度**（`ham/activity`，台不再有"3 分钟无应答下线"）；**用户与对方之间的等待由会话的两个时钟推进**（`src/ui/sessionPatience.ts`）——自己呼叫后频段安静满 15 秒即收回（`Patience.expireOwnCq`），对方发完一句等 10 秒（比赛 4 秒）、重发 2 次仍无人应即放弃（`Patience.servicePartnerWait`）；状态机只保留 `timeoutFirstCall` / `timeoutResend` / `hamOffline` 这三个确定性钩子作为语义接口，由上面两处以注入的时钟调用，不自己持有定时器。
+- 状态机本身对「超时」的确定性转移。当前实现分三层：**HAM 持续呼叫的节奏由波段层调度**（`ham/activity`，台不再有"3 分钟无应答下线"）；**用户与对方之间的等待由会话的两个时钟推进**（`src/ui/sessionPatience.ts`）——自己呼叫后频段安静满 15 秒即收回（`Patience.expireOwnCq`），对方发完一句等 10 秒（比赛 4 秒）、重发 3 次仍无人应即放弃（`Patience.servicePartnerWait`）；状态机只保留 `timeoutFirstCall` / `timeoutResend` / `hamOffline` 这三个确定性钩子作为语义接口，由上面两处以注入的时钟调用，不自己持有定时器。
 - 因此「对方发完一句就等你」是有时间窗的：解析用户那一行的同时生成回复，随后由 `servicePartnerWait` 计时，超时重发、再超时结束这次通联。
 
 测试用例（重点，验证"用户输入宽容"基线，参考真实 CW 通联）：

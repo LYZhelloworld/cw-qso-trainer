@@ -127,10 +127,12 @@ describe("比赛相关的设置", () => {
     expect(normalizeSettings({ cqZone: -3 }).cqZone).toBe(0);
   });
 
-  it("WPX 序号夹在 1–9999", () => {
+  it("WPX 序号夹在 1–999999（六位，与录入框一致）", () => {
     expect(normalizeSettings({ wpxSerial: 0 }).wpxSerial).toBe(1);
     expect(normalizeSettings({ wpxSerial: 4321 }).wpxSerial).toBe(4321);
-    expect(normalizeSettings({ wpxSerial: 20000 }).wpxSerial).toBe(9999);
+    // 序号是计数器，不是「最多四位数」：过万之后照样往上走，不卡在 9999 一直发同一个号。
+    expect(normalizeSettings({ wpxSerial: 20_000 }).wpxSerial).toBe(20_000);
+    expect(normalizeSettings({ wpxSerial: 9_999_999 }).wpxSerial).toBe(999_999);
   });
 
   it("两个比赛各有一本账，场次从第 1 场起", () => {

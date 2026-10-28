@@ -18,14 +18,15 @@ const CALL_ANSWER_WAIT_MS = 15_000;
  * a learner's speed, short enough that the operator can tell nobody is there.
  *
  * A contest runs on a shorter clock: a runner with a pile-up cannot sit five
- * seconds on every contact, so three to five seconds is all the patience there
- * is. That is part of what makes contest copy different from a rag-chew.
+ * seconds on every contact, so four seconds is all the patience there is. That
+ * is part of what makes contest copy different from a rag-chew — and the reason
+ * a newcomer may need one of the three repeats to get the numbers down.
  */
 const PARTNER_WAIT_MS = 10_000;
 const CONTEST_PARTNER_WAIT_MS = 4_000;
 
 /** How many times the partner repeats before it gives up on the operator. */
-const PARTNER_REPEAT_LIMIT = 2;
+const PARTNER_REPEAT_LIMIT = 3;
 
 /** What the two clocks need from the session to do their job. */
 export interface PatienceHost {

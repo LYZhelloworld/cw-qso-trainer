@@ -90,7 +90,15 @@ function makeHarness(entry: EntryValues = emptyEntry("run"), opts: HarnessOption
   }
 
   render();
-  return { host, entry, sent, root, render };
+  return {
+    host,
+    entry,
+    sent,
+    root,
+    render,
+    /** The stand-in session, so a test can flip half-duplex mid-row. */
+    stub: session as unknown as { isSending: boolean },
+  };
 }
 
 function keys(root: HTMLElement): HTMLButtonElement[] {
@@ -172,8 +180,10 @@ describe("录入行的格子", () => {
 
   it("CQWW 不在录入行显示我方分区——它在设置里，不随通联变", () => {
     const cqww = makeHarness(emptyEntry("run"), { contest: "CQWW", zone: 24 });
-    expect(cqww.root.querySelector(".entry-own")).toBeNull();
+    // 分区是「我们在哪」，不是每通一个号：这一行没有自己的分区格。
+    expect(cqww.root.querySelector("input.entry-own-nr")).toBeNull();
     expect(cqww.root.textContent).not.toContain("我方 24");
+    expect(box(cqww.root, "对方 CQ 分区")).toBeTruthy();
   });
 
   it("分区框最多两位，序号框手写时能到六位", () => {
@@ -183,10 +193,14 @@ describe("录入行的格子", () => {
     expect(zone.value).toBe("12");
     expect(cqww.entry.exchRx).toBe("12");
 
+    // 我方与对方两格一样宽：同一行里不该一格四位、一格六位。
     const wpx = makeHarness(emptyEntry("run"), { contest: "WPX" });
     const serial = box(wpx.root, "对方序号");
     type(serial, "1234567");
     expect(serial.value).toBe("123456");
+    type(ownBox(wpx.root), "1234567");
+    expect(ownBox(wpx.root).value).toBe("123456");
+    expect(wpx.entry.ownNr).toBe("123456");
   });
 });
 
@@ -283,6 +297,34 @@ describe("收尾与落账", () => {
       exchTx: "24",
       verdict: "ok",
     });
+  });
+
+  it("先按 F3 再按回车：只落账，不再发第二句 TU", async () => {
+    const { root, sent, stub } = makeHarness(complete({ exchRx: "05" }), {
+      contest: "CQWW",
+      truth: { call: "JA1ABC", report: "599", exch: "05" },
+    });
+
+    keys(root)[2].click(); // F3
+    await vi.waitFor(() => expect(sent).toEqual(["TU"]));
+
+    // 这一句还在发的时候按回车：这一步不上机，半双工不该拦它，也不该让
+    // 操作者等一句 TU 的时间才能落账。
+    stub.isSending = true;
+    press(box(root, "对方 CQ 分区"), "Enter");
+
+    await vi.waitFor(async () => expect(await listLogs()).toHaveLength(1));
+    expect(sent).toEqual(["TU"]);
+    expect((await listLogs())[0].verdict).toBe("ok");
+  });
+
+  it("还要上机的那一步，半双工照样拦住", async () => {
+    const { root, sent, stub } = makeHarness(complete({ exchRx: "05" }), { contest: "CQWW" });
+    stub.isSending = true;
+    press(box(root, "对方 CQ 分区"), "Enter");
+    await Promise.resolve();
+    expect(sent).toEqual([]);
+    expect(await listLogs()).toHaveLength(0);
   });
 
   it("抄错了分区，记下来但标明是交换信息错", async () => {
