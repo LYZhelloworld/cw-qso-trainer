@@ -226,9 +226,40 @@ table.log input {
   margin-bottom: 10px;
 }
 
+/*
+ * A contest log's second axis: this session / the ones before it, and the button
+ * that draws the line. Sits under the tabs, on the same line as the labels so the
+ * page grows by one row rather than one block.
+ */
+.log-sessions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
 .log-actions {
   display: flex;
   gap: 6px;
+}
+
+/*
+ * The dupe label: the same station, same band, same session, worked before.
+ *
+ * Deliberately quiet — a red flag, not a stop sign. The contact was completed and
+ * logged exactly as it was on the air; refusing to log somebody you have already
+ * worked is not something an operator does.
+ */
+.dupe {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--danger);
+}
+
+.dupe.none {
+  color: transparent;
 }
 
 /*

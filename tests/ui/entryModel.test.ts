@@ -216,6 +216,15 @@ describe("比赛模式下的那一行", () => {
     expect(canLog({ ...done, exchRx: "001" }, "WPX")).toBe(true);
   });
 
+  it("四位序号是合法输入：波段上真有人发 1234", () => {
+    // 虚拟台这一版只发 001–999，但「抄不到四位」不等于「四位算错」——
+    // 拦下它会变成在教一件错事。
+    expect(canLog({ ...done, exchRx: "1234" }, "WPX")).toBe(true);
+    expect(blockingField({ ...done, exchRx: "1234" }, "WPX")).toBeNull();
+    expect(canLog({ ...done, exchRx: "9999" }, "WPX")).toBe(true);
+    expect(canLog({ ...done, exchRx: "10000" }, "WPX")).toBe(false);
+  });
+
   it("步进还是三步：交换信息随对方的报告一起来，不是单独一格", () => {
     // 报告到了、我方也发过了、交换信息还没抄下来 —— 仍然是收尾那一步，
     // 只是按回车会提示先填分区/序号。

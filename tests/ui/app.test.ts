@@ -140,7 +140,7 @@ describe("App 外壳", () => {
     const { root } = mountApp();
 
     navButton(root, "关于").click();
-    expect(root.textContent).toContain("CW QSO 练习器 v1.0.0");
+    expect(root.textContent).toContain("CW QSO 练习器 v1.2.0");
     expect(root.textContent).toContain(DISCLAIMER_TEXT);
     expect(root.textContent).toContain("日志不可导出为 ADIF / CSV / JSON");
   });
@@ -581,5 +581,33 @@ describe("机头的通联模式选择器", () => {
     expect(app.powered).toBe(false);
     // 关着台就没有录入行可看，但键已经换好了。
     expect(app.modeMessages.messages[1].text).toBe("{RST} {EXCH}");
+  });
+});
+
+describe("比赛的场次边界", () => {
+  it("开始新的一场：这一本的场次加一，正在打的那一行作废，旧账不动", () => {
+    const { app } = mountApp();
+    app.setContest("WPX");
+    app.entry.call = "JA1ABC";
+    app.updateSettings({ wpxSerial: 42 });
+
+    app.startNewRound("WPX");
+
+    expect(app.sessionRound("WPX")).toBe(2);
+    // 新的一场从 001 数起。
+    expect(app.settings.wpxSerial).toBe(1);
+    // 边界两边不是同一次通联：正在填的那一行不带过去。
+    expect(app.entry.call).toBe("");
+    // 只有这一个比赛换场；另一本账还是第 1 场。
+    expect(app.sessionRound("CQWW")).toBe(1);
+    // 翻回「本次」，不会停在历史里。
+    expect(app.logPast).toBe(false);
+  });
+
+  it("DX 没有场次：切到 DX 再开始新的一场什么也不会发生", () => {
+    const { app } = mountApp();
+    app.startNewRound("DX");
+    expect(app.sessionRound("DX")).toBe(1);
+    expect(app.settings.contestRounds).toEqual({ CQWW: 1, WPX: 1 });
   });
 });

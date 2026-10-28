@@ -21,7 +21,7 @@ import { RigFace, type ScopeView } from "./rigFace.js";
 import { emptyEntry, type EntryValues } from "./entryModel.js";
 import { loadModeMessages } from "./modeFileLoader.js";
 import { parseBundledMode } from "../data/modeMessages.js";
-import { ownExchangeText, type ContestKind } from "../qso/contest.js";
+import { SERIAL_MIN, ownExchangeText, type ContestKind } from "../qso/contest.js";
 import type { ModeMessages } from "../message/modeFile.js";
 
 export type PageId = "radio" | "log" | "about";
@@ -81,6 +81,21 @@ export interface AppHost {
    */
   readonly logContest?: ContestKind;
   setLogContest?(kind: ContestKind): void;
+  /**
+   * Whether the log page is showing the sessions before this one. Kept here for
+   * the same reason as `logContest`: the page is rebuilt on every refresh, and a
+   * tab must not jump back while the operator is reading it.
+   */
+  readonly logPast?: boolean;
+  setLogPast?(past: boolean): void;
+  /** Which session of a contest the operator is currently working. */
+  sessionRound?(kind: ContestKind): number;
+  /**
+   * Draw the line between this contest session and the next: the row that gets
+   * written from now on belongs to a new session, and everything so far becomes
+   * history. A new WPX run also counts from 001 again.
+   */
+  startNewRound?(kind: ContestKind): void;
 }
 
 type PageRenderer = (host: AppHost, root: HTMLElement) => void;
@@ -169,6 +184,8 @@ export class App implements AppHost {
   readonly entry: EntryValues = emptyEntry("s&p");
   /** Which log the log page shows; follows the rig's mode when that changes. */
   logContest: ContestKind = "DX";
+  /** Whether the log page shows the sessions before this one. */
+  logPast = false;
   /** The operating screen. Scrolls on its own; the rig stays put. */
   private readonly pageRoot = el("div", { class: "page-area" });
   /**
@@ -449,6 +466,55 @@ export class App implements AppHost {
   setLogContest(kind: ContestKind): void {
     if (kind === this.logContest) return;
     this.logContest = kind;
+    // A different book has a different "now"; landing in its history would be a
+    // surprise, so switching tabs always starts from the current session.
+    this.logPast = false;
+    this.refresh();
+  }
+
+  /** Show this session or the ones before it. Only contests have the split. */
+  setLogPast(past: boolean): void {
+    if (past === this.logPast) return;
+    this.logPast = past;
+    this.refresh();
+  }
+
+  /** Which session of a contest is being written; DX has no sessions. */
+  sessionRound(kind: ContestKind): number {
+    if (kind === "CQWW") return this.settings.contestRounds.CQWW;
+    if (kind === "WPX") return this.settings.contestRounds.WPX;
+    return 1;
+  }
+
+  /**
+   * Start a new session in one contest's log.
+   *
+   * The boundary is the operator's, not the clock's: a trainer has no contest
+   * weekend. Everything written so far stays in the book as history, the new
+   * session starts empty, and a WPX run starts counting from 001 again.
+   *
+   * Not `updateSettings` for the same reason as `nextWpxSerial` — except that
+   * here the row being typed belongs to the session that just ended, so that row
+   * is cleared too.
+   */
+  startNewRound(kind: ContestKind): void {
+    if (kind === "DX") return;
+    const next = normalizeSettings({
+      ...this.settings,
+      contestRounds: {
+        ...this.settings.contestRounds,
+        [kind]: this.settings.contestRounds[kind] + 1,
+      },
+      ...(kind === "WPX" ? { wpxSerial: SERIAL_MIN } : {}),
+    });
+    this.settings = next;
+    saveSettings(next);
+    for (const s of this.sessions) s.updateSettings(next);
+    if (this.settings.contest === kind) {
+      for (const s of this.sessions) s.reset();
+      Object.assign(this.entry, emptyEntry(this.entry.mode));
+    }
+    this.logPast = false;
     this.refresh();
   }
 

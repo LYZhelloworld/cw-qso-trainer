@@ -132,4 +132,18 @@ describe("比赛相关的设置", () => {
     expect(normalizeSettings({ wpxSerial: 4321 }).wpxSerial).toBe(4321);
     expect(normalizeSettings({ wpxSerial: 20000 }).wpxSerial).toBe(9999);
   });
+
+  it("两个比赛各有一本账，场次从第 1 场起", () => {
+    const empty = normalizeSettings({});
+    expect(empty.contestRounds).toEqual({ CQWW: 1, WPX: 1 });
+    // 只给一半也只丢那一半，另一本账不该被顺手清零。
+    expect(normalizeSettings({ contestRounds: { WPX: 3 } }).contestRounds).toEqual({
+      CQWW: 1,
+      WPX: 3,
+    });
+    expect(normalizeSettings({ contestRounds: { CQWW: 0, WPX: 12 } }).contestRounds).toEqual({
+      CQWW: 1,
+      WPX: 12,
+    });
+  });
 });

@@ -20,6 +20,7 @@ const DX_HEADERS = [
   "MODE",
   "RST_RX",
   "RST_TX",
+  "重复",
   "核对",
   "操作",
 ];
@@ -47,17 +48,52 @@ const CQWW_ROW: LogRecord = {
   verdict: "exch",
 };
 
-/** The log page keeps its tab on the App; the harness carries it there too. */
-function mountLog(root: HTMLElement, contest: ContestKind = "DX"): AppHost {
+interface HarnessOptions {
+  /** The session each contest's log is currently on. */
+  rounds?: Partial<Record<"CQWW" | "WPX", number>>;
+  /** Open the page on the history view. */
+  past?: boolean;
+}
+
+/** The log page keeps its tabs on the App; the harness carries them there too. */
+function mountLog(
+  root: HTMLElement,
+  contest: ContestKind = "DX",
+  opts: HarnessOptions = {},
+): AppHost {
   let current = contest;
+  let rounds = {
+    CQWW: opts.rounds?.CQWW ?? 1,
+    WPX: opts.rounds?.WPX ?? 1,
+  };
+  let past = opts.past ?? false;
   const host: AppHost = {
-    settings: normalizeSettings({ contest }),
+    get settings() {
+      return normalizeSettings({ contest: current, contestRounds: rounds });
+    },
     session: {} as QsoSession,
     get logContest() {
       return current;
     },
     setLogContest(kind: ContestKind) {
       current = kind;
+      past = false;
+      render();
+    },
+    get logPast() {
+      return past;
+    },
+    setLogPast(next: boolean) {
+      past = next;
+      render();
+    },
+    sessionRound(kind: ContestKind) {
+      return kind === "CQWW" ? rounds.CQWW : kind === "WPX" ? rounds.WPX : 1;
+    },
+    startNewRound(kind: ContestKind) {
+      if (kind === "DX") return;
+      rounds = { ...rounds, [kind]: rounds[kind] + 1 };
+      past = false;
       render();
     },
     updateSettings() {},
@@ -91,6 +127,10 @@ function buttonByText(root: HTMLElement, text: string): HTMLButtonElement {
   return found;
 }
 
+function headersOf(root: HTMLElement): (string | null)[] {
+  return Array.from(root.querySelectorAll("thead th")).map((th) => th.textContent);
+}
+
 beforeEach(async () => {
   await clearLogs();
   document.body.innerHTML = "";
@@ -113,13 +153,12 @@ describe("日志页（IndexedDB 可用）", () => {
     mountLog(root);
 
     await vi.waitFor(() => expect(root.querySelector("table.log")).not.toBeNull());
-    const headers = Array.from(root.querySelectorAll("thead th")).map((th) => th.textContent);
-    expect(headers).toEqual(DX_HEADERS);
+    expect(headersOf(root)).toEqual(DX_HEADERS);
 
     const cells = root.querySelectorAll("tbody tr");
     expect(cells.length).toBe(1);
-    expect(cells[0].querySelectorAll("td").length).toBe(9);
-    // MODE and the verdict are read-only text, the other six fields are inputs.
+    expect(cells[0].querySelectorAll("td").length).toBe(10);
+    // MODE and the two marks are read-only text, the other six fields are inputs.
     expect(cells[0].querySelectorAll("input").length).toBe(6);
     expect(cells[0].textContent).toContain("CW");
     expect(root.querySelector<HTMLInputElement>("tbody tr input")!.value).toBe("2026-10-14");
@@ -223,6 +262,40 @@ describe("日志页（IndexedDB 可用）", () => {
     expect(root.textContent).toContain("日志不可导出为 ADIF / CSV / JSON");
   });
 
+  it("同一场、同一波段、同一呼号通两次：后一条标「重复」，两条都在", async () => {
+    await addLog(SAMPLE);
+    await addLog({ ...SAMPLE, timeUtc: "12:05:00", freqMHz: "14.0263" });
+    const root = freshRoot();
+    mountLog(root);
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(2));
+
+    const marked = root.querySelectorAll(".dupe:not(.none)");
+    expect(marked.length).toBe(1);
+    expect(marked[0].textContent).toBe("重复");
+    // 新到旧排：标在上面的那一条是后通的这一次。
+    expect(root.querySelector("tbody tr .dupe:not(.none)")).not.toBeNull();
+    // 通联本身没有被拦下——两条都在账上。
+    await expect(listLogs()).resolves.toHaveLength(2);
+  });
+
+  it("换了波段就不算重复", async () => {
+    await addLog(SAMPLE);
+    await addLog({ ...SAMPLE, timeUtc: "12:05:00", freqMHz: "7.0250" });
+    const root = freshRoot();
+    mountLog(root);
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(2));
+    expect(root.querySelectorAll(".dupe:not(.none)").length).toBe(0);
+  });
+
+  it("跨越两场时不算重复：同一个台在新的一场里照常记账", async () => {
+    await addLog({ ...CQWW_ROW, round: 1 });
+    await addLog({ ...CQWW_ROW, round: 2, timeUtc: "12:30:00" });
+    const root = freshRoot();
+    mountLog(root, "CQWW", { rounds: { CQWW: 2 } });
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+    expect(root.querySelectorAll(".dupe:not(.none)").length).toBe(0);
+  });
+
   it("通联跑通后，按操作者填的呼号与 RST 记下一条日志", async () => {
     const settings = normalizeSettings({ myCall: "BG7XXX", difficulty: "novice" });
     // No real waiting: this case is about the log record, not the HAM's answer
@@ -295,9 +368,15 @@ describe("三种模式各一本日志", () => {
     buttonByText(root, "CQWW 1").click();
 
     await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
-    const headers = Array.from(root.querySelectorAll("thead th")).map((th) => th.textContent);
-    // 比赛日志多了两列：对方的、我方的交换信息。
-    expect(headers).toEqual([...DX_HEADERS.slice(0, 7), "EXCH_RX", "EXCH_TX", "核对", "操作"]);
+    // 比赛日志多了两列：对方的、我方的交换信息；「重复」三本都有。
+    expect(headersOf(root)).toEqual([
+      ...DX_HEADERS.slice(0, 7),
+      "EXCH_RX",
+      "EXCH_TX",
+      "重复",
+      "核对",
+      "操作",
+    ]);
     expect(root.querySelector<HTMLInputElement>("tbody tr input")!.value).toBe("2026-10-14");
   });
 
@@ -319,7 +398,7 @@ describe("三种模式各一本日志", () => {
     mountLog(root, "CQWW");
     await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
 
-    const btn = buttonByText(root, "清空 CQWW 日志（1 条）");
+    const btn = buttonByText(root, "清空本次 CQWW（1 条）");
     btn.click();
     btn.click();
 
@@ -327,5 +406,70 @@ describe("三种模式各一本日志", () => {
       const rows = await listLogs();
       expect(rows.map((r) => r.contest)).toEqual(["DX"]);
     });
+  });
+});
+
+describe("比赛场次（本次 / 历史）", () => {
+  const OLD: LogRecord = { ...CQWW_ROW, round: 1, call: "DL1ABC" };
+  const NOW: LogRecord = { ...CQWW_ROW, round: 2, call: "DL2XYZ", timeUtc: "13:00:00" };
+
+  it("一场一条线：切到第二场之后，本次只剩新的，旧的进历史", async () => {
+    await addLog(OLD);
+    await addLog(NOW);
+
+    const root = freshRoot();
+    mountLog(root, "CQWW", { rounds: { CQWW: 2 } });
+
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+    expect(root.querySelectorAll<HTMLInputElement>("tbody tr input")[2].value).toBe("DL2XYZ");
+    // 两个视图的条数写在按钮上，边界一眼看得见。
+    expect(root.textContent).toContain("本次 1");
+    expect(root.textContent).toContain("历史 1");
+
+    buttonByText(root, "历史 1").click();
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+    expect(root.querySelectorAll<HTMLInputElement>("tbody tr input")[2].value).toBe("DL1ABC");
+  });
+
+  it("「开始新的一场」把这一本整体转入历史，本次从头开始", async () => {
+    await addLog(CQWW_ROW);
+    const root = freshRoot();
+    const host = mountLog(root, "CQWW");
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+
+    buttonByText(root, "开始新的一场").click();
+
+    await vi.waitFor(() => expect(host.sessionRound?.("CQWW")).toBe(2));
+    await vi.waitFor(() => expect(root.textContent).toContain("暂无 CQWW 日志记录"));
+    // 日志没被删掉：翻到历史还看得见。
+    await expect(listLogs()).resolves.toHaveLength(1);
+    buttonByText(root, "历史 1").click();
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+  });
+
+  it("清空本次只删这一场，历史留着", async () => {
+    await addLog(OLD);
+    await addLog(NOW);
+    const root = freshRoot();
+    mountLog(root, "CQWW", { rounds: { CQWW: 2 } });
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+
+    const btn = buttonByText(root, "清空本次 CQWW（1 条）");
+    btn.click();
+    btn.click();
+
+    await vi.waitFor(async () => {
+      const rows = await listLogs();
+      expect(rows.map((r) => r.round)).toEqual([1]);
+    });
+  });
+
+  it("DX 不分场次：标签上没有本次 / 历史", async () => {
+    await addLog(SAMPLE);
+    const root = freshRoot();
+    mountLog(root, "DX");
+    await vi.waitFor(() => expect(root.querySelectorAll("tbody tr").length).toBe(1));
+    expect(root.textContent).not.toContain("开始新的一场");
+    expect(root.querySelector(".log-sessions")).toBeNull();
   });
 });

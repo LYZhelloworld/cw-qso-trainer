@@ -1,4 +1,4 @@
-import { contestOf, type LogRecord } from "../logRecord.js";
+import { contestOf, roundOf, type LogRecord } from "../logRecord.js";
 import type { ContestKind } from "../../qso/contest.js";
 
 /**
@@ -90,12 +90,39 @@ export async function deleteLog(id: number): Promise<void> {
 }
 
 /**
+ * Empty the sessions before this one, leaving the current run alone.
+ *
+ * The history view's clear button: an archive is a separate thing from the book
+ * being written, so wiping it must never take the live run with it.
+ */
+export async function clearPastLogs(contest: ContestKind, round: number): Promise<void> {
+  if (!logsAvailable()) return;
+  try {
+    const rows = await run<LogRecord[]>("readonly", (s) => s.getAll());
+    const ids = rows
+      .filter((row) => contestOf(row) === contest && roundOf(row) < round)
+      .map((row) => row.id)
+      .filter((id): id is number => typeof id === "number");
+    if (ids.length === 0) return;
+    await run("readwrite", (s) => {
+      for (const id of ids) s.delete(id);
+      return s.count();
+    });
+  } catch {
+    // Ignore.
+  }
+}
+
+/**
  * Empty a log. With a contest it empties **only that log**: the three books are
  * separate records of three separate modes, and clearing a botched WPX run must
  * not take the operator's DX log with it. Without an argument it empties all of
  * them, which is what the log page's "clear everything" path asks for.
+ *
+ * A `round` narrows it further, to one contest session — the log page's clear
+ * button empties what is on screen, and what is on screen is one session.
  */
-export async function clearLogs(contest?: ContestKind): Promise<void> {
+export async function clearLogs(contest?: ContestKind, round?: number): Promise<void> {
   if (!logsAvailable()) return;
   try {
     if (contest === undefined) {
@@ -104,7 +131,7 @@ export async function clearLogs(contest?: ContestKind): Promise<void> {
     }
     const rows = await run<LogRecord[]>("readonly", (s) => s.getAll());
     const ids = rows
-      .filter((row) => contestOf(row) === contest)
+      .filter((row) => contestOf(row) === contest && (round === undefined || roundOf(row) === round))
       .map((row) => row.id)
       .filter((id): id is number => typeof id === "number");
     if (ids.length === 0) return;

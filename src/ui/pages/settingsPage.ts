@@ -251,6 +251,10 @@ export function renderSettingsPanel(host: AppHost): HTMLElement {
         class: "hint",
         text: "通联模式（DX / CQWW / WPX）在电台机头切。三种模式各自一本日志，互不混淆。",
       }),
+      el("div", {
+        class: "hint",
+        text: `比赛没有固定的起止时间，一场的边界由自己划：日志页的「开始新的一场」把当前这本整本转入历史（现在 CQWW 第 ${s.contestRounds.CQWW} 场、WPX 第 ${s.contestRounds.WPX} 场）。`,
+      }),
     ),
     panel(
       "键位",

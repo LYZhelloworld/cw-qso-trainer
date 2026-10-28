@@ -1,7 +1,15 @@
 import { button, clear, el, panel } from "../dom.js";
 import { LOG_WATERMARK } from "../disclaimer.js";
-import { clearLogs, deleteLog, listLogs, logsAvailable, updateLog } from "../storage/logStore.js";
-import { contestOf, type LogRecord } from "../logRecord.js";
+import {
+  clearLogs,
+  clearPastLogs,
+  deleteLog,
+  listLogs,
+  logsAvailable,
+  updateLog,
+} from "../storage/logStore.js";
+import { contestOf, roundOf, type LogRecord } from "../logRecord.js";
+import { dupeIds } from "../logDupes.js";
 import {
   CONTEST_KINDS,
   CONTEST_LABEL,
@@ -21,33 +29,58 @@ import type { AppHost } from "../app.js";
  * number is not a WPX number. So the page is tabbed rather than mixed, and every
  * action on it — edit, delete, clear — applies to the tab you are looking at.
  *
- * Each row also carries a **verdict**: did the operator copy the station right?
- * It is computed when the row is written (`logRecord`), never shown while the
- * contact is open, and it names the mistake without naming the right answer —
- * see `verifyEntry`. A row typed in by hand has no verdict, because there was no
- * station to check it against, and a row edited here loses its verdict, because
- * the copy that was checked is no longer the copy in the book.
+ * A contest log has a second axis: the **session** (场次). A trainer has no
+ * contest weekend and no 48-hour clock, so the operator draws that line by hand
+ * with "start a new one"; what was written before it becomes history, still
+ * readable, never mixed into the totals of the current run.
+ *
+ * Each row also carries two questions the paper asks:
+ *
+ *  - **verdict** — did the operator copy the station right? Computed when the row
+ *    is written (`logRecord`), never shown while the contact is open, and it names
+ *    the mistake without naming the right answer (see `verifyEntry`). A row typed
+ *    in by hand has no verdict, because there was no station to check it against,
+ *    and a row edited here loses its verdict, because the copy that was checked is
+ *    no longer the copy in the book.
+ *  - **dupe** — have we worked this station already, on this band, in this session?
+ *    Computed when the page is drawn (`logDupes`) and *only* a label: the contact
+ *    was completed and logged exactly as on the air, because refusing to log
+ *    somebody you have already worked is not what an operator does.
  */
 export function renderLog(host: AppHost, root: HTMLElement): void {
   const tab: ContestKind = host.logContest ?? host.settings.contest;
+  const past = host.logPast ?? false;
   const tabs = el("div", { class: "log-tabs", attrs: { role: "tablist" } });
+  const strip = el("div");
   const body = el("div");
-  root.append(panel("通联日志", tabs, body), el("div", { class: "watermark", text: LOG_WATERMARK }));
+  root.append(
+    panel("通联日志", tabs, strip, body),
+    el("div", { class: "watermark", text: LOG_WATERMARK }),
+  );
 
   void listLogs().then((all) => {
-    const rows = all.filter((row) => contestOf(row) === tab);
-    renderTabs(tabs, host, tab, all);
+    const round = host.sessionRound?.(tab) ?? 1;
+    const session = (row: LogRecord): boolean =>
+      past ? roundOf(row) < round : roundOf(row) === round;
+    const isContest = requiresExchange(tab);
+    const rows = all.filter((row) => contestOf(row) === tab && (!isContest || session(row)));
+
+    renderTabs(tabs, host, tab, all, isContest ? round : undefined);
+    clear(strip);
+    if (isContest) strip.append(sessionStrip(host, all, tab, round, past));
     clear(body);
+
     if (!logsAvailable()) {
       body.append(el("div", { class: "hint", text: "当前环境不支持 IndexedDB，日志无法保存。" }));
       return;
     }
     if (rows.length === 0) {
-      body.append(el("div", { class: "hint", text: emptyHint(tab) }));
-      body.append(clearAll(host, all.length));
+      body.append(el("div", { class: "hint", text: emptyHint(tab, past) }));
+      if (!past) body.append(clearAll(host, all.length));
       return;
     }
 
+    const dupes = dupeIds(rows);
     const table = el("table", { class: "log" });
     const headRow = el("tr");
     for (const c of columnsFor(tab)) headRow.append(el("th", { text: c }));
@@ -55,12 +88,17 @@ export function renderLog(host: AppHost, root: HTMLElement): void {
     thead.append(headRow);
 
     const tbody = el("tbody");
-    for (const rec of rows) tbody.append(buildRow(rec, host, tab));
+    for (const rec of rows) tbody.append(buildRow(rec, host, tab, dupes));
 
     table.append(thead, tbody);
     body.append(table);
-    body.append(actionsRow(host, tab, rows.length));
-    body.append(el("div", { class: "hint", text: "日志不可导出为 ADIF / CSV / JSON 等格式。" }));
+    body.append(actionsRow(host, tab, round, rows.length, past));
+    body.append(
+      el("div", {
+        class: "hint",
+        text: "日志不可导出为 ADIF / CSV / JSON 等格式。",
+      }),
+    );
   });
 }
 
@@ -70,10 +108,13 @@ function renderTabs(
   host: AppHost,
   current: ContestKind,
   all: LogRecord[],
+  round: number | undefined,
 ): void {
   clear(tabs);
   for (const kind of CONTEST_KINDS) {
-    const count = all.filter((row) => contestOf(row) === kind).length;
+    const count = all.filter(
+      (row) => contestOf(row) === kind && (round === undefined || roundOf(row) === round),
+    ).length;
     const btn = button(
       `${CONTEST_LABEL[kind]} ${count}`,
       () => selectTab(host, kind),
@@ -81,7 +122,7 @@ function renderTabs(
     );
     btn.setAttribute("role", "tab");
     btn.setAttribute("aria-selected", String(kind === current));
-    btn.title = tabHint(kind);
+    btn.title = tabHint(kind, round);
     tabs.append(btn);
   }
 }
@@ -92,13 +133,65 @@ function selectTab(host: AppHost, kind: ContestKind): void {
   if (!host.setLogContest) host.refresh();
 }
 
-function tabHint(kind: ContestKind): string {
+function tabHint(kind: ContestKind, round: number | undefined): string {
   if (kind === "CQWW") return "CQWW：交换 CQ 分区，与 DX / WPX 各记一本";
   if (kind === "WPX") return "WPX：交换自增序号，与 DX / CQWW 各记一本";
-  return "DX：日常通联，只交换呼号与 RST";
+  if (round === undefined) return "DX：日常通联，只交换呼号与 RST";
+  return "DX：日常通联，只交换呼号与 RST（不分场次）";
 }
 
-function emptyHint(kind: ContestKind): string {
+/**
+ * The session strip: this run, the ones before it, and the button that draws the
+ * line between them. Only contests have sessions — an everyday contact has no
+ * "round" to be in.
+ */
+function sessionStrip(
+  host: AppHost,
+  all: LogRecord[],
+  tab: ContestKind,
+  round: number,
+  past: boolean,
+): HTMLElement {
+  const thisRun = all.filter((row) => contestOf(row) === tab && roundOf(row) === round).length;
+  const history = all.filter((row) => contestOf(row) === tab && roundOf(row) < round).length;
+
+  const strip = el("div", { class: "log-sessions" });
+  strip.append(
+    chip(`本次 ${thisRun}`, !past, () => setPast(host, false), `第 ${round} 场，正在记的那一本`),
+    chip(
+      `历史 ${history}`,
+      past,
+      () => setPast(host, true),
+      history === 0 ? "还没有分割过的旧场次" : "分割之前记的那几本，只读着看",
+    ),
+  );
+  const newRun = button("开始新的一场", () => host.startNewRound?.(tab), "btn small");
+  newRun.title =
+    "把本次记的整本转入历史，新的这一场从空开始；日志不删，随时能翻回去" +
+    (tab === "WPX" ? "。WPX 的序号回到 001" : "");
+  strip.append(newRun);
+  if (round > 1) {
+    strip.append(el("span", { class: "hint", text: `第 ${round} 场` }));
+  }
+  return strip;
+}
+
+function chip(label: string, active: boolean, onClick: () => void, title: string): HTMLElement {
+  const btn = button(label, onClick, active ? "btn chip active" : "btn chip");
+  btn.title = title;
+  btn.setAttribute("aria-pressed", String(active));
+  return btn;
+}
+
+function setPast(host: AppHost, past: boolean): void {
+  host.setLogPast?.(past);
+  if (!host.setLogPast) host.refresh();
+}
+
+function emptyHint(kind: ContestKind, past: boolean): string {
+  if (past) {
+    return "历史里还没有记录。在本次日志里点「开始新的一场」，这一场就会整本移到这里。";
+  }
   if (kind === "DX") {
     return "暂无日志记录。在电台页填好对方呼号与两个 RST、按回车发出结束语，就会记到这里的。";
   }
@@ -111,10 +204,15 @@ function emptyHint(kind: ContestKind): string {
 function columnsFor(kind: ContestKind): string[] {
   const base = ["DATE", "TIME_UTC", "CALL", "FREQ_MHZ", "MODE", "RST_RX", "RST_TX"];
   if (requiresExchange(kind)) base.push("EXCH_RX", "EXCH_TX");
-  return [...base, "核对", "操作"];
+  return [...base, "重复", "核对", "操作"];
 }
 
-function buildRow(record: LogRecord, host: AppHost, kind: ContestKind): HTMLTableRowElement {
+function buildRow(
+  record: LogRecord,
+  host: AppHost,
+  kind: ContestKind,
+  dupes: Set<number>,
+): HTMLTableRowElement {
   const tr = el("tr");
   const inputs: Record<string, HTMLInputElement> = {};
 
@@ -143,6 +241,7 @@ function buildRow(record: LogRecord, host: AppHost, kind: ContestKind): HTMLTabl
     addCell("exchTx", "58px");
   }
 
+  tr.append(dupeCell(typeof record.id === "number" && dupes.has(record.id)));
   tr.append(verdictCell(record.verdict));
 
   const actions = el("td", { class: "log-actions" });
@@ -184,6 +283,21 @@ function buildRow(record: LogRecord, host: AppHost, kind: ContestKind): HTMLTabl
 }
 
 /**
+ * The dupe cell. A label, not a gate: the contact happened, it is in the book,
+ * and all this says is that the same station was already worked — on this band,
+ * in this session. Red-flagging it is the whole feature; a trainer that refused
+ * to log the second one would be teaching the wrong manners.
+ */
+function dupeCell(dupe: boolean): HTMLTableCellElement {
+  const td = el("td", { class: dupe ? "dupe" : "dupe none" });
+  if (dupe) {
+    td.textContent = "重复";
+    td.title = "同一场、同一波段、同一呼号，之前已经通过一次（通联照样完成、照样记下）";
+  }
+  return td;
+}
+
+/**
  * The verdict cell. Deliberately says *what* went wrong and never what the right
  * answer was: the trainer does not tell the operator who is on the other end, and
  * that rule does not stop when the contact does.
@@ -202,12 +316,25 @@ function verdictCell(verdict: LogVerdict | undefined): HTMLTableCellElement {
   return td;
 }
 
-/** Clear this tab's log. Two clicks: the first only asks. */
-function actionsRow(host: AppHost, kind: ContestKind, count: number): HTMLElement {
+/** Clear this view. Two clicks: the first only asks. */
+function actionsRow(
+  host: AppHost,
+  kind: ContestKind,
+  round: number,
+  count: number,
+  past: boolean,
+): HTMLElement {
   const row = el("div", { class: "row" });
+  const isContest = requiresExchange(kind);
+  const label = isContest
+    ? past
+      ? `清空历史（${count} 条）`
+      : `清空本次 ${CONTEST_LABEL[kind]}（${count} 条）`
+    : `清空 ${CONTEST_LABEL[kind]} 日志（${count} 条）`;
+
   let armed = false;
   const btn = button(
-    `清空 ${CONTEST_LABEL[kind]} 日志（${count} 条）`,
+    label,
     () => {
       if (!armed) {
         armed = true;
@@ -215,7 +342,9 @@ function actionsRow(host: AppHost, kind: ContestKind, count: number): HTMLElemen
         btn.classList.add("armed");
         return;
       }
-      void clearLogs(kind).then(() => host.refresh());
+      const done = () =>
+        isContest ? (past ? clearPastLogs(kind, round) : clearLogs(kind, round)) : clearLogs(kind);
+      void done().then(() => host.refresh());
     },
     "btn danger",
   );

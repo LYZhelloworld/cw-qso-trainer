@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLogRecord, contestOf, formatFreqMHz } from "../../src/ui/logRecord.js";
+import { buildLogRecord, contestOf, formatFreqMHz, roundOf } from "../../src/ui/logRecord.js";
 import { emptyEntry, type EntryValues } from "../../src/ui/entryModel.js";
 import type { PartnerTruth } from "../../src/qso/contest.js";
 
@@ -59,6 +59,15 @@ describe("buildLogRecord", () => {
     expect(rec?.contest).toBe("CQWW");
     expect(rec?.exchTx).toBe("24");
     expect(rec?.exchRx).toBe("05");
+  });
+
+  it("场次只跟着比赛走：DX 的行不带场次，比赛的带", () => {
+    const base = entry({ call: "JA1ABC", rstTx: "599", rstRx: "599", exchRx: "05" });
+    expect(buildLogRecord(base, 14.025, { contest: "DX", round: 3 })?.round).toBeUndefined();
+    expect(buildLogRecord(base, 14.025, { contest: "CQWW", round: 3 })?.round).toBe(3);
+    // 不传就是第一场——老记录读出来也是第一场。
+    expect(buildLogRecord(base, 14.025, { contest: "CQWW" })?.round).toBeUndefined();
+    expect(roundOf({ ...buildLogRecord(base, 14.025, { contest: "CQWW" })! })).toBe(1);
   });
 
   it("a contest row needs the other station's number as well", () => {

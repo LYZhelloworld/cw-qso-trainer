@@ -49,6 +49,12 @@ export interface LogRecord {
   /** The number they sent, as copied. Empty in DX mode. */
   exchRx?: string;
   /**
+   * Which contest session the row belongs to (see `contestRound` in the
+   * settings). Absent on DX rows and on contest rows written before the
+   * boundary existed — both read as session 1, which is what they were.
+   */
+  round?: number;
+  /**
    * Whether the row matches what the station actually sent. Absent when there
    * was no station to compare against — a row typed in by hand is logged, not
    * judged — and dropped when the row is edited on the log page, because an
@@ -60,6 +66,11 @@ export interface LogRecord {
 /** Which log a row belongs to; rows from before contest mode are DX. */
 export function contestOf(record: LogRecord): ContestKind {
   return record.contest ?? "DX";
+}
+
+/** Which contest session a row belongs to; rows from before the boundary are 1. */
+export function roundOf(record: LogRecord): number {
+  return record.round ?? 1;
 }
 
 export function formatFreqMHz(freqMHz: number): string {
@@ -74,6 +85,8 @@ export interface BuildLogOptions {
   contest?: ContestKind;
   /** The number we sent, i.e. `{EXCH}` as it went out. */
   exchTx?: string;
+  /** Which contest session this row is written into. */
+  round?: number;
   /** What the station really sent, captured while the contact was open. */
   truth?: PartnerTruth | null;
 }
@@ -108,5 +121,6 @@ export function buildLogRecord(
   };
   const verdict = verifyEntry(entry, opts.truth ?? null, contest);
   if (verdict) record.verdict = verdict;
+  if (requiresExchange(contest) && opts.round !== undefined) record.round = opts.round;
   return record;
 }

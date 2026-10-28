@@ -311,6 +311,9 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       completed = buildLogRecord(entry, host.session.freqMHz, {
         contest,
         exchTx: host.ownExchange?.() ?? "",
+        // Which contest session the row belongs to; DX has none, and the log page
+        // reads a missing session as the first one.
+        round: requiresExchange(contest) ? host.sessionRound?.(contest) : undefined,
         // The truth has to be read *now*: once TU has gone out the station is
         // released back to the band, and there is nothing left to check against.
         truth: host.session.partnerTruth?.() ?? null,

@@ -72,6 +72,23 @@ export interface AppSettings {
    * numbering — the log is the running total, this is the counter in front of it.
    */
   wpxSerial: number;
+  /**
+   * Which contest session (场次) each contest's log is currently being written
+   * into, keyed by contest.
+   *
+   * A real contest has a start and an end; a trainer has neither, so the operator
+   * draws the line by hand: "start a new one" bumps that contest's number, every
+   * earlier row becomes history and stays readable, and the log page shows one
+   * session at a time instead of an ever-growing list. Per contest, because a
+   * boundary on the CQWW book must not turn the WPX book into an archive.
+   */
+  contestRounds: ContestRounds;
+}
+
+/** The two contests that have sessions; DX has no "round" to be in. */
+export interface ContestRounds {
+  CQWW: number;
+  WPX: number;
 }
 
 export const WPM_MIN = 5;
@@ -81,6 +98,9 @@ export const TONE_MAX = 1200;
 /** Sidetone level shown to the user (percent); mapped to 0..1 gain internally. */
 export const SIDETONE_MIN = 0;
 export const SIDETONE_MAX = 100;
+/** Contest session numbers. One number per session; they only ever go up. */
+export const ROUND_MIN = 1;
+export const ROUND_MAX = 999;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   myCall: "",
@@ -109,6 +129,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // follows the call the operator eventually types.
   cqZone: 0,
   wpxSerial: 1,
+  contestRounds: { CQWW: ROUND_MIN, WPX: ROUND_MIN },
 };
 
 /** Mirrors the callsign pattern used by MESSAGE-PARSING (ITU-style). */
@@ -184,6 +205,20 @@ export function normalizeSettings(raw: unknown): AppSettings {
         ? clampNum(r.cqZone, CQ_ZONE_MIN, CQ_ZONE_MIN, CQ_ZONE_MAX)
         : 0,
     wpxSerial: clampNum(r.wpxSerial, DEFAULT_SETTINGS.wpxSerial, SERIAL_MIN, SERIAL_MAX),
+    contestRounds: {
+      CQWW: clampNum(
+        r.contestRounds?.CQWW,
+        DEFAULT_SETTINGS.contestRounds.CQWW,
+        ROUND_MIN,
+        ROUND_MAX,
+      ),
+      WPX: clampNum(
+        r.contestRounds?.WPX,
+        DEFAULT_SETTINGS.contestRounds.WPX,
+        ROUND_MIN,
+        ROUND_MAX,
+      ),
+    },
   };
 }
 
