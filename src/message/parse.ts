@@ -67,9 +67,10 @@ export function extractLetterPrefix(callsign: string): string {
  *
  * Position wins over "is it a real callsign": `RST 599 N9N` reads `N9N` as 999,
  * not as a station. The other way round would break `U4` (zone 24) and `T4A`
- * (serial 041) — their cut forms happen to fit the callsign pattern, and they
- * are ordinary contest copy. A call appearing *after* the report is a shape
- * that barely occurs in practice. The trade-off is written up in
+ * (serial 041) — their cut forms fit the callsign pattern, and they are ordinary
+ * contest copy. The position is trustworthy because an exchange is never sent on
+ * its own: it always rides with the report (`5NN T4A`), so "right after a valid
+ * RST" is exactly where the number belongs. The trade-off is written up in
  * `doc/MESSAGE-PARSING.md` under 「比赛交换数字」.
  */
 function readsAsNumber(token: string): boolean {
