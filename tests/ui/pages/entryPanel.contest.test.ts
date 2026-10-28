@@ -318,6 +318,21 @@ describe("收尾与落账", () => {
     expect((await listLogs())[0].verdict).toBe("ok");
   });
 
+  it("F3 之后把呼号换成另一个台：回车要把 TU 重新说一遍", async () => {
+    const { root, sent } = makeHarness(complete({ exchRx: "05" }));
+
+    keys(root)[2].click(); // F3，这句 TU 是给 JA1ABC 的
+    await vi.waitFor(() => expect(sent).toEqual(["TU"]));
+
+    // 换一个呼号就是换一个台：上一句 TU 不算这一行的签收。
+    type(box(root, "对方呼号"), "K1ABC");
+    press(box(root, "对方 CQ 分区"), "Enter");
+
+    await vi.waitFor(async () => expect(await listLogs()).toHaveLength(1));
+    expect(sent).toEqual(["TU", "TU"]);
+    expect((await listLogs())[0].call).toBe("K1ABC");
+  });
+
   it("还要上机的那一步，半双工照样拦住", async () => {
     const { root, sent, stub } = makeHarness(complete({ exchRx: "05" }), { contest: "CQWW" });
     stub.isSending = true;

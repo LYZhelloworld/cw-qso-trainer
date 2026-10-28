@@ -161,12 +161,12 @@ interface QsoContext {
 | `EXCHANGE` | 呼号抄错 | — | `EXCHANGE` | 虚拟 HAM 发 `QRZ? DE <本台呼号>`，`CALL` 重试 +1 |
 | `EXCHANGE` | RST 不合法 | — | `EXCHANGE` | 虚拟 HAM 发 `UR RST?`（比赛里是 `NR?`），`RST` 重试 +1 |
 | `EXCHANGE` | 接收不全 | — | `EXCHANGE` | 虚拟 HAM 发 `AGN?`（比赛里是 `NR?`），要求重发，`COPY` 重试 +1 |
-| `EXCHANGE` | （超时）发出报文后 5 秒内无有效回应 | — | `EXCHANGE` | 虚拟 HAM 重发，对应子条件重试 +1 |
+| `EXCHANGE` | （超时）发出报文后 10 秒（比赛 4 秒）内无有效回应 | — | `EXCHANGE` | 虚拟 HAM 重发，对应子条件重试 +1 |
 | `EXCHANGE` | 任一子条件重试达到 3 | — | `FAILED` | — |
 | `SIGNOFF` | 收到对方结束语 | 含 TU / 73 / SK | `SIGNOFF` | `peerEndHeard = true` |
 | `SIGNOFF` | 用户发送结束语 | 含 TU / 73 / SK | `SIGNOFF` | `userEndSent = true` |
 | `SIGNOFF` | 双方结束语齐全 | — | `LOGGED` | —（日志由操作者手记，见下） |
-| `SIGNOFF` | （超时）发出报文后 5 秒内无有效回应 | — | `SIGNOFF` | 虚拟 HAM 重发，`SIGNOFF` 重试 +1 |
+| `SIGNOFF` | （超时）发出报文后 10 秒（比赛 4 秒）内无有效回应 | — | `SIGNOFF` | 虚拟 HAM 重发，`SIGNOFF` 重试 +1 |
 | `SIGNOFF` | `SIGNOFF` 重试达到 3 | — | `FAILED` | — |
 | `LOGGED` | — | — | `IDLE` | 清空上下文 |
 | `FAILED` | — | — | `IDLE` | 清空上下文 |
@@ -309,22 +309,22 @@ stateDiagram-v2
     IDLE --> PEER_CQ: 虚拟HAM发CQ
 
     USER_CQ --> EXCHANGE: 虚拟HAM应答
-    USER_CQ --> IDLE: 15秒无应答（预留）
+    USER_CQ --> IDLE: 15秒无应答
 
     PEER_CQ --> EXCHANGE: 用户应答
-    PEER_CQ --> IDLE: 15秒无应答（预留）
+    PEER_CQ --> IDLE: 15秒无应答
 
     EXCHANGE --> EXCHANGE: 收到合法呼号
     EXCHANGE --> EXCHANGE: 收到RST(rstRx)
     EXCHANGE --> EXCHANGE: 呼号错误，QRZ?
     EXCHANGE --> EXCHANGE: RST不合法，UR RST?
     EXCHANGE --> EXCHANGE: 接收不全，AGN?
-    EXCHANGE --> EXCHANGE: 5秒内无回应，重发（预留）
+    EXCHANGE --> EXCHANGE: 10秒（比赛4秒）内无回应，重发
     EXCHANGE --> SIGNOFF: 双方呼号+RST齐全
     EXCHANGE --> FAILED: 子条件重试达3次
 
     SIGNOFF --> SIGNOFF: 收到结束语
-    SIGNOFF --> SIGNOFF: 5秒内无回应，重发（预留）
+    SIGNOFF --> SIGNOFF: 10秒（比赛4秒）内无回应，重发
     SIGNOFF --> LOGGED: 双方结束语齐全
     SIGNOFF --> FAILED: 子条件重试达3次
 

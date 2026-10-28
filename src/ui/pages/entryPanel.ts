@@ -271,6 +271,12 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       callInput.value = upper;
       callInput.setSelectionRange(upper.length, upper.length);
     }
+    // A different callsign is a different station, and the `TU` that has already
+    // gone out was said to the previous one: this row still owes its own
+    // sign-off. Editing the call is how an operator moves on without emptying
+    // the row first (Esc is the other way), so this is where the flag has to
+    // fall as well.
+    if (upper !== entry.call) entry.signoffSent = false;
     entry.call = upper;
     sync();
   });
@@ -334,6 +340,10 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
       action.send === null ? undefined : messages.messages.find((x) => x.key === action.send);
     // A key the mode file does not define: nothing to key, and no step to take.
     if (action.send !== null && !target) return;
+    // Whether this step has anything to put on the air at all. Decided from the
+    // file alone — the message's text is built later, after `applyPrefill` has
+    // filled the boxes it is built from.
+    const keysSomething = target !== undefined && !isReserved(target);
     // Half-duplex: while our own message — or the answer to it — is still on the
     // air there is nothing to take a step *to*. Returning before moving the
     // caret matters: a step that did not happen must not look like it did.
@@ -341,7 +351,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     // It only holds back the steps that key something. Writing a row down after
     // the `TU` has already gone out keys nothing, so making the operator wait out
     // that over before they can file it would be a delay with no purpose.
-    if (host.session.isSending && target !== undefined && !isReserved(target)) return;
+    if (host.session.isSending && keysSomething) return;
     if (action.log && !canLog(entry, contest)) {
       const bad = blockingField(entry, contest);
       if (bad) {
