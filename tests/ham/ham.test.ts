@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { VirtualHam, MISS_PROBABILITY } from "../../src/ham/virtualHam.js";
-import { generateVirtualHam, haversineKm, resolveUserEntity } from "../../src/ham/generate.js";
+import {
+  generateVirtualHam,
+  haversineKm,
+  isReservedSuffix,
+  resolveUserEntity,
+} from "../../src/ham/generate.js";
 import { Frequency } from "../../src/ham/frequency.js";
 import { BAND_SIGNAL_SPREAD_HZ, SIGNAL_STEP_HZ } from "../../src/ham/spectrum.js";
 import { dxccDatabase } from "../../src/data/dxcc.js";
@@ -65,6 +70,23 @@ describe("generateVirtualHam — validity & weighting", () => {
       const suffix = ham.call.replace(/^[A-Z]{1,2}[0-9]/, "");
       expect(suffix.length).toBeGreaterThanOrEqual(2);
       expect(suffix.length).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("不生成法规保留的后缀：QOA–QUZ 与 SOS / XXX / TTT", () => {
+    // 《业余无线电台呼号编制和核发要求》：QOA–QUZ 与 SOS、XXX、TTT 这类
+    // 「像 Q 简语或遇险信号」的组合不用作呼号后缀。
+    for (const s of ["QOA", "QQU", "QUZ", "SOS", "XXX", "TTT"]) {
+      expect(isReservedSuffix(s)).toBe(true);
+    }
+    for (const s of ["QVA", "QZA", "RQA", "ROA", "ABC", "QO", "SO"]) {
+      expect(isReservedSuffix(s)).toBe(false);
+    }
+
+    const rng = mulberry32(7717);
+    for (let i = 0; i < 500; i++) {
+      const ham = generateVirtualHam({ myCall: "BG7XXX", db: dxccDatabase, rng });
+      expect(isReservedSuffix(ham.call.replace(/^[A-Z]{1,2}[0-9]/, ""))).toBe(false);
     }
   });
 

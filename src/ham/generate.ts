@@ -66,10 +66,28 @@ function randInt(rng: () => number, maxExclusive: number): number {
   return Math.floor(rng() * maxExclusive);
 }
 
+/**
+ * Suffix shapes the regulations keep off the air (《业余无线电台呼号编制和核发
+ * 要求》): `QOA`–`QUZ`, which read as Q-codes, and the three distress look-alikes
+ * `SOS` / `XXX` / `TTT`. Every other 2–3 letter combination is fair game — the
+ * reserved *lengths* (one letter, four letters, anything with a digit) are
+ * already out of reach because the suffix is always 2–3 letters.
+ */
+export function isReservedSuffix(s: string): boolean {
+  if (s.length !== 3) return false;
+  if (s === "SOS" || s === "XXX" || s === "TTT") return true;
+  // Alphabetically QOA … QUZ: Q, then any of O/P/Q/R/S/T/U, then anything.
+  return s[0] === "Q" && s[1] >= "O" && s[1] <= "U";
+}
+
 function randomSuffix(rng: () => number, len: number): string {
   let s = "";
   for (let i = 0; i < len; i++) s += LETTERS[randInt(rng, 26)];
-  return s;
+  // Mapped, not re-drawn: one more draw would shift every callsign generated
+  // after this one from the same seed, and the sequence is deterministic on
+  // purpose (`VIRTUAL-HAM.md`). Q→R keeps the shape identical and leaves the
+  // reserved range.
+  return isReservedSuffix(s) ? `R${s.slice(1)}` : s;
 }
 
 /** Great-circle distance in km between two lat/lon points (haversine). */
