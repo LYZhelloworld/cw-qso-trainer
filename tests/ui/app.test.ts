@@ -140,7 +140,7 @@ describe("App 外壳", () => {
     const { root } = mountApp();
 
     navButton(root, "关于").click();
-    expect(root.textContent).toContain("CW QSO 练习器 v1.1.0");
+    expect(root.textContent).toContain("CW QSO 练习器 v1.2.0");
     expect(root.textContent).toContain(DISCLAIMER_TEXT);
     expect(root.textContent).toContain("日志不可导出为 ADIF / CSV / JSON");
   });
