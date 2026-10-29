@@ -103,6 +103,9 @@ describe("onEnter", () => {
     const a = onEnter(entry({ call: "JA1ABC", mode: "s&p" }));
     expect(a.send).toBe(4);
     expect(a.fillRstTx).toBe("599");
+    // 只填我方那一格。对方的 RST 是要听的，先写个 599 进去等于替他报数，
+    // 所以那一格留空——光标正停在上面，听到什么就敲什么。
+    expect(a.fillRstRx).toBeNull();
     // 光标去"对方 RST"：被应答的那台会连呼号带报告一起回来，先抄他。
     expect(a.focus).toBe("rstRx");
     expect(a.log).toBe(false);
