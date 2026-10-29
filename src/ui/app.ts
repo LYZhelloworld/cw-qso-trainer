@@ -413,10 +413,15 @@ export class App implements AppHost {
     if (contestChanged) {
       // A different mode is a different set of words and a different number in
       // the exchange, so the contact in progress is abandoned rather than
-      // carried across the change mid-sentence. The band itself is untouched:
-      // the stations are still there, and the new mode's keys are on screen
-      // before the file for them has even been read.
-      for (const s of this.sessions) s.reset();
+      // carried across the change mid-sentence.
+      //
+      // The band goes with it: every station on it was speaking the old mode's
+      // words (`CQ JA1ABC` versus `CQ TEST JA1ABC`), and relabelling what is
+      // already on the air is both more code and less true than putting a fresh
+      // set of stations there. The waterfall is blanked for the same reason —
+      // its rows are a picture of a band that no longer exists.
+      for (const s of this.sessions) s.reseedBand();
+      this.waterfall?.reset();
       Object.assign(this.entry, emptyEntry(this.entry.mode));
       this.modeMessages = parseBundledMode(merged.contest).config;
       this.logContest = merged.contest;

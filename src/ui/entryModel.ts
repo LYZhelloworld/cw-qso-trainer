@@ -7,7 +7,7 @@
  * panel in `src/ui/pages/entryPanel.ts` only renders the decision and moves the
  * caret.
  *
- * The flow, as documented in `doc/MESSAGES.md`:
+ * The flow, as documented in `doc/MESSAGES.md`, is the same in all three modes:
  *
  *  - call box empty            → F1 (calling CQ) or F4 (answering somebody), by mode
  *  - call filled, no report yet → F4, S&P only: our call in answer, before the report
@@ -25,11 +25,16 @@
  *
  * ## What a contest changes
  *
- * A contest exchanges a number as well, so the row grows a box (their number, and
- * in WPX ours too), and the ladder gets one rung shorter: there is no "answer"
- * step, because the message that carries the report also carries the callsign —
- * `JA1ABC 5NN 24` answers *and* exchanges, which is the whole point of contest
- * shorthand. Copying the call therefore lights F2 directly, not F4.
+ * A contest exchanges a number as well, so the row grows a box (their number,
+ * and in WPX ours too), and both reports are known before the contact starts.
+ * The ladder itself does not change — including the answer step, because being
+ * the station that called *him* costs one over in every mode: until `JA1ABC`
+ * has heard `BG7XXX` there is nobody to send a report to. `JA1ABC BG7XXX` is
+ * that over, and only then does the runner come back with `BG7XXX 5NN 24`.
+ *
+ * What a *run* saves is the step, not the mode: a runner never answers a CQ, it
+ * names the station that answered its own, so its report message already starts
+ * with the callsign (`{THEIRCALL} {RST} {EXCH}`) and copying the call lights F2.
  *
  * The two reports also arrive already known: everybody in a contest sends 599,
  * so taking the step fills both report boxes, and in WPX our serial too. What is
@@ -128,16 +133,25 @@ export function normaliseCall(value: string): string {
   return value.trim().toUpperCase();
 }
 
-export function entryStep(v: EntryValues, contest: ContestKind = "DX"): EntryStep {
+/**
+ * Which rung of the ladder the row is on.
+ *
+ * Deliberately takes no `contest`: the ladder is the same in all three modes —
+ * what a mode changes is which *message* sits on a rung and what the boxes are
+ * called, not how many rungs there are.
+ */
+export function entryStep(v: EntryValues): EntryStep {
   if (normaliseCall(v.call) === "") return "call";
   // Pouncing, the first thing said after copying the call is *our* call (F4),
   // not the report: "JA1ABC DE BG7XXX" answers, and only then comes the RST.
   // The step is done with once the report box holds a number — filled by Enter
   // on F4, by Space, or typed in by hand.
   //
-  // A contest has no such rung: its report message carries the callsign too, so
-  // copying the call already points at F2.
-  if (!requiresExchange(contest) && v.mode === "s&p" && v.rstTx.trim() === "") return "answer";
+  // A contest keeps this rung, which is the whole point of it living here: the
+  // station being pounced on has no idea who is calling until we say so, so the
+  // report cannot be the first thing it hears. A run has no such rung — it is
+  // not answering anybody — and that is `mode`, not the contest.
+  if (v.mode === "s&p" && v.rstTx.trim() === "") return "answer";
   // Their report is the last thing heard — but only once ours is out. That is
   // the same rule in both modes, and it has to be: pouncing, their report comes
   // back with their call, and even in a run the station answering our CQ may
@@ -155,12 +169,15 @@ export function entryStep(v: EntryValues, contest: ContestKind = "DX"): EntrySte
 /**
  * The key that should be lit: the one whose message is the next thing to say.
  *
- * Only the opening differs by mode: Run says CQ (F1) where S&P says its own call
- * (F4), and S&P says that call twice — once with an empty call box, once with the
- * call copied but the report not yet chosen.
+ * Like `entryStep`, it takes no mode: the lit key is the message on the current
+ * rung, and which message that is comes from the mode's own file. What the
+ * *operating* mode changes is only the opening — a run says CQ (F1), S&P
+ * answers with its own call (F4), once with an empty call box and again once
+ * the call is copied but the report is not chosen yet. A run has no second F4:
+ * naming the station that answered its CQ is what its report message does.
  */
-export function highlightedKey(v: EntryValues, contest: ContestKind = "DX"): number {
-  switch (entryStep(v, contest)) {
+export function highlightedKey(v: EntryValues): number {
+  switch (entryStep(v)) {
     case "call":
       return v.mode === "run" ? 1 : 4;
     case "answer":
@@ -211,17 +228,18 @@ const STAY: EntryAction = {
 
 /** Enter: take the next step, and send the message that belongs to it. */
 export function onEnter(v: EntryValues, contest: ContestKind = "DX"): EntryAction {
-  switch (entryStep(v, contest)) {
+  switch (entryStep(v)) {
     case "call":
       // Nothing to send but the invitation itself: CQ when we are the one
       // calling, our call when we are answering.
-      return { ...STAY, send: highlightedKey(v, contest) };
+      return { ...STAY, send: highlightedKey(v) };
     case "answer":
-      // Our call goes out, and the report box fills itself: the next thing to
-      // say is the RST, and 599 is what it will be unless the operator says
-      // otherwise. The caret crosses to *their* report because that is what the
-      // pounced station sends back — it arrives with his call, before ours has
-      // gone out, so it is what the operator has to be ready to copy.
+      // Our call goes out — `JA1ABC BG7XXX` in a contest, `JA1ABC DE BG7XXX`
+      // outside one; either way the station now knows who is calling, and the
+      // report box fills itself because the next thing to say is the RST. The
+      // caret crosses to *their* report because that is what the pounced station
+      // sends back — it arrives with its call, before our report has gone out,
+      // so it is what the operator has to be ready to copy.
       return {
         ...STAY,
         send: 4,
@@ -258,7 +276,7 @@ export function onEnter(v: EntryValues, contest: ContestKind = "DX"): EntryActio
  * step to take without sending, so it does nothing.
  */
 export function onSpace(v: EntryValues, contest: ContestKind = "DX"): EntryAction {
-  const step = entryStep(v, contest);
+  const step = entryStep(v);
   if (step === "answer") {
     return { ...STAY, fillRstTx: DEFAULT_RST, focus: "rstRx" };
   }

@@ -29,6 +29,23 @@ describe("entryStep", () => {
     expect(entryStep(entry({ call: "JA1ABC", rstTx: "599", mode: "s&p" }))).toBe("report");
   });
 
+  it("the ladder is the same in every mode — a contest S&P keeps the answer step", () => {
+    // 抄清呼号只是知道该叫谁，还没叫出去：报告不能是对方听见的第一句。
+    // 比赛不改进这一级，因为那个台在听见我们的呼号之前不知道是谁在叫它。
+    const copied = entry({ call: "JA1ABC", mode: "s&p" });
+    expect(entryStep(copied)).toBe("answer");
+    expect(highlightedKey(copied)).toBe(4);
+    expect(entryStep({ ...copied, rstTx: "599" })).toBe("report");
+    expect(highlightedKey({ ...copied, rstTx: "599" })).toBe(2);
+  });
+
+  it("no mode adds a rung: a run's report message names the station itself", () => {
+    // 主叫不是在应答谁，所以它没有「报名」这一级——报文里已经带了呼号。
+    for (const contest of ["DX", "CQWW", "WPX"] as const) {
+      expect(onEnter(entry({ call: "JA1ABC" }), contest).send).toBe(2);
+    }
+  });
+
   it("their report does not end the row before ours has gone out — either mode", () => {
     for (const mode of ["run", "s&p"] as const) {
       const base = { call: "JA1ABC", rstTx: "599", rstRx: "579", mode };
@@ -234,11 +251,12 @@ describe("比赛模式下的那一行", () => {
     expect(canLog({ ...done, exchRx: "0" }, "WPX")).toBe(false);
   });
 
-  it("比赛没有「应答」那一级：抄清呼号直接指到 F2", () => {
-    // 比赛报告那一句自带呼号（JA1ABC 5NN 24），所以不用先单独报一次自己。
-    const copied = entry({ call: "JA1ABC" });
-    expect(entryStep(copied, "CQWW")).toBe("report");
-    expect(highlightedKey(copied, "CQWW")).toBe(2);
+  it("比赛的 Run 一步到位：抄清呼号按回车就是发报告，不先报名", () => {
+    // 主叫不是在应答谁：报告那一句自带呼号（JA1ABC 5NN 24），不用先单独报一次自己。
+    const taken = onEnter(entry({ call: "JA1ABC" }), "CQWW");
+    expect(taken.send).toBe(2);
+    expect(taken.fillRstRx).toBe("599");
+    expect(taken.markReported).toBe(true);
   });
 
   it("分区没抄到时不发第二轮：收尾那一步按下去会被拦下来", () => {
@@ -249,8 +267,8 @@ describe("比赛模式下的那一行", () => {
       reportSent: true,
     });
     // 步进不受交换信息影响——它和对方的报告是一起抄下来的。
-    expect(entryStep(awaitingExch, "CQWW")).toBe("signoff");
-    expect(highlightedKey(awaitingExch, "CQWW")).toBe(3);
+    expect(entryStep(awaitingExch)).toBe("signoff");
+    expect(highlightedKey(awaitingExch)).toBe(3);
     // 但记不了账，指到空着的那一格。
     expect(canLog(awaitingExch, "CQWW")).toBe(false);
     expect(blockingField(awaitingExch, "CQWW")).toBe("exchRx");
@@ -277,8 +295,8 @@ describe("比赛模式下的那一行", () => {
 
   it("DX 还是先报自己再报报告", () => {
     const copied = entry({ call: "JA1ABC", mode: "s&p" });
-    expect(entryStep(copied, "DX")).toBe("answer");
-    expect(highlightedKey(copied, "DX")).toBe(4);
+    expect(entryStep(copied)).toBe("answer");
+    expect(highlightedKey(copied)).toBe(4);
   });
 
   it("清空一行时交换信息与我方序号一起清掉", () => {

@@ -31,7 +31,8 @@ describe("内置模式报文", () => {
         "CQ TEST {MYCALL}",
         "{THEIRCALL} {RST} {EXCH}",
         "TU",
-        "{MYCALL}",
+        // S&P 的第一步：点名对方，再报自己。
+        "{THEIRCALL} {MYCALL}",
         "{THEIRCALL}",
         "{RST} {EXCH} {EXCH}",
         "?",

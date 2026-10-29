@@ -397,6 +397,33 @@ export class QsoSession implements SessionContext {
     return this.band.listHams();
   }
 
+  /**
+   * Replace the band: take every station off the air and put a fresh set on.
+   *
+   * Used when the *mode* changes, because a mode is not only a set of keys — it
+   * is what every station says (`CQ JA1ABC` versus `CQ TEST JA1ABC`). Keeping
+   * the roster would leave a band still speaking the old mode's words until
+   * each station's turn came round again; new stations also mean new callsigns,
+   * which is the honest reading of "I moved to another contest".
+   *
+   * The dial is untouched: only who is standing on the band changes.
+   */
+  reseedBand(): VirtualHam[] {
+    // The contact belongs to the band being replaced. `reset` also bumps the
+    // keying epoch, so an over already scheduled for a station that is about to
+    // be removed never comes back to key onto its replacement.
+    this.reset();
+    this.hamQso.reset();
+    for (const ham of this.band.listHams()) {
+      this.monitor.forget(ham.call);
+      this.band.removeHam(ham.call);
+    }
+    // The old transmitters go before the new ones appear: a station removed
+    // while it was mid-CQ would otherwise leave its carrier in the mixer.
+    this.audio.syncStations([]);
+    return this.seedHams();
+  }
+
   /** Roster with each HAM's state, for the frequency page. */
   hamActivity() {
     return this.band.activityState();

@@ -168,7 +168,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     if (!m) return;
     // Half-duplex: the rig is already keying something of ours.
     if (host.session.isSending) return;
-    const step = entryStep(entry, contest);
+    const step = entryStep(entry);
     // The known values go into the boxes *before* the message is expanded: F2's
     // text is built out of them. Pressing the lit key is the step Enter would
     // take, so it fills the same boxes.
@@ -458,7 +458,7 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
   // --- keeping the screen in step ----------------------------------------
 
   function sync(): void {
-    const lit = highlightedKey(entry, contest);
+    const lit = highlightedKey(entry);
     for (const k of keys) {
       const m = k.message;
       k.labelNode.textContent = expanded(m).label;

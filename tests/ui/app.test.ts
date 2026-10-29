@@ -582,6 +582,20 @@ describe("顶栏的通联模式选择器", () => {
     // 关着台就没有录入行可看，但键已经换好了。
     expect(app.modeMessages.messages[1].text).toBe("{THEIRCALL} {RST} {EXCH}");
   });
+
+  it("切模式把波段也换掉：台上是新的一批，正在通的那一台一起下台", () => {
+    const { app } = mountApp();
+    const before = app.session.listHams().map((h) => h.call);
+    expect(before.length).toBeGreaterThan(0);
+
+    app.setContest("CQWW");
+
+    // 台上原来的台说的是旧模式的措辞（`CQ ...`），换一批比改口更干净。
+    const after = app.session.listHams().map((h) => h.call);
+    expect(after).toHaveLength(before.length);
+    expect(after.filter((call) => before.includes(call))).toEqual([]);
+    expect(app.session.state).toBe("IDLE");
+  });
 });
 
 describe("比赛的场次边界", () => {

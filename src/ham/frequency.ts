@@ -185,4 +185,16 @@ export class Frequency {
   resumeCq(call: string, delayMs?: number): void {
     this.activity.resumeCq(call, delayMs);
   }
+
+  /**
+   * Take a station off the frequency for good.
+   *
+   * Not the same as `markListening` (the contact ended, the station stays) or
+   * `releaseAnswerer` (it was never on the roster): this one is for a band that
+   * is being *replaced* — the operator changed mode, and the stations that were
+   * speaking the old mode's words should not still be on the air saying them.
+   */
+  removeHam(call: string): void {
+    this.activity.remove(call);
+  }
 }

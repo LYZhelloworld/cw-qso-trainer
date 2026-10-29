@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { QsoSession } from "../../src/ui/session.js";
 import { normalizeSettings } from "../../src/ui/settingsSchema.js";
 import { cutNumbers } from "../../src/message/macros.js";
+import { mulberry32 } from "../../src/ham/spectrum.js";
 import { formatZone, zoneOfCall, type ContestKind } from "../../src/qso/contest.js";
 
 /**
@@ -38,8 +39,9 @@ describe("比赛模式下的会话", () => {
     // 分区来自呼号所属的 DXCC 实体，补成两位。
     expect(truth?.exch).toBe(formatZone(zoneOfCall(peer)!));
 
-    // S&P：先报自己的呼号，主叫台一个回合把报告与分区都给全。
-    await session.userSend("BG7XXX");
+    // S&P：F4 发的是「对方呼号 我的呼号」——先让对方知道是谁在叫它。
+    // 主叫台一个回合把报告与分区都给全，正好是它该回的。
+    await session.userSend(`${peer} BG7XXX`);
     expect(session.state).toBe("EXCHANGE");
     expect(session.lines.at(-1)?.text).toBe(`BG7XXX 5NN ${cutNumbers(truth!.exch)}`);
 
@@ -68,5 +70,46 @@ describe("比赛模式下的会话", () => {
     const truth = session.partnerTruth();
     expect(truth?.exch).toBe("");
     expect(truth?.report).toMatch(/^[1-5][1-9][1-9]$/);
+  });
+});
+
+/**
+ * Changing mode replaces the band (see `QsoSession.reseedBand`). The RNG has to
+ * vary here: a constant one draws the same callsign every time it is asked, so
+ * "the stations are new" would be untestable.
+ */
+describe("换模式换掉整个波段", () => {
+  function bandSession(kind: ContestKind) {
+    const settings = normalizeSettings({ myCall: "BG7XXX", contest: kind, difficulty: "novice" });
+    return new QsoSession(14.025, settings, {
+      rng: mulberry32(7),
+      delay: async () => {},
+      pace: async () => {},
+    });
+  }
+
+  it("台是新的一批：旧的一台不剩，数量照旧", () => {
+    const session = bandSession("CQWW");
+    const before = session.seedHams(6).map((h) => h.call);
+
+    const after = session.reseedBand().map((h) => h.call);
+
+    expect(after).toHaveLength(6);
+    expect(after.filter((call) => before.includes(call))).toEqual([]);
+  });
+
+  it("正在通联的那一台也下台：会话回到 IDLE，没有再能核对的台", async () => {
+    const session = bandSession("CQWW");
+    session.seedHams(4);
+    session.retune(session.listHams()[0].freqHz / 1e6);
+    await session.hamCallsCq();
+    await session.userSend("BG7XXX");
+    expect(session.state).toBe("EXCHANGE");
+
+    session.reseedBand();
+
+    expect(session.state).toBe("IDLE");
+    expect(session.ham).toBeNull();
+    expect(session.partnerTruth()).toBeNull();
   });
 });

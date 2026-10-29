@@ -205,7 +205,7 @@ describe("录入行的格子", () => {
 });
 
 describe("抄清呼号之后", () => {
-  it("高亮的是 F2，不是 F4——比赛里报告那一句自带呼号", () => {
+  it("主叫（Run）时高亮的是 F2，不是 F4——报告那一句自带呼号", () => {
     const { root } = makeHarness({ ...emptyEntry("run"), call: "JA1ABC" }, { contest: "CQWW" });
     const lit = keys(root).filter((k) => k.classList.contains("active"));
     expect(lit).toHaveLength(1);
@@ -254,6 +254,48 @@ describe("抄清呼号之后", () => {
     );
     type(ownBox(root), "12");
     expect(entry.ownNr).toBe("12");
+  });
+});
+
+describe("应答别人的 CQ（S&P）", () => {
+  it("抄清呼号之后高亮 F4：得先让对方听见是谁在叫它", () => {
+    const { root } = makeHarness({ ...emptyEntry("s&p"), call: "JA1ABC" }, { contest: "CQWW" });
+    const lit = keys(root).filter((k) => k.classList.contains("active"));
+    expect(lit).toHaveLength(1);
+    expect(lit[0].textContent).toContain("F4");
+  });
+
+  it("回车发的是「对方呼号 我的呼号」，填上我方 RST，光标落到对方 RST", async () => {
+    const { root, sent, entry } = makeHarness(
+      { ...emptyEntry("s&p"), call: "JA1ABC" },
+      { contest: "CQWW" },
+    );
+    press(box(root, "对方呼号"), "Enter");
+
+    await vi.waitFor(() => expect(sent).toEqual(["JA1ABC BG7XXX"]));
+    // 这一步只是报名：报告还没发，所以还是报告那一格的事。
+    expect(entry.reportSent).toBe(false);
+    expect(entry.rstTx).toBe("599");
+    expect(document.activeElement).toBe(box(root, "对方 RST"));
+  });
+
+  it("抄完数字再回车才是 F2：报告发出去，灯跳到 F3", async () => {
+    const { root, sent, entry } = makeHarness(
+      { ...emptyEntry("s&p"), call: "JA1ABC" },
+      { contest: "CQWW", zone: 24 },
+    );
+    press(box(root, "对方呼号"), "Enter");
+    await vi.waitFor(() => expect(sent).toEqual(["JA1ABC BG7XXX"]));
+
+    // 对方回「BG7XXX 5NN 25」：抄两个 RST 与分区。
+    type(box(root, "对方 RST"), "599");
+    type(box(root, "对方 CQ 分区"), "05");
+    press(box(root, "对方 CQ 分区"), "Enter");
+
+    await vi.waitFor(() => expect(sent).toEqual(["JA1ABC BG7XXX", "JA1ABC 5NN U4"]));
+    expect(entry.reportSent).toBe(true);
+    const lit = keys(root).filter((k) => k.classList.contains("active"));
+    expect(lit[0].textContent).toContain("F3");
   });
 });
 
