@@ -4,9 +4,9 @@ import { parseCty } from "../../src/data/cty.js";
 
 const minimal: DxccData = {
   entities: {
-    BY: { dxcc: "BY", lat: 0, lon: 0, prefixes: ["BA", "BD", "BG", "BT", "BZ"], continent: "AS" },
-    JA: { dxcc: "JA", lat: 0, lon: 0, prefixes: ["JA"], continent: "AS" },
-    K: { dxcc: "K", lat: 0, lon: 0, prefixes: ["AA", "K", "N", "W"], continent: "NA" },
+    BY: { dxcc: "BY", lat: 0, lon: 0, prefixes: ["BA", "BD", "BG", "BT", "BZ"], continent: "AS", cqZone: 24 },
+    JA: { dxcc: "JA", lat: 0, lon: 0, prefixes: ["JA"], continent: "AS", cqZone: 25 },
+    K: { dxcc: "K", lat: 0, lon: 0, prefixes: ["AA", "K", "N", "W"], continent: "NA", cqZone: 5 },
   },
 };
 

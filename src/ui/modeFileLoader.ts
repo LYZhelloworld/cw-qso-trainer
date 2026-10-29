@@ -1,12 +1,17 @@
-import { DEFAULT_MODE_FILE, DEFAULT_MODE_ID, parseBundledMode } from "../data/modeMessages.js";
+import { modeFileName, parseBundledMode } from "../data/modeMessages.js";
 import { parseModeFile, type ModeMessages } from "../message/modeFile.js";
+import type { ContestKind } from "../qso/contest.js";
 
 /**
  * Where the quick messages come from, in order of preference:
  *
- *  1. the operator's own file, next to the executable (`app-data/messages/DX.msg`),
+ *  1. the operator's own file, next to the executable (`app-data/messages/CQWW.msg`),
  *     which the desktop shell creates on first run from the bundled default;
  *  2. the bundled default, inlined at build time.
+ *
+ * One file per mode (`DX.msg`, `CQWW.msg`, `WPX.msg`): switching the rig's mode
+ * switches the whole key set, and a broken contest file must not leave the
+ * everyday keys broken as well.
  *
  * The web build can never satisfy (1) — a browser page cannot read a file
  * beside itself — so it runs on (2), which is the same text the desktop build
@@ -51,9 +56,11 @@ export const readModeFileFromDisk: ModeFileReader = async (name) => {
 };
 
 export async function loadModeMessages(
+  kind: ContestKind = "DX",
   read: ModeFileReader = readModeFileFromDisk,
 ): Promise<LoadedMode> {
-  const bundled = parseBundledMode();
+  const file = modeFileName(kind);
+  const bundled = parseBundledMode(kind);
   const fallback = (problems: string[] = []): LoadedMode => ({
     config: bundled.config,
     source: "bundled",
@@ -62,19 +69,19 @@ export async function loadModeMessages(
 
   let raw: string | null;
   try {
-    raw = await read(DEFAULT_MODE_FILE);
+    raw = await read(file);
   } catch (err) {
     // A shell that cannot read the file is not a reason to lose the keys.
-    return fallback([`读不到 ${DEFAULT_MODE_FILE}：${String(err)}`]);
+    return fallback([`读不到 ${file}：${String(err)}`]);
   }
   if (raw === null) return fallback();
 
-  const parsed = parseModeFile(raw, DEFAULT_MODE_ID);
+  const parsed = parseModeFile(raw, kind);
   const usable = parsed.config.messages.some((m) => m.text !== "");
   if (!usable) {
     // An empty or entirely unreadable file would leave eight dead keys: keep the
     // default and report, rather than trading working keys for an empty panel.
-    return fallback([`${DEFAULT_MODE_FILE} 里没有可用报文，改用内置默认`].concat(parsed.problems));
+    return fallback([`${file} 里没有可用报文，改用内置默认`].concat(parsed.problems));
   }
   return { config: parsed.config, source: "file", problems: parsed.problems };
 }

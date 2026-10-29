@@ -69,7 +69,7 @@ afterEach(() => {
 describe("三种发报模式", () => {
   it("直键模式沿用报文模式的版面，底部是只读回显框", () => {
     const { root } = makeHarness({ keyMode: "straight" });
-    // 页面内容区的文字全部来自机头与瀑布图，这一段只挂回显框。
+    // 页面内容区的文字全部来自顶栏与瀑布图，这一段只挂回显框。
     expect(root.textContent).toBe("");
     const echo = root.querySelector<HTMLElement>(".send-echo");
     expect(echo).not.toBeNull();

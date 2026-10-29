@@ -284,3 +284,108 @@ describe("QsoMachine — reset lifecycle", () => {
     expect(m.getLog()).toBeNull();
   });
 });
+
+describe("QsoMachine — 比赛流程（CQWW / WPX）", () => {
+  /** A machine in a contest, with the station's own exchange already known. */
+  function contestMachine(exch = "25", hamCall = "JA1ABC"): QsoMachine {
+    return new QsoMachine({
+      myCall: "BG7XXX",
+      ham: new VirtualHam({ call: hamCall, difficulty: "novice" }),
+      db: dxccDatabase,
+      contest: "CQWW",
+      hamExchange: exch,
+    });
+  }
+
+  it("Run：CQ TEST → 对方只报呼号 → 我方 5NN + 分区 → 对方 R 5NN + 分区 → TU 收尾", () => {
+    const m = contestMachine();
+    expect(m.userSend("CQ TEST BG7XXX")).toEqual([]);
+    expect(m.state).toBe("USER_CQ");
+
+    // 应答台只报呼号，报告与分区留到被点名之后。
+    expect(m.hamAnswerCq()).toBe("JA1ABC");
+    expect(m.state).toBe("EXCHANGE");
+    // 比赛里一律 5NN，虚拟台自己的 549/579 不带到比赛里来。
+    expect(m.ctx.rstRx).toBeNull();
+
+    // 我方发 5NN + 分区（24 区，简码写成 U4）。
+    expect(m.userSend("JA1ABC 5NN U4")).toEqual(["R 5NN U5"]);
+    expect(m.ctx.rstTx).toBe("599");
+    expect(m.ctx.rstRx).toBe("599");
+    expect(m.state).toBe("SIGNOFF");
+
+    // TU 就是收尾：没有 73，也没有回话。
+    expect(m.userSend("TU")).toEqual([]);
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("S&P：对方 CQ TEST → 我方只报呼号 → 对方连报告带分区一起给 → 我方回 5NN + 分区 → TU", () => {
+    const m = contestMachine();
+    expect(m.hamCq()).toBe("CQ TEST JA1ABC JA1ABC");
+    expect(m.state).toBe("PEER_CQ");
+
+    // 应答别人的 CQ：只报自己呼号。
+    expect(m.userSend("BG7XXX")).toEqual(["BG7XXX 5NN U5"]);
+    expect(m.ctx.rstRx).toBe("599");
+    expect(m.state).toBe("EXCHANGE");
+
+    // 我方把报告与分区发过去，主叫台说 TU 结束这一个。
+    expect(m.userSend("5NN U4")).toEqual(["TU"]);
+    expect(m.state).toBe("SIGNOFF");
+
+    expect(m.userSend("TU")).toEqual([]);
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("从堆叠里点名：被点到的台一个回合就把报告和分区给全", () => {
+    const m = contestMachine();
+    m.userSend("CQ TEST BG7XXX");
+    expect(m.hamAcceptedSelection()).toBe("5NN U5");
+    expect(m.ctx.rstRx).toBe("599");
+    expect(m.state).toBe("EXCHANGE");
+  });
+
+  it("比赛不拖 73：整段通联里一个 73 都不出现", () => {
+    const m = contestMachine();
+    const aired: string[] = [];
+    m.userSend("CQ TEST BG7XXX");
+    aired.push(m.hamAnswerCq());
+    aired.push(...m.userSend("5NN U4"));
+    aired.push(...m.userSend("TU"));
+    expect(aired.join(" ")).not.toContain("73");
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("WPX 的序号按简码发：001 在通联时是 TTA", () => {
+    const m = new QsoMachine({
+      myCall: "BG7XXX",
+      ham: new VirtualHam({ call: "DL1ABC", difficulty: "novice" }),
+      db: dxccDatabase,
+      contest: "WPX",
+      hamExchange: "001",
+    });
+    m.userSend("CQ TEST BG7XXX");
+    m.hamAnswerCq();
+    expect(m.userSend("DL1ABC 5NN TTA")).toEqual(["R 5NN TTA"]);
+  });
+
+  it("收尾状态里发一句 ? 不算收尾——只有 TU 才算", () => {
+    const m = contestMachine();
+    m.userSend("CQ TEST BG7XXX");
+    m.hamAnswerCq();
+    m.userSend("JA1ABC 5NN U4");
+    expect(m.state).toBe("SIGNOFF");
+    // 追问一句不会把这次通联关掉：机器还在等 TU。
+    expect(m.userSend("?")).toEqual([]);
+    expect(m.state).toBe("SIGNOFF");
+    m.userSend("TU");
+    expect(m.state).toBe("LOGGED");
+  });
+
+  it("抄不清时问 NR?，不是 AGN?", () => {
+    const m = contestMachine();
+    m.userSend("CQ TEST BG7XXX");
+    m.hamAnswerCq();
+    expect(m.hamMissed()).toBe("NR?");
+  });
+});

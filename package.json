@@ -1,6 +1,6 @@
 {
   "name": "cw-qso-trainer",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Offline CW (Morse code) QSO trainer for amateur radio: copy virtual stations, key with a straight key or iambic paddles, and log each practice QSO.",

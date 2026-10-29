@@ -218,6 +218,83 @@ table.log input {
   padding: 3px 5px;
 }
 
+/* One tab per log: the three books are separate records, not one table. */
+.log-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+/*
+ * A contest log's second axis: this session / the ones before it, and the button
+ * that draws the line. Sits under the tabs, on the same line as the labels so the
+ * page grows by one row rather than one block.
+ */
+.log-sessions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.log-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/*
+ * The dupe label: the same station, same band, same session, worked before.
+ *
+ * Deliberately quiet — a red flag, not a stop sign. The contact was completed and
+ * logged exactly as it was on the air; refusing to log somebody you have already
+ * worked is not something an operator does.
+ */
+.dupe {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--danger);
+}
+
+.dupe.none {
+  color: transparent;
+}
+
+/*
+ * The verdict on a row: did the operator copy the station right?
+ *
+ * It says which item is wrong and never what the right answer was — the trainer
+ * does not tell the operator who is on the other end, and that rule does not
+ * stop when the contact does. A row with no station behind it has no verdict at
+ * all, and reads as a dash.
+ */
+.verdict {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.verdict.ok {
+  color: var(--ok);
+}
+
+.verdict.call,
+.verdict.exch,
+.verdict.rst {
+  color: var(--danger);
+}
+
+.verdict.unknown {
+  color: var(--muted);
+}
+
+/* A destructive button that has been clicked once and is asking again. */
+.btn.armed {
+  outline: 1px solid var(--danger);
+  outline-offset: 1px;
+}
+
 .watermark {
   margin-top: 10px;
   padding: 8px;
@@ -378,6 +455,36 @@ table.log input {
 .rig-mode:hover {
   border-color: var(--accent);
   background: rgba(56, 189, 248, 0.12);
+}
+
+/*
+ * The mode selector (DX / CQWW / WPX). Quiet next to the band and the sideband:
+ * it is chosen once before a session's worth of operating, not touched between
+ * contacts the way the dial and the filter are.
+ */
+.rig-contest {
+  /* A selector is not a text field: without this the global
+     `select { width: 100% }` stretches it across the whole left cell and it
+     reads as an input with the value stranded at one end. */
+  width: auto;
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rig-contest:hover {
+  border-color: var(--accent);
+}
+
+.rig:not(.powered) .rig-contest {
+  color: var(--muted);
 }
 
 .rig-mode:focus-visible {
@@ -966,6 +1073,16 @@ table.log input {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr;
   gap: 6px;
+}
+
+/* A contest row: the same line, with the exchanged numbers on the end. WPX has
+   one more box than CQWW because it sends a serial of its own as well. */
+.entry-row.with-exch {
+  grid-template-columns: 2fr 1fr 1fr 1.1fr;
+}
+
+.entry-row.with-own {
+  grid-template-columns: 2fr 1fr 1fr 1fr 1.1fr;
 }
 
 /* The box is its own label: three of them in one line, each saying what it is

@@ -1,5 +1,6 @@
 import { dxccDatabase } from "../data/dxcc.js";
 import { QsoMachine } from "../qso/stateMachine.js";
+import { stationExchange, type ContestKind } from "../qso/contest.js";
 import { VirtualHam } from "../ham/virtualHam.js";
 import { clearStaging, loadStaging, saveStaging } from "./storage/qsoStaging.js";
 import type { TranscriptLine } from "./sessionTypes.js";
@@ -65,7 +66,11 @@ export function saveStagingFor(view: {
  * worth resuming, or an already-finished QSO — and drops it rather than
  * resurrecting it.
  */
-export function loadRestorable(freqMHz: number, myCall: string): RestoredQso | null {
+export function loadRestorable(
+  freqMHz: number,
+  myCall: string,
+  contest: ContestKind = "DX",
+): RestoredQso | null {
   const staged = loadStaging();
   if (!staged) return null;
   if (staged.freqMHz !== freqMHz || !staged.machine || !staged.ham) {
@@ -85,7 +90,15 @@ export function loadRestorable(freqMHz: number, myCall: string): RestoredQso | n
   });
   return {
     ham,
-    machine: QsoMachine.fromSnapshot(staged.machine, { myCall, ham, db: dxccDatabase }),
+    machine: QsoMachine.fromSnapshot(staged.machine, {
+      myCall,
+      ham,
+      db: dxccDatabase,
+      contest,
+      // Recomputed rather than stored: it is a property of the callsign, so a
+      // resumed contest contact sends the same exchange it did before.
+      hamExchange: stationExchange(ham, contest),
+    }),
     lines: staged.lines,
     draft: staged.draft,
   };

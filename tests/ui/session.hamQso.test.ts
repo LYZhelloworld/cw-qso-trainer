@@ -193,14 +193,23 @@ describe("HAM 互相通联（后台，对操作者不可见）", () => {
 
   it("应答方不被当成可通联对象：它根本不在名单上", async () => {
     const h = makeSession();
-    h.session.seedHams(4);
+    const seeded = h.session.seedHams(4).map((x) => x.call);
     h.session.start();
     const caller = await h.untilExchange();
     h.session.retune(caller.freqHz / 1e6);
 
-    expect(h.session.heardActiveHam()).toBeNull();
+    // 名单就是名单：应答方没有频率、不占槽，从头到尾没进去过。
+    expect(h.session.listHams().map((x) => x.call).sort()).toEqual([...seeded].sort());
+    // 可通联的对象只可能是名单上的台，而且不是正忙着的那一台。
     const nearest = h.session.nearestWorkableHam();
-    expect(nearest?.call).not.toBe(caller.call);
+    expect(nearest).not.toBeNull();
+    expect(seeded).toContain(nearest!.call);
+    expect(nearest!.call).not.toBe(caller.call);
+    // 「听到的」是「最近那台在不在通带里」的直译——台站落在 10 Hz 网格上，
+    // 隔壁随时可能正好在通带内，所以这里断关系而不是断 null。
+    expect(h.session.heardActiveHam()).toBe(
+      h.session.canHear(nearest!) ? nearest : null,
+    );
   });
 
   it("结束后频段原样：还是那几台，各有自己的频点，没有多出来的台", async () => {

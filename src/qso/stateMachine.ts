@@ -1,7 +1,9 @@
 import { DxccDatabase } from "../data/dxcc.js";
 import { parseMessage, ParsedMessage } from "../message/parse.js";
+import { cutNumbers } from "../message/macros.js";
 import { decodeKeying, type DecodeOptions, type KeyElement } from "../cw/decoder.js";
 import { VirtualHam } from "../ham/virtualHam.js";
+import { contestReport, cqText, isContest, type ContestKind } from "./contest.js";
 
 export type QsoState =
   | "IDLE"
@@ -54,6 +56,16 @@ export interface QsoMachineOptions {
   db: DxccDatabase;
   /** Reserved context field for the band frequency (MHz); not yet used. */
   frequency?: number;
+  /**
+   * Which mode the contact is being worked in. DX is the everyday exchange;
+   * CQWW and WPX shorten it to `5NN <exch>` and end on `TU` (see `qso/contest`).
+   */
+  contest?: ContestKind;
+  /**
+   * This station's exchange as digits (`05`, `001`), computed by the session from
+   * its callsign. Empty in DX mode.
+   */
+  hamExchange?: string;
 }
 
 /**
@@ -74,12 +86,16 @@ export class QsoMachine {
 
   private readonly ham: VirtualHam;
   private readonly db: DxccDatabase;
+  private readonly contest: ContestKind;
+  private readonly hamExchange: string;
   private lastReply: string | null = null;
   private lastRetryKey: RetryKey | null = null;
 
   constructor(opts: QsoMachineOptions) {
     this.ham = opts.ham;
     this.db = opts.db;
+    this.contest = opts.contest ?? "DX";
+    this.hamExchange = opts.hamExchange ?? "";
     this.ctx = {
       myCall: opts.myCall,
       peerCall: null,
@@ -134,7 +150,12 @@ export class QsoMachine {
   /** Virtual HAM answers the user's CQ (called after the 15s-less deterministic delay). */
   hamAnswerCq(): string {
     if (this.state !== "USER_CQ") return "";
-    const reply = `${this.ctx.myCall} DE ${this.ham.call} K`;
+    // In a contest the answer is the callsign and nothing else: the report and
+    // the exchange come after the runner has named the station back, which is
+    // what keeps a run moving (see `doc/QSO-PROTOCOL.md`).
+    const reply = this.contested
+      ? this.ham.call
+      : `${this.ctx.myCall} DE ${this.ham.call} K`;
     this.ctx.peerCall = this.ham.call;
     this.ctx.callsignsConfirmed = true;
     this.state = "EXCHANGE";
@@ -163,9 +184,14 @@ export class QsoMachine {
     if (this.state !== "USER_CQ") return "";
     this.ctx.peerCall = this.ham.call;
     this.ctx.callsignsConfirmed = true;
-    this.ctx.rstRx = this.ham.report;
+    this.ctx.rstRx = this.peerReport();
     this.state = "EXCHANGE";
-    const reply = `R UR RST ${this.ham.report} BK`;
+    // A contest station named out of a pile-up gives its report *and* its
+    // exchange in one over — it has been waiting to say them. No callsign: it
+    // has just been named, and repeating it would cost the runner a second.
+    const reply = this.contested
+      ? `${this.peerReportAir()} ${this.exchangeAir()}`
+      : `R UR RST ${this.ham.report} BK`;
     this.lastReply = reply;
     this.lastRetryKey = null;
     return reply;
@@ -175,7 +201,8 @@ export class QsoMachine {
   hamCq(): string {
     this.ctx.peerCall = this.ham.call;
     this.state = "PEER_CQ";
-    const reply = `CQ CQ CQ DE ${this.ham.call} ${this.ham.call} PSE K`;
+    // Same wording as the band's background CQs — one definition, in `contest`.
+    const reply = cqText(this.ham.call, this.contest);
     this.lastReply = reply;
     this.lastRetryKey = null;
     return reply;
@@ -188,7 +215,10 @@ export class QsoMachine {
   hamMissed(): string {
     if (this.state !== "EXCHANGE" && this.state !== "SIGNOFF") return "";
     const failed = this.bumpRetry("COPY");
-    const reply = "AGN?";
+    // In a contest the thing that goes missing is the number, and the question is
+    // one word: `NR?`. Our own report is the last thing asked about, so counting
+    // the two separately is pointless — whatever was lost, this asks for it back.
+    const reply = this.contested ? "NR?" : "AGN?";
     this.lastReply = reply;
     this.lastRetryKey = "COPY";
     if (failed) this.fail();
@@ -315,8 +345,12 @@ export class QsoMachine {
       // copied "R UR RST 599 BK" acknowledges and signs off — sending the
       // operator's own report straight back at them is a parrot, not a QSO.
       if (this.ctx.rstRx !== null) return [this.hamSignsOff()];
-      const reply = `R UR RST ${this.ham.report} BK`;
-      this.ctx.rstRx = this.ham.report;
+      // In a contest the station we called has not given us anything yet: the
+      // answer to our exchange is `R 5NN <exch>`.
+      const reply = this.contested
+        ? `R ${this.peerReportAir()} ${this.exchangeAir()}`
+        : `R UR RST ${this.ham.report} BK`;
+      this.ctx.rstRx = this.peerReport();
       this.lastReply = reply;
       this.lastRetryKey = null;
       this.maybeSignoff();
@@ -331,6 +365,21 @@ export class QsoMachine {
 
   private onSignoffUser(p: ParsedMessage): string[] {
     if (this.copyError(p)) return [this.handleCopyError()];
+
+    // A contest contact ends on `TU` and nothing comes back — the next station is
+    // already calling. But it ends on `TU`: an `F5` (the other station's call) or
+    // an `F7` (`?`) in this state is still part of the contact, and treating it as
+    // a sign-off would close a QSO the operator was in the middle of fixing.
+    if (this.contested) {
+      const signedOff = p.type === "END" || p.end === "SK" || /\b(TU|73|SK)\b/.test(p.raw.toUpperCase());
+      if (!signedOff) return [];
+      this.ctx.userEndSent = true;
+      this.ctx.peerEndHeard = true;
+      this.state = "LOGGED";
+      this.lastReply = null;
+      this.lastRetryKey = null;
+      return [];
+    }
 
     if (p.type === "END" || p.end === "SK" || /\b(TU|73|SK)\b/.test(p.raw.toUpperCase())) {
       this.ctx.userEndSent = true;
@@ -359,7 +408,8 @@ export class QsoMachine {
    * operator's own 73 before the QSO is logged.
    */
   private hamSignsOff(): string {
-    const reply = "R TU 73 SK";
+    // In a contest the sign-off is the single word the runner expects.
+    const reply = this.contested ? "TU" : "R TU 73 SK";
     this.lastReply = reply;
     this.lastRetryKey = null;
     this.ctx.peerEndHeard = true;
@@ -371,12 +421,41 @@ export class QsoMachine {
     // Deterministic HAM: acknowledge with R and offer its RST (BK signals the
     // user may omit callsigns going forward). The report is this HAM's RST for
     // the user's signal (varies per virtual-HAM behaviour).
-    const reply = `R UR RST ${this.ham.report} BK`;
+    //
+    // Answering a contest CQ is the other order: the station that is running
+    // comes back with our call, its report and its exchange in one over, and
+    // then waits for ours.
+    const reply = this.contested
+      ? `${this.ctx.myCall} ${this.peerReportAir()} ${this.exchangeAir()}`
+      : `R UR RST ${this.ham.report} BK`;
     this.lastReply = reply;
     this.lastRetryKey = null;
-    this.ctx.rstRx = this.ham.report;
+    this.ctx.rstRx = this.peerReport();
     this.maybeSignoff();
     return [reply];
+  }
+
+  /**
+   * The report this station sends. In a contest it is always 5NN — nobody is
+   * graded on readability mid-run — and that is also the value the operator's
+   * log is checked against.
+   */
+  private peerReport(): string {
+    return contestReport(this.contest, this.ham.report);
+  }
+
+  /** Its report as the key sends it (`599` → `5NN`). */
+  private peerReportAir(): string {
+    return cutNumbers(this.peerReport());
+  }
+
+  /** Its exchange as the key sends it: `001` goes out as `TTA`. */
+  private exchangeAir(): string {
+    return cutNumbers(this.hamExchange);
+  }
+
+  private get contested(): boolean {
+    return isContest(this.contest);
   }
 
   private copyError(p: ParsedMessage): boolean {

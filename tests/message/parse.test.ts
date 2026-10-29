@@ -148,3 +148,19 @@ describe("parseMessage", () => {
     expect(p.end).toBeNull();
   });
 });
+
+describe("比赛交换数字的位置规则", () => {
+  // 交换信息从不单独发：比赛中它永远跟着报告一起发（`5NN T4A`），
+  // 所以「合法 RST 之后」是可靠的位置锚点，不必凭形状猜这是数字还是呼号。
+  it("报告之后的短码 token 当交换数字，不进呼号列表", () => {
+    const p = parseMessage("JA1ABC 5NN T4A", ctxBase, "tx", dxccDatabase);
+    expect(p.rst).toBe("599");
+    expect(p.type).toBe("RST");
+    expect(p.callsigns).toEqual(["JA1ABC"]);
+  });
+
+  it("前面没有报告时，同一个 token 仍按呼号读（位置规则的边界）", () => {
+    const p = parseMessage("T4A", ctxBase, "rx", dxccDatabase);
+    expect(p.callsigns).toEqual(["T4A"]);
+  });
+});

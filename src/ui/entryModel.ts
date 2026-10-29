@@ -1,5 +1,5 @@
 /**
- * The log-entry row: three boxes the operator fills in by ear, plus which of the
+ * The log-entry row: the boxes the operator fills in by ear, plus which of the
  * eight quick messages is the one to send next.
  *
  * Everything here is pure — values in, decision out — so the whole flow (what is
@@ -7,21 +7,49 @@
  * panel in `src/ui/pages/entryPanel.ts` only renders the decision and moves the
  * caret.
  *
- * The flow, as documented in `doc/MESSAGES.md`:
+ * The flow, as documented in `doc/MESSAGES.md`, is the same in all three modes:
  *
  *  - call box empty            → F1 (calling CQ) or F4 (answering somebody), by mode
  *  - call filled, no report yet → F4, S&P only: our call in answer, before the report
- *  - our report still to send  → F2: send it (the box fills itself with 599)
- *  - their report in, ours out → F3: sign off, write the row, start a new one
+ *  - our report still to send  → F2: send it (the boxes fill themselves with 599)
+ *  - everything copied         → F3: sign off, write the row, start a new one
  *
  * Enter does the step *and* sends; Space does the step without sending, for when
  * the operator wants to key the message by hand.
+ *
+ * The last step has one exception: signing off can be *said* before it is
+ * written down — F3 puts `TU` on the air, and Enter a moment later only writes
+ * the row. Enter does not repeat a message that has already gone out for this
+ * row (`signoffSent`), and because such an Enter keys nothing, half-duplex does
+ * not apply to it either.
+ *
+ * ## What a contest changes
+ *
+ * A contest exchanges a number as well, so the row grows a box (their number,
+ * and in WPX ours too), and both reports are known before the contact starts.
+ * The ladder itself does not change — including the answer step, because being
+ * the station that called *him* costs one over in every mode: until `JA1ABC`
+ * has heard `BG7XXX` there is nobody to send a report to. That over is our own
+ * call on its own (`F4`): a contest is a race to be copied, so nobody spends
+ * time naming the station they are calling — and only then does the runner come
+ * back with `BG7XXX 5NN 24`.
+ *
+ * What a *run* saves is the step, not the mode: a runner never answers a CQ, it
+ * names the station that answered its own, so its report message already starts
+ * with the callsign (`{THEIRCALL} {RST} {EXCH}`) and copying the call lights F2.
+ *
+ * The two reports also arrive already known: everybody in a contest sends 599,
+ * so taking the step fills both report boxes, and in WPX our serial too. What is
+ * left to copy is the other station's number — which is why the caret lands
+ * there.
  */
+
+import { isValidExchange, requiresExchange, type ContestKind } from "../qso/contest.js";
 
 /** Run = we are calling CQ; S&P = we are answering somebody else's CQ. */
 export type OperatingMode = "run" | "s&p";
 
-export type EntryField = "call" | "rstTx" | "rstRx";
+export type EntryField = "call" | "rstTx" | "rstRx" | "exchRx";
 
 export interface EntryValues {
   mode: OperatingMode;
@@ -31,6 +59,18 @@ export interface EntryValues {
   rstTx: string;
   /** The report they gave us. */
   rstRx: string;
+  /**
+   * The serial *we* are sending (WPX only). Starts empty: the box shows the next
+   * number as its placeholder and takes the real value when the row moves past
+   * the report step, so the operator can still send `12` instead of `012`.
+   */
+  ownNr: string;
+  /**
+   * The number they sent: their CQ zone (CQWW) or their serial (WPX). Copied by
+   * ear, like everything else here; empty in DX mode, where nothing is exchanged
+   * beyond the report.
+   */
+  exchRx: string;
   /**
    * Our report has already gone out (or been keyed by hand) for this row.
    *
@@ -42,6 +82,15 @@ export interface EntryValues {
    * exchange never sent.
    */
   reportSent: boolean;
+  /**
+   * The sign-off has already gone out for this row (F3 pressed by hand).
+   *
+   * Operators send `TU` and only then write the row down, so the last step is
+   * taken twice: once on the air, once on paper. Without this the second press
+   * puts a second `TU` on the air — the same message, to a station that has
+   * already stopped listening.
+   */
+  signoffSent: boolean;
 }
 
 /** Which prompt is current. Drives both the highlight and what Enter does. */
@@ -56,7 +105,16 @@ export type EntryStep = "call" | "answer" | "report" | "signoff";
  * mode the operator was already in.
  */
 export function emptyEntry(mode: OperatingMode): EntryValues {
-  return { mode, call: "", rstTx: "", rstRx: "", reportSent: false };
+  return {
+    mode,
+    call: "",
+    rstTx: "",
+    rstRx: "",
+    ownNr: "",
+    exchRx: "",
+    reportSent: false,
+    signoffSent: false,
+  };
 }
 
 /**
@@ -77,18 +135,35 @@ export function normaliseCall(value: string): string {
   return value.trim().toUpperCase();
 }
 
+/**
+ * Which rung of the ladder the row is on.
+ *
+ * Deliberately takes no `contest`: the ladder is the same in all three modes —
+ * what a mode changes is which *message* sits on a rung and what the boxes are
+ * called, not how many rungs there are.
+ */
 export function entryStep(v: EntryValues): EntryStep {
   if (normaliseCall(v.call) === "") return "call";
   // Pouncing, the first thing said after copying the call is *our* call (F4),
   // not the report: "JA1ABC DE BG7XXX" answers, and only then comes the RST.
   // The step is done with once the report box holds a number — filled by Enter
   // on F4, by Space, or typed in by hand.
+  //
+  // A contest keeps this rung, which is the whole point of it living here: the
+  // station being pounced on has no idea who is calling until we say so, so the
+  // report cannot be the first thing it hears. A run has no such rung — it is
+  // not answering anybody — and that is `mode`, not the contest.
   if (v.mode === "s&p" && v.rstTx.trim() === "") return "answer";
   // Their report is the last thing heard — but only once ours is out. That is
   // the same rule in both modes, and it has to be: pouncing, their report comes
   // back with their call, and even in a run the station answering our CQ may
   // send "JA1ABC 5NN" in one breath, which would otherwise take a row straight
   // from an empty report box to the sign-off without our RST ever going out.
+  //
+  // The exchanged number is deliberately *not* part of this: it is copied in the
+  // same breath as their report, so waiting for it would keep the light on F2
+  // (our report, already sent) while the operator is copying. Pressing Enter
+  // with the number still missing is caught by `canLog` and points at the box.
   if (v.reportSent && v.rstRx.trim() !== "") return "signoff";
   return "report";
 }
@@ -96,9 +171,12 @@ export function entryStep(v: EntryValues): EntryStep {
 /**
  * The key that should be lit: the one whose message is the next thing to say.
  *
- * Only the opening differs by mode: Run says CQ (F1) where S&P says its own call
- * (F4), and S&P says that call twice — once with an empty call box, once with the
- * call copied but the report not yet chosen.
+ * Like `entryStep`, it takes no mode: the lit key is the message on the current
+ * rung, and which message that is comes from the mode's own file. What the
+ * *operating* mode changes is only the opening — a run says CQ (F1), S&P
+ * answers with its own call (F4), once with an empty call box and again once
+ * the call is copied but the report is not chosen yet. A run has no second F4:
+ * naming the station that answered its CQ is what its report message does.
  */
 export function highlightedKey(v: EntryValues): number {
   switch (entryStep(v)) {
@@ -121,6 +199,14 @@ export interface EntryAction {
    * convenience. Null means "leave what is there".
    */
   fillRstTx: string | null;
+  /**
+   * Value to write into *their* report box when it is still empty. In a contest
+   * both reports are known in advance — everybody sends 599 — so taking the step
+   * writes both instead of one.
+   */
+  fillRstRx: string | null;
+  /** Write our WPX serial into its box, when it is still empty. */
+  fillOwnNr: boolean;
   /** Where the caret goes afterwards; null = leave it where it is. */
   focus: EntryField | null;
   /** Our report is out: the row is past the report step (see `reportSent`). */
@@ -134,6 +220,8 @@ export interface EntryAction {
 const STAY: EntryAction = {
   send: null,
   fillRstTx: null,
+  fillRstRx: null,
+  fillOwnNr: false,
   focus: null,
   markReported: false,
   log: false,
@@ -141,41 +229,46 @@ const STAY: EntryAction = {
 };
 
 /** Enter: take the next step, and send the message that belongs to it. */
-export function onEnter(v: EntryValues): EntryAction {
+export function onEnter(v: EntryValues, contest: ContestKind = "DX"): EntryAction {
   switch (entryStep(v)) {
     case "call":
       // Nothing to send but the invitation itself: CQ when we are the one
       // calling, our call when we are answering.
       return { ...STAY, send: highlightedKey(v) };
     case "answer":
-      // Our call goes out, and the report box fills itself: the next thing to
-      // say is the RST, and 599 is what it will be unless the operator says
-      // otherwise. The caret crosses to *their* report because that is what the
-      // pounced station sends back — it arrives with his call, before ours has
-      // gone out, so it is what the operator has to be ready to copy.
+      // Our call goes out — bare `BG7XXX` in a contest, `JA1ABC DE BG7XXX`
+      // outside one; either way the station now knows who is calling.
+      //
+      // Where the caret goes is what differs. Outside a contest the next thing
+      // to copy is *their* report, so it crosses to that box and our own report
+      // is the only one filled in. In a contest both reports are 599 by rule, so
+      // there is nothing to copy in either: both boxes fill themselves and the
+      // caret goes straight to the one number that is not known yet — theirs.
+      // Nobody types a 599 they were going to hear as a 599; if a station does
+      // send something else, the box is still editable and overwriting it is one
+      // click.
       return {
+        ...STAY,
         send: 4,
-        fillRstTx: DEFAULT_RST,
-        focus: "rstRx",
-        markReported: false,
-        log: false,
-        clear: false,
+        ...(requiresExchange(contest) ? prefill(v, contest) : { fillRstTx: DEFAULT_RST }),
+        focus: requiresExchange(contest) ? "exchRx" : "rstRx",
       };
     case "report":
       return {
+        ...STAY,
         send: 2,
-        fillRstTx: v.rstTx.trim() === "" ? DEFAULT_RST : null,
-        focus: "rstRx",
+        ...prefill(v, contest),
+        focus: requiresExchange(contest) ? "exchRx" : "rstRx",
         markReported: true,
-        log: false,
-        clear: false,
       };
     case "signoff":
+      // `TU` has already gone out for this row: this Enter is the writing-down,
+      // not the saying-goodbye. Sending it again would key a second `TU` at the
+      // station that has just been released.
       return {
-        send: 3,
-        fillRstTx: null,
+        ...STAY,
+        send: v.signoffSent ? null : 3,
         focus: "call",
-        markReported: false,
         log: true,
         clear: true,
       };
@@ -189,40 +282,75 @@ export function onEnter(v: EntryValues): EntryAction {
  * paddles) or not send it at all yet. In the first and last step there is no
  * step to take without sending, so it does nothing.
  */
-export function onSpace(v: EntryValues): EntryAction {
+export function onSpace(v: EntryValues, contest: ContestKind = "DX"): EntryAction {
   const step = entryStep(v);
   if (step === "answer") {
-    return { ...STAY, fillRstTx: DEFAULT_RST, focus: "rstRx" };
+    // Same as Enter, minus the transmission — and in a contest the same landing
+    // spot: the number, because both reports are already filled.
+    return requiresExchange(contest)
+      ? { ...STAY, ...prefill(v, contest), focus: "exchRx" }
+      : { ...STAY, fillRstTx: DEFAULT_RST, focus: "rstRx" };
   }
   if (step !== "report") return STAY;
   return {
-    send: null,
-    fillRstTx: v.rstTx.trim() === "" ? DEFAULT_RST : null,
-    focus: "rstRx",
+    ...STAY,
+    ...prefill(v, contest),
+    focus: requiresExchange(contest) ? "exchRx" : "rstRx",
     // Keyed by hand is still sent: the step it stands for has been taken.
     markReported: true,
-    log: false,
-    clear: false,
   };
 }
 
 /**
- * Whether this row can be written to the log: a callsign and two reports.
+ * What the row already knows when the report step is taken.
+ *
+ * DX fills our own report only. A contest fills both reports — 599 is what the
+ * other station sends as surely as it is what we send — and our WPX serial,
+ * which is a counter the program keeps, not something to copy. Nothing here
+ * overwrites a box the operator has already typed in.
+ */
+function prefill(
+  v: EntryValues,
+  contest: ContestKind,
+): Pick<EntryAction, "fillRstTx" | "fillRstRx" | "fillOwnNr"> {
+  if (!requiresExchange(contest)) {
+    return {
+      fillRstTx: v.rstTx.trim() === "" ? DEFAULT_RST : null,
+      fillRstRx: null,
+      fillOwnNr: false,
+    };
+  }
+  return {
+    fillRstTx: v.rstTx.trim() === "" ? DEFAULT_RST : null,
+    fillRstRx: v.rstRx.trim() === "" ? DEFAULT_RST : null,
+    fillOwnNr: v.ownNr.trim() === "",
+  };
+}
+
+/**
+ * Whether this row can be written to the log: a callsign, both reports, and —
+ * in a contest — the number they sent.
  *
  * The callsign is only required to be non-empty — a practice log may hold a call
- * that does not exist, but it may not hold a blank one.
+ * that does not exist, but it may not hold a blank one. The exchange is checked
+ * against its mode's range instead: a CQWW zone outside 1–40 is not a zone, and
+ * a row with a hole in it is not a contact.
  */
-export function canLog(v: EntryValues): boolean {
-  return normaliseCall(v.call) !== "" && isValidRst(v.rstTx) && isValidRst(v.rstRx);
+export function canLog(v: EntryValues, contest: ContestKind = "DX"): boolean {
+  if (normaliseCall(v.call) === "") return false;
+  if (!isValidRst(v.rstTx) || !isValidRst(v.rstRx)) return false;
+  if (requiresExchange(contest) && !isValidExchange(contest, v.exchRx)) return false;
+  return true;
 }
 
 /**
  * Which box to blame when Enter does nothing at the last step. Null when the row
  * is complete — the panel shows a hint next to that box.
  */
-export function blockingField(v: EntryValues): EntryField | null {
+export function blockingField(v: EntryValues, contest: ContestKind = "DX"): EntryField | null {
   if (normaliseCall(v.call) === "") return "call";
   if (!isValidRst(v.rstTx)) return "rstTx";
   if (!isValidRst(v.rstRx)) return "rstRx";
+  if (requiresExchange(contest) && !isValidExchange(contest, v.exchRx)) return "exchRx";
   return null;
 }

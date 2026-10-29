@@ -7,6 +7,12 @@ export interface DxccEntity {
   lon: number;
   prefixes: string[];
   continent: string;
+  /**
+   * CQ zone (1–40), straight from `cty.dat`. It is the only field of a station's
+   * location that is ever *sent* — the CQWW exchange — so unlike the country
+   * name it is kept. See `qso/contest`.
+   */
+  cqZone: number;
 }
 
 export interface DxccData {

@@ -1,13 +1,25 @@
 import { canLog, normaliseCall, type EntryValues } from "./entryModel.js";
+import {
+  normaliseExchange,
+  requiresExchange,
+  verifyEntry,
+  type ContestKind,
+  type LogVerdict,
+  type PartnerTruth,
+} from "../qso/contest.js";
 
 /**
  * Log book rows shown on the log page, mirroring the field table in LOG.md:
- * DATE / TIME_UTC / CALL / FREQ_MHZ / MODE / RST_RX / RST_TX.
+ * DATE / TIME_UTC / CALL / FREQ_MHZ / MODE / RST_RX / RST_TX, plus the contest
+ * columns (EXCH_RX / EXCH_TX) and the verdict.
  *
- * The row is built from **what the operator wrote down** — the three boxes on
- * the operating screen — not from the state machine's idea of the QSO. A real
+ * The row is built from **what the operator wrote down** — the boxes on the
+ * operating screen — not from the state machine's idea of the QSO. A real
  * logbook is the operator's own record; if they mis-copied a call, the log
  * holds the mis-copied call, and the band never gets a vote.
+ *
+ * The verdict is the one place the band *does* get a vote — after the fact, and
+ * only to say whether the copy was right. See `verifyEntry` in `qso/contest`.
  *
  * Pure data + derivation (no DOM, no storage) so it stays unit-testable.
  */
@@ -27,10 +39,57 @@ export interface LogRecord {
   mode: "CW";
   rstRx: string;
   rstTx: string;
+  /**
+   * Which of the three logs this row belongs to. Optional because rows written
+   * before contest mode existed have no such field; `contestOf` reads those as
+   * DX, which is what they are.
+   */
+  contest?: ContestKind;
+  /** The number we sent (our zone / our serial), as a plain number: `5`, `1`. */
+  exchTx?: string;
+  /** The number they sent, as copied, as a plain number. Empty in DX mode. */
+  exchRx?: string;
+  /**
+   * Which contest session the row belongs to (see `contestRound` in the
+   * settings). Absent on DX rows and on contest rows written before the
+   * boundary existed — both read as session 1, which is what they were.
+   */
+  round?: number;
+  /**
+   * Whether the row matches what the station actually sent. Absent when there
+   * was no station to compare against — a row typed in by hand is logged, not
+   * judged — and dropped when the row is edited on the log page, because an
+   * edited copy is no longer the copy that was checked.
+   */
+  verdict?: LogVerdict;
+}
+
+/** Which log a row belongs to; rows from before contest mode are DX. */
+export function contestOf(record: LogRecord): ContestKind {
+  return record.contest ?? "DX";
+}
+
+/** Which contest session a row belongs to; rows from before the boundary are 1. */
+export function roundOf(record: LogRecord): number {
+  return record.round ?? 1;
 }
 
 export function formatFreqMHz(freqMHz: number): string {
   return freqMHz.toFixed(4);
+}
+
+/** Everything a row needs beyond the boxes: the mode, the clock, the truth. */
+export interface BuildLogOptions {
+  /** The moment of sign-off; defaults to now. */
+  now?: Date;
+  /** Which log it goes to, and what a complete row means. */
+  contest?: ContestKind;
+  /** The number we sent, i.e. `{EXCH}` as it went out. */
+  exchTx?: string;
+  /** Which contest session this row is written into. */
+  round?: number;
+  /** What the station really sent, captured while the contact was open. */
+  truth?: PartnerTruth | null;
 }
 
 /**
@@ -43,11 +102,13 @@ export function formatFreqMHz(freqMHz: number): string {
 export function buildLogRecord(
   entry: EntryValues,
   freqMHz: number,
-  now: Date = new Date(),
+  opts: BuildLogOptions = {},
 ): LogRecord | null {
-  if (!canLog(entry)) return null;
+  const contest = opts.contest ?? "DX";
+  if (!canLog(entry, contest)) return null;
+  const now = opts.now ?? new Date();
   const iso = now.toISOString();
-  return {
+  const record: LogRecord = {
     date: iso.slice(0, 10),
     timeUtc: iso.slice(11, 19),
     call: normaliseCall(entry.call),
@@ -55,5 +116,14 @@ export function buildLogRecord(
     mode: "CW",
     rstRx: entry.rstRx.trim(),
     rstTx: entry.rstTx.trim(),
+    contest,
+    // The log holds numbers, not air: no leading zeros, no cut letters. `05` and
+    // `T5` are two ways of sending 5, and the book records one of it.
+    exchRx: requiresExchange(contest) ? normaliseExchange(contest, entry.exchRx) : "",
+    exchTx: requiresExchange(contest) ? normaliseExchange(contest, opts.exchTx ?? "") : "",
   };
+  const verdict = verifyEntry(entry, opts.truth ?? null, contest);
+  if (verdict) record.verdict = verdict;
+  if (requiresExchange(contest) && opts.round !== undefined) record.round = opts.round;
+  return record;
 }

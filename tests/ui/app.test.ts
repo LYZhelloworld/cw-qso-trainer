@@ -60,7 +60,7 @@ afterEach(() => {
 });
 
 describe("App 外壳", () => {
-  it("机头有 RX 徽标、波段、模式、三个导航按钮与免责页脚", () => {
+  it("顶栏有 RX 徽标、波段、模式、三个导航按钮与免责页脚", () => {
     const { root } = mountApp();
 
     expect(root.querySelector(".rig .txrx")?.textContent).toBe("RX");
@@ -68,7 +68,7 @@ describe("App 外壳", () => {
     expect(root.querySelector(".rig .rig-mode")?.textContent).toBe("CW-U");
     const labels = Array.from(root.querySelectorAll("nav button")).map((b) => b.textContent);
     expect(labels).toEqual(NAV_LABELS);
-    // 导航在机头中间那一格，整块屏幕就是一台电台。
+    // 导航在顶栏中间那一格，整块屏幕就是一台电台。
     expect(root.querySelector(".rig .rig-center nav")).not.toBeNull();
     expect(root.querySelector(".footer")?.textContent).toBe(DISCLAIMER_TEXT);
   });
@@ -140,7 +140,7 @@ describe("App 外壳", () => {
     const { root } = mountApp();
 
     navButton(root, "关于").click();
-    expect(root.textContent).toContain("CW QSO 练习器 v1.0.0");
+    expect(root.textContent).toContain("CW QSO 练习器 v1.2.0");
     expect(root.textContent).toContain(DISCLAIMER_TEXT);
     expect(root.textContent).toContain("日志不可导出为 ADIF / CSV / JSON");
   });
@@ -542,5 +542,98 @@ describe("版面：瀑布图吃掉剩下的高度", () => {
     expect(root.classList.contains("radio-view")).toBe(false);
     app.go("radio");
     expect(root.classList.contains("radio-view")).toBe(true);
+  });
+});
+
+describe("顶栏的通联模式选择器", () => {
+  it("切到比赛：八个键、录入行、日志本一起换过去，正在进行的那一行作废", () => {
+    const { app, root } = mountApp();
+    // 先开机，录入行才会渲染出来。
+    powerButton(root).click();
+
+    expect(root.querySelector<HTMLSelectElement>(".rig-contest")!.value).toBe("DX");
+    expect(root.querySelectorAll(".entry-field")).toHaveLength(3);
+
+    app.entry.call = "JA1ABC";
+    const select = root.querySelector<HTMLSelectElement>(".rig-contest")!;
+    select.value = "CQWW";
+    select.dispatchEvent(new Event("change"));
+
+    expect(app.settings.contest).toBe("CQWW");
+    // 三种模式各记一本：模式一换，日志页看的也是那一本。
+    expect(app.logContest).toBe("CQWW");
+    // 换模式等于换了一整套规矩，旧那一行不能带过来。
+    expect(app.entry.call).toBe("");
+    expect(app.modeMessages.messages[0].text).toBe("CQ TEST {MYCALL}");
+    // 顶栏读回来的是新值，录入行多出对方分区那一格。
+    expect(root.querySelector<HTMLSelectElement>(".rig-contest")!.value).toBe("CQWW");
+    expect(root.querySelectorAll(".entry-field")).toHaveLength(4);
+    expect(root.querySelector<HTMLInputElement>(".entry-exch")!.placeholder).toBe("对方 CQ 分区");
+  });
+
+  it("关着台也能切模式：先设好再开机，是同一台机器的顺序", () => {
+    const { app, root } = mountApp();
+    const select = root.querySelector<HTMLSelectElement>(".rig-contest")!;
+    select.value = "WPX";
+    select.dispatchEvent(new Event("change"));
+
+    expect(app.settings.contest).toBe("WPX");
+    expect(app.powered).toBe(false);
+    // 关着台就没有录入行可看，但键已经换好了。
+    expect(app.modeMessages.messages[1].text).toBe("{THEIRCALL} {RST} {EXCH}");
+  });
+
+  it("切模式把波段也换掉：台上是新的一批，正在通的那一台一起下台", () => {
+    const { app } = mountApp();
+    const before = app.session.listHams().map((h) => h.call);
+    expect(before.length).toBeGreaterThan(0);
+
+    app.setContest("CQWW");
+
+    // 台上原来的台说的是旧模式的措辞（`CQ ...`），换一批比改口更干净。
+    const after = app.session.listHams().map((h) => h.call);
+    expect(after).toHaveLength(before.length);
+    expect(after.filter((call) => before.includes(call))).toEqual([]);
+    expect(app.session.state).toBe("IDLE");
+  });
+});
+
+describe("比赛的场次边界", () => {
+  it("开始新的一场：这一本的场次加一，正在打的那一行作废，旧账不动", () => {
+    const { app } = mountApp();
+    app.setContest("WPX");
+    app.entry.call = "JA1ABC";
+    app.updateSettings({ wpxSerial: 42 });
+
+    app.startNewRound("WPX");
+
+    expect(app.sessionRound("WPX")).toBe(2);
+    // 新的一场从 001 数起。
+    expect(app.settings.wpxSerial).toBe(1);
+    // 边界两边不是同一次通联：正在填的那一行不带过去。
+    expect(app.entry.call).toBe("");
+    // 只有这一个比赛换场；另一本账还是第 1 场。
+    expect(app.sessionRound("CQWW")).toBe(1);
+    // 翻回「本次」，不会停在历史里。
+    expect(app.logPast).toBe(false);
+  });
+
+  it("DX 没有场次：切到 DX 再开始新的一场什么也不会发生", () => {
+    const { app } = mountApp();
+    app.startNewRound("DX");
+    expect(app.sessionRound("DX")).toBe(1);
+    expect(app.settings.contestRounds).toEqual({ CQWW: 1, WPX: 1 });
+  });
+
+  it("切换通联模式也把日志页拉回「本次」，不停在历史里", () => {
+    const { app } = mountApp();
+    app.setContest("CQWW");
+    app.setLogPast(true);
+    expect(app.logPast).toBe(true);
+
+    app.setContest("WPX");
+
+    expect(app.logPast).toBe(false);
+    expect(app.logContest).toBe("WPX");
   });
 });

@@ -105,3 +105,47 @@ describe("validateCallsign", () => {
     expect(validateCallsign("BG7XXX", (p) => p === "BG7").level).toBe("ok");
   });
 });
+
+describe("比赛相关的设置", () => {
+  it("默认是 DX，分区交给呼号去推断", () => {
+    const s = normalizeSettings({});
+    expect(s.contest).toBe("DX");
+    expect(s.cqZone).toBe(0);
+    expect(s.wpxSerial).toBe(1);
+  });
+
+  it("认三个模式，别的一律回到 DX", () => {
+    expect(normalizeSettings({ contest: "CQWW" }).contest).toBe("CQWW");
+    expect(normalizeSettings({ contest: "WPX" }).contest).toBe("WPX");
+    expect(normalizeSettings({ contest: "ARRL" }).contest).toBe("DX");
+  });
+
+  it("分区 0 表示自动，其余夹到 1–40", () => {
+    expect(normalizeSettings({ cqZone: 0 }).cqZone).toBe(0);
+    expect(normalizeSettings({ cqZone: 15 }).cqZone).toBe(15);
+    expect(normalizeSettings({ cqZone: 41 }).cqZone).toBe(40);
+    expect(normalizeSettings({ cqZone: -3 }).cqZone).toBe(0);
+  });
+
+  it("WPX 序号夹在 1–999999（六位，与录入框一致）", () => {
+    expect(normalizeSettings({ wpxSerial: 0 }).wpxSerial).toBe(1);
+    expect(normalizeSettings({ wpxSerial: 4321 }).wpxSerial).toBe(4321);
+    // 序号是计数器，不是「最多四位数」：过万之后照样往上走，不卡在 9999 一直发同一个号。
+    expect(normalizeSettings({ wpxSerial: 20_000 }).wpxSerial).toBe(20_000);
+    expect(normalizeSettings({ wpxSerial: 9_999_999 }).wpxSerial).toBe(999_999);
+  });
+
+  it("两个比赛各有一本账，场次从第 1 场起", () => {
+    const empty = normalizeSettings({});
+    expect(empty.contestRounds).toEqual({ CQWW: 1, WPX: 1 });
+    // 只给一半也只丢那一半，另一本账不该被顺手清零。
+    expect(normalizeSettings({ contestRounds: { WPX: 3 } }).contestRounds).toEqual({
+      CQWW: 1,
+      WPX: 3,
+    });
+    expect(normalizeSettings({ contestRounds: { CQWW: 0, WPX: 12 } }).contestRounds).toEqual({
+      CQWW: 1,
+      WPX: 12,
+    });
+  });
+});

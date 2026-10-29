@@ -1,5 +1,12 @@
 import { BANDS } from "./bands.js";
 import { PASSBAND_HZ, normalisePassband } from "../ham/tuning.js";
+import {
+  CQ_ZONE_MAX,
+  CQ_ZONE_MIN,
+  SERIAL_MAX,
+  SERIAL_MIN,
+  type ContestKind,
+} from "../qso/contest.js";
 
 /**
  * User settings schema: defaults, normalisation and callsign validation.
@@ -48,6 +55,40 @@ export interface AppSettings {
   iambicMode: IambicMode;
   /** Receiver CW filter width in Hz (one of `PASSBAND_OPTIONS`). */
   passbandHz: number;
+  /**
+   * Which of the three operating modes the rig is in: everyday DX, or one of the
+   * two contests. It decides the quick messages, the exchange box and which log
+   * the row is written to — not the receiver, which is CW in all three.
+   */
+  contest: ContestKind;
+  /**
+   * The CQ zone we send in CQWW. `0` means "work it out from the callsign" (see
+   * `ownZone`), which is what a station set up correctly should leave it on.
+   */
+  cqZone: number;
+  /**
+   * The serial the *next* WPX contact will be given. It lives here rather than in
+   * the contact so that closing the app mid-contest does not restart the
+   * numbering — the log is the running total, this is the counter in front of it.
+   */
+  wpxSerial: number;
+  /**
+   * Which contest session (场次) each contest's log is currently being written
+   * into, keyed by contest.
+   *
+   * A real contest has a start and an end; a trainer has neither, so the operator
+   * draws the line by hand: "start a new one" bumps that contest's number, every
+   * earlier row becomes history and stays readable, and the log page shows one
+   * session at a time instead of an ever-growing list. Per contest, because a
+   * boundary on the CQWW book must not turn the WPX book into an archive.
+   */
+  contestRounds: ContestRounds;
+}
+
+/** The two contests that have sessions; DX has no "round" to be in. */
+export interface ContestRounds {
+  CQWW: number;
+  WPX: number;
 }
 
 export const WPM_MIN = 5;
@@ -57,6 +98,9 @@ export const TONE_MAX = 1200;
 /** Sidetone level shown to the user (percent); mapped to 0..1 gain internally. */
 export const SIDETONE_MIN = 0;
 export const SIDETONE_MAX = 100;
+/** Contest session numbers. One number per session; they only ever go up. */
+export const ROUND_MIN = 1;
+export const ROUND_MAX = 999;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   myCall: "",
@@ -79,6 +123,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sidetone: true,
   sidetoneVolume: 40,
   passbandHz: PASSBAND_HZ,
+  contest: "DX",
+  // 0 = read it off the callsign. A trainer loaded for the first time has no
+  // callsign yet, so any fixed zone would be a guess; the derived one at least
+  // follows the call the operator eventually types.
+  cqZone: 0,
+  wpxSerial: 1,
+  contestRounds: { CQWW: ROUND_MIN, WPX: ROUND_MIN },
 };
 
 /** Mirrors the callsign pattern used by MESSAGE-PARSING (ITU-style). */
@@ -146,7 +197,35 @@ export function normalizeSettings(raw: unknown): AppSettings {
     // A `cwSideband` left behind by an older build is simply ignored: the mode
     // now belongs to the band, and every band starts on its convention.
     passbandHz: normalisePassband(r.passbandHz),
+    contest: isContestKind(r.contest) ? r.contest : DEFAULT_SETTINGS.contest,
+    // Anything that is not a real zone means "derive it from the callsign":
+    // 0 is the sentinel, and so is a missing or negative value. The fallback is
+    // 0 as well — "no zone" — rather than 1, which would quietly put the station
+    // in the first zone of the world.
+    cqZone:
+      typeof r.cqZone === "number" && r.cqZone > 0
+        ? clampNum(r.cqZone, 0, CQ_ZONE_MIN, CQ_ZONE_MAX)
+        : 0,
+    wpxSerial: clampNum(r.wpxSerial, DEFAULT_SETTINGS.wpxSerial, SERIAL_MIN, SERIAL_MAX),
+    contestRounds: {
+      CQWW: clampNum(
+        r.contestRounds?.CQWW,
+        DEFAULT_SETTINGS.contestRounds.CQWW,
+        ROUND_MIN,
+        ROUND_MAX,
+      ),
+      WPX: clampNum(
+        r.contestRounds?.WPX,
+        DEFAULT_SETTINGS.contestRounds.WPX,
+        ROUND_MIN,
+        ROUND_MAX,
+      ),
+    },
   };
+}
+
+function isContestKind(value: unknown): value is ContestKind {
+  return value === "DX" || value === "CQWW" || value === "WPX";
 }
 
 /** Extract the leading letter+digit prefix of a callsign (e.g. BG7XXX -> BG7). */
