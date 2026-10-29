@@ -13,7 +13,6 @@ import {
 import {
   blockingField,
   canLog,
-  DEFAULT_RST,
   emptyEntry,
   entryStep,
   highlightedKey,
@@ -55,9 +54,11 @@ import type { AppHost } from "../app.js";
  *  - our report due  → F2 (send it; the report box fills itself with 599)
  *  - everything in   → F3 (sign off, write the row, start a new one)
  *
- * The caret follows the ears: after F4 it waits in *their* report box, because a
- * station that has just been pounced on comes back with his report before ours
- * has gone out.
+ * The caret follows the ears — which box that is depends on what is left to
+ * copy. Outside a contest it is *their* report: a station that has just been
+ * pounced on comes back with its report before ours has gone out. In a contest
+ * both reports are 599 by rule, so those fill themselves and the caret goes
+ * straight to their number, the only thing that has to be heard.
  *
  * Enter sends the message of the step; Space takes the same step without
  * sending, for an operator who wants to key it by hand. Esc gives up on the
@@ -189,9 +190,12 @@ export function renderEntryPanel(host: AppHost, root: HTMLElement): void {
     // is done with once the report box holds a number, and F2 puts our report on
     // the air; without this the light would stay on a message already sent.
     if (key === 4 && step === "answer" && entry.rstTx.trim() === "") {
-      entry.rstTx = DEFAULT_RST;
-      rstTxInput.value = DEFAULT_RST;
+      // The same boxes Enter would fill — in a contest that is both reports,
+      // and the caret leaves for the number rather than their report.
+      const answer = onEnter(entry, contest);
+      applyPrefill(answer);
       stepped = true;
+      if (answer.focus) focusField(answer.focus);
     } else if (key === 2 && step === "report") {
       entry.reportSent = true;
       stepped = true;

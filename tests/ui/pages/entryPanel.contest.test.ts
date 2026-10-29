@@ -265,7 +265,7 @@ describe("应答别人的 CQ（S&P）", () => {
     expect(lit[0].textContent).toContain("F4");
   });
 
-  it("回车只发自己的呼号，填上我方 RST，光标落到对方 RST", async () => {
+  it("回车只发自己的呼号：两个 RST 都填 599，光标直接落到对方那个号", async () => {
     const { root, sent, entry } = makeHarness(
       { ...emptyEntry("s&p"), call: "JA1ABC" },
       { contest: "CQWW" },
@@ -275,8 +275,23 @@ describe("应答别人的 CQ（S&P）", () => {
     await vi.waitFor(() => expect(sent).toEqual(["BG7XXX"]));
     // 这一步只是报名：报告还没发，所以还是报告那一格的事。
     expect(entry.reportSent).toBe(false);
+    // 比赛里两边都报 599，没什么可抄的——要填的只有对方那个数字。
     expect(entry.rstTx).toBe("599");
-    expect(document.activeElement).toBe(box(root, "对方 RST"));
+    expect(entry.rstRx).toBe("599");
+    expect(document.activeElement).toBe(box(root, "对方 CQ 分区"));
+  });
+
+  it("用鼠标按 F4 也一样：两个 599 填上，光标停在对方那个号", async () => {
+    const { root, sent, entry } = makeHarness(
+      { ...emptyEntry("s&p"), call: "JA1ABC" },
+      { contest: "CQWW" },
+    );
+    keys(root)[3].click(); // F4
+
+    await vi.waitFor(() => expect(sent).toEqual(["BG7XXX"]));
+    expect(entry.rstTx).toBe("599");
+    expect(entry.rstRx).toBe("599");
+    expect(document.activeElement).toBe(box(root, "对方 CQ 分区"));
   });
 
   it("抄完数字再回车才是 F2：报告发出去，灯跳到 F3", async () => {
@@ -287,8 +302,7 @@ describe("应答别人的 CQ（S&P）", () => {
     press(box(root, "对方呼号"), "Enter");
     await vi.waitFor(() => expect(sent).toEqual(["BG7XXX"]));
 
-    // 对方回「BG7XXX 5NN 25」：抄两个 RST 与分区。
-    type(box(root, "对方 RST"), "599");
+    // 对方回「BG7XXX 5NN 25」：报告是 599（已经填好），抄分区就行。
     type(box(root, "对方 CQ 分区"), "05");
     press(box(root, "对方 CQ 分区"), "Enter");
 

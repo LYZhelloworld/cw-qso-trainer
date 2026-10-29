@@ -259,6 +259,27 @@ describe("比赛模式下的那一行", () => {
     expect(taken.markReported).toBe(true);
   });
 
+  it("比赛的 S&P 报名之后，光标直接去对方那个号", () => {
+    // 比赛双方都报 599，所以两个报告框都不用抄：取一步就都填上，光标落在
+    // 唯一还空着的那一格——对方的交换数字。
+    const cqww = onEnter(entry({ call: "JA1ABC", mode: "s&p" }), "CQWW");
+    expect(cqww.send).toBe(4);
+    expect(cqww.fillRstTx).toBe("599");
+    expect(cqww.fillRstRx).toBe("599");
+    expect(cqww.focus).toBe("exchRx");
+
+    // WPX 连我方序号一起填好，落点一样。
+    const wpx = onEnter(entry({ call: "JA1ABC", mode: "s&p" }), "WPX");
+    expect(wpx.fillOwnNr).toBe(true);
+    expect(wpx.focus).toBe("exchRx");
+
+    // 空格走同一步，落点也一样。
+    expect(onSpace(entry({ call: "JA1ABC", mode: "s&p" }), "CQWW").focus).toBe("exchRx");
+
+    // 日常不是这样：他的报告要一个字一个字抄，所以停在那一格。
+    expect(onEnter(entry({ call: "JA1ABC", mode: "s&p" })).focus).toBe("rstRx");
+  });
+
   it("分区没抄到时不发第二轮：收尾那一步按下去会被拦下来", () => {
     const awaitingExch = entry({
       call: "JA1ABC",

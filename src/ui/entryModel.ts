@@ -237,16 +237,21 @@ export function onEnter(v: EntryValues, contest: ContestKind = "DX"): EntryActio
       return { ...STAY, send: highlightedKey(v) };
     case "answer":
       // Our call goes out — bare `BG7XXX` in a contest, `JA1ABC DE BG7XXX`
-      // outside one; either way the station now knows who is calling, and the
-      // report box fills itself because the next thing to say is the RST. The
-      // caret crosses to *their* report because that is what the pounced station
-      // sends back — it arrives with its call, before our report has gone out,
-      // so it is what the operator has to be ready to copy.
+      // outside one; either way the station now knows who is calling.
+      //
+      // Where the caret goes is what differs. Outside a contest the next thing
+      // to copy is *their* report, so it crosses to that box and our own report
+      // is the only one filled in. In a contest both reports are 599 by rule, so
+      // there is nothing to copy in either: both boxes fill themselves and the
+      // caret goes straight to the one number that is not known yet — theirs.
+      // Nobody types a 599 they were going to hear as a 599; if a station does
+      // send something else, the box is still editable and overwriting it is one
+      // click.
       return {
         ...STAY,
         send: 4,
-        fillRstTx: DEFAULT_RST,
-        focus: "rstRx",
+        ...(requiresExchange(contest) ? prefill(v, contest) : { fillRstTx: DEFAULT_RST }),
+        focus: requiresExchange(contest) ? "exchRx" : "rstRx",
       };
     case "report":
       return {
@@ -280,7 +285,11 @@ export function onEnter(v: EntryValues, contest: ContestKind = "DX"): EntryActio
 export function onSpace(v: EntryValues, contest: ContestKind = "DX"): EntryAction {
   const step = entryStep(v);
   if (step === "answer") {
-    return { ...STAY, fillRstTx: DEFAULT_RST, focus: "rstRx" };
+    // Same as Enter, minus the transmission — and in a contest the same landing
+    // spot: the number, because both reports are already filled.
+    return requiresExchange(contest)
+      ? { ...STAY, ...prefill(v, contest), focus: "exchRx" }
+      : { ...STAY, fillRstTx: DEFAULT_RST, focus: "rstRx" };
   }
   if (step !== "report") return STAY;
   return {
