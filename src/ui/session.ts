@@ -1177,12 +1177,20 @@ export class QsoSession implements SessionContext {
   /**
    * Spawn a station on this band. `atHz` pins it to an exact frequency (the
    * operator's dial, for a station about to answer the operator's CQ).
+   *
+   * The RNG passed down is deliberately *not* `this.rng`. The band's scenery —
+   * who is on it and where they sit — is drawn from `Math.random`, so that a
+   * reseed gives a different band instead of replaying the same four stations.
+   * Handing `this.rng` in here looks tempting and hangs the suite: several tests
+   * inject a constant `rng: () => 0`, every station would then come out with the
+   * same callsign, `activity.add` would drop the duplicates, and `seedHams`'
+   * `while` would never reach its target.
    */
   private spawnHam(atHz?: number): VirtualHam {
     return this.band.spawnHam(
       this.myCall(),
       this.settings.difficulty,
-      undefined,
+      undefined, // scenery RNG — see the note above
       this.firstCqDelay(),
       atHz,
     );
