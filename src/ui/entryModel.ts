@@ -29,8 +29,10 @@
  * and in WPX ours too), and both reports are known before the contact starts.
  * The ladder itself does not change — including the answer step, because being
  * the station that called *him* costs one over in every mode: until `JA1ABC`
- * has heard `BG7XXX` there is nobody to send a report to. `JA1ABC BG7XXX` is
- * that over, and only then does the runner come back with `BG7XXX 5NN 24`.
+ * has heard `BG7XXX` there is nobody to send a report to. That over is our own
+ * call on its own (`F4`): a contest is a race to be copied, so nobody spends
+ * time naming the station they are calling — and only then does the runner come
+ * back with `BG7XXX 5NN 24`.
  *
  * What a *run* saves is the step, not the mode: a runner never answers a CQ, it
  * names the station that answered its own, so its report message already starts
@@ -234,7 +236,7 @@ export function onEnter(v: EntryValues, contest: ContestKind = "DX"): EntryActio
       // calling, our call when we are answering.
       return { ...STAY, send: highlightedKey(v) };
     case "answer":
-      // Our call goes out — `JA1ABC BG7XXX` in a contest, `JA1ABC DE BG7XXX`
+      // Our call goes out — bare `BG7XXX` in a contest, `JA1ABC DE BG7XXX`
       // outside one; either way the station now knows who is calling, and the
       // report box fills itself because the next thing to say is the RST. The
       // caret crosses to *their* report because that is what the pounced station

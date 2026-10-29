@@ -50,7 +50,8 @@ import type { AppHost } from "../app.js";
  * `entryModel.ts` — this module only renders that decision and moves the caret:
  *
  *  - empty call      → F1 (Run: call CQ) or F4 (S&P: answer somebody)
- *  - call filled     → F4 in S&P (our call in answer), until the report is picked
+ *  - call filled     → F4 in S&P (our own call, contest or not), until the report
+ *                      is picked; a contest drops the other side's call from it
  *  - our report due  → F2 (send it; the report box fills itself with 599)
  *  - everything in   → F3 (sign off, write the row, start a new one)
  *

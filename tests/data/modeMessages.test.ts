@@ -31,8 +31,8 @@ describe("内置模式报文", () => {
         "CQ TEST {MYCALL}",
         "{THEIRCALL} {RST} {EXCH}",
         "TU",
-        // S&P 的第一步：点名对方，再报自己。
-        "{THEIRCALL} {MYCALL}",
+        // S&P 的第一步：只报自己的呼号——比赛里没空带对方的呼号。
+        "{MYCALL}",
         "{THEIRCALL}",
         "{RST} {EXCH} {EXCH}",
         "?",

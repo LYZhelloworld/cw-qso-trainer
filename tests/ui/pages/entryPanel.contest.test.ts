@@ -265,14 +265,14 @@ describe("应答别人的 CQ（S&P）", () => {
     expect(lit[0].textContent).toContain("F4");
   });
 
-  it("回车发的是「对方呼号 我的呼号」，填上我方 RST，光标落到对方 RST", async () => {
+  it("回车只发自己的呼号，填上我方 RST，光标落到对方 RST", async () => {
     const { root, sent, entry } = makeHarness(
       { ...emptyEntry("s&p"), call: "JA1ABC" },
       { contest: "CQWW" },
     );
     press(box(root, "对方呼号"), "Enter");
 
-    await vi.waitFor(() => expect(sent).toEqual(["JA1ABC BG7XXX"]));
+    await vi.waitFor(() => expect(sent).toEqual(["BG7XXX"]));
     // 这一步只是报名：报告还没发，所以还是报告那一格的事。
     expect(entry.reportSent).toBe(false);
     expect(entry.rstTx).toBe("599");
@@ -285,14 +285,14 @@ describe("应答别人的 CQ（S&P）", () => {
       { contest: "CQWW", zone: 24 },
     );
     press(box(root, "对方呼号"), "Enter");
-    await vi.waitFor(() => expect(sent).toEqual(["JA1ABC BG7XXX"]));
+    await vi.waitFor(() => expect(sent).toEqual(["BG7XXX"]));
 
     // 对方回「BG7XXX 5NN 25」：抄两个 RST 与分区。
     type(box(root, "对方 RST"), "599");
     type(box(root, "对方 CQ 分区"), "05");
     press(box(root, "对方 CQ 分区"), "Enter");
 
-    await vi.waitFor(() => expect(sent).toEqual(["JA1ABC BG7XXX", "JA1ABC 5NN U4"]));
+    await vi.waitFor(() => expect(sent).toEqual(["BG7XXX", "JA1ABC 5NN U4"]));
     expect(entry.reportSent).toBe(true);
     const lit = keys(root).filter((k) => k.classList.contains("active"));
     expect(lit[0].textContent).toContain("F3");

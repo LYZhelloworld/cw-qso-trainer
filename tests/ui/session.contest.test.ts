@@ -39,9 +39,9 @@ describe("比赛模式下的会话", () => {
     // 分区来自呼号所属的 DXCC 实体，补成两位。
     expect(truth?.exch).toBe(formatZone(zoneOfCall(peer)!));
 
-    // S&P：F4 发的是「对方呼号 我的呼号」——先让对方知道是谁在叫它。
+    // S&P：F4 只发自己的呼号——比赛里没人有空带上对方的呼号，报清自己就够了。
     // 主叫台一个回合把报告与分区都给全，正好是它该回的。
-    await session.userSend(`${peer} BG7XXX`);
+    await session.userSend("BG7XXX");
     expect(session.state).toBe("EXCHANGE");
     expect(session.lines.at(-1)?.text).toBe(`BG7XXX 5NN ${cutNumbers(truth!.exch)}`);
 
